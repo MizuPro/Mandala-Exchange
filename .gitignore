@@ -1,0 +1,60 @@
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+.secrets/
+*.secret.md
+*SECRET*.md
+*SECRETS*.md
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Logs and runtime files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+*.seed
+
+# Framework and tooling caches
+.cache/
+.vite/
+.turbo/
+.next/
+.nuxt/
+.output/
+
+# Docker/local data
+*.dump
+*.sql.gz
+docker-data/
+postgres-data/
+
+# IDE/editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local agent/runtime scratch files
+.agent/
