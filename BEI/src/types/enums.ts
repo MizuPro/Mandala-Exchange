@@ -1,0 +1,17 @@
+export const listingStatuses = ["listed", "suspended", "delisted"] as const;
+export const boardTypes = ["main", "development", "acceleration", "new_economy", "watchlist"] as const;
+export const marketMechanisms = ["regular", "call_auction", "cash", "negotiated"] as const;
+export const notationTypes = ["watchlist", "special_monitoring", "suspend", "delisting_risk", "unusual_condition", "admin_note"] as const;
+export const announcementTypes = ["financial_report", "material_disclosure", "news", "rups", "dividend", "rights_issue", "ipo", "corporate_action"] as const;
+export const sessionStatuses = ["closed", "pre_open", "opening_auction", "continuous", "pre_close", "random_closing", "closing_auction", "non_cancellation", "post_closing", "halted"] as const;
+export const settlementModes = ["instant", "end_of_session", "t_plus_1_session", "t_plus_n_session"] as const;
+export const settlementInstructionTypes = ["dvp", "rvp", "fop", "cash_dividend", "stock_adjustment", "ipo_allocation"] as const;
+export const settlementStatuses = ["pending", "ready", "processing", "settled", "failed", "cancelled"] as const;
+export const corporateActionTypes = ["cash_dividend", "stock_split", "reverse_split", "bonus_share", "rights_issue", "warrant"] as const;
+export const corporateActionStatuses = ["draft", "announced", "recording", "processing", "completed", "cancelled"] as const;
+export const tradingHaltStatuses = ["inactive", "active", "resumed"] as const;
+export const brokerStatuses = ["active", "suspended", "inactive"] as const;
+export const tradeSides = ["buy", "sell"] as const;
+export const ledgerEntryTypes = ["ipo_allocation", "trade_settlement", "cash_settlement", "cash_dividend", "stock_split", "reverse_split", "bonus_share", "rights_issue", "warrant", "adjustment", "reversal"] as const;
+export const ledgerAssetTypes = ["cash", "security", "right", "warrant"] as const;
+export const ipoStatuses = ["draft", "bookbuilding", "subscription", "allocation", "listed", "cancelled"] as const;

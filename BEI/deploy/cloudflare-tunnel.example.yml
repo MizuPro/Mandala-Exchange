@@ -1,0 +1,7 @@
+tunnel: mandala-bei
+credentials-file: /etc/cloudflared/mandala-bei.json
+
+ingress:
+  - hostname: bei.internal.example.com
+    service: http://localhost:4100
+  - service: http_status:404

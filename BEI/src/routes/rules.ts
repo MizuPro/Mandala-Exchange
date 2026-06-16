@@ -1,0 +1,301 @@
+import type { FastifyInstance } from "fastify";
+import { desc, eq } from "drizzle-orm";
+import { z } from "zod";
+import { db, pool } from "../db/index.js";
+import {
+  autoRejectionRules,
+  feeSchedules,
+  lotSizeRules,
+  marketSummaries,
+  priceBandRules,
+  sessionSegments,
+  sessionTemplates,
+  tickSizeRules,
+  tradingHalts,
+  tradingRuleProfiles
+} from "../db/schema.js";
+import { actorFromRequest, correlationIdFromRequest, writeAudit } from "../lib/audit.js";
+import { badRequest } from "../lib/errors.js";
+import { boardTypes, sessionStatuses, settlementModes, tradingHaltStatuses } from "../types/enums.js";
+
+const profileBody = z.object({
+  name: z.string().min(3),
+  board: z.enum(boardTypes),
+  marketSegment: z.string().default("regular"),
+  isDefault: z.boolean().default(false),
+  metadata: z.record(z.unknown()).default({})
+});
+
+const lotBody = z.object({
+  profileId: z.string().uuid(),
+  instrumentType: z.string().default("stock"),
+  lotSize: z.coerce.number().int().positive().default(100),
+  effectiveDate: z.string().date().optional()
+});
+
+const tickBody = z.object({
+  profileId: z.string().uuid(),
+  minPrice: z.coerce.number().positive(),
+  maxPrice: z.coerce.number().positive().optional(),
+  tickSize: z.coerce.number().positive()
+});
+
+const priceBandBody = z.object({
+  profileId: z.string().uuid(),
+  minReferencePrice: z.coerce.number().positive(),
+  maxReferencePrice: z.coerce.number().positive().optional(),
+  araPercent: z.coerce.number().positive(),
+  arbPercent: z.coerce.number().positive(),
+  minPrice: z.coerce.number().positive().default(1)
+});
+
+const autoRejectBody = z.object({
+  profileId: z.string().uuid(),
+  maxLotsPerOrder: z.coerce.number().int().positive(),
+  maxListedSharesPercent: z.coerce.number().positive().optional()
+});
+
+const sessionTemplateBody = z.object({
+  name: z.string().min(3),
+  status: z.enum(sessionStatuses).default("closed"),
+  settlementMode: z.enum(settlementModes).default("end_of_session"),
+  settlementDelaySessions: z.coerce.number().int().min(0).default(0),
+  postClosingEnabled: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  metadata: z.record(z.unknown()).default({})
+});
+
+const sessionSegmentBody = z.object({
+  templateId: z.string().uuid(),
+  sequence: z.coerce.number().int().min(1),
+  status: z.enum(sessionStatuses),
+  durationSeconds: z.coerce.number().int().positive(),
+  allowOrderEntry: z.boolean().default(false),
+  allowCancelAmend: z.boolean().default(false)
+});
+
+const feeScheduleBody = z.object({
+  name: z.string().min(3),
+  brokerBuyRate: z.coerce.number().min(0),
+  brokerSellRate: z.coerce.number().min(0),
+  exchangeFeeRate: z.coerce.number().min(0),
+  clearingFeeRate: z.coerce.number().min(0),
+  settlementFeeRate: z.coerce.number().min(0),
+  guaranteeFundRate: z.coerce.number().min(0).default(0),
+  vatRate: z.coerce.number().min(0),
+  sellTaxRate: z.coerce.number().min(0),
+  minimumFee: z.coerce.number().min(0).default(0),
+  effectiveDate: z.string().date(),
+  isActive: z.boolean().default(true)
+});
+
+const haltBody = z.object({
+  securityId: z.string().uuid().optional(),
+  status: z.enum(tradingHaltStatuses).default("active"),
+  reason: z.string().min(3),
+  startedAt: z.coerce.date().optional(),
+  endedAt: z.coerce.date().optional(),
+  metadata: z.record(z.unknown()).default({})
+});
+
+export async function registerRuleRoutes(app: FastifyInstance) {
+  app.get("/rules/profiles", async () => db.select().from(tradingRuleProfiles).orderBy(tradingRuleProfiles.name));
+
+  app.post("/rules/profiles", async (request) => {
+    const body = profileBody.parse(request.body);
+    const [created] = await db.insert(tradingRuleProfiles).values(body).returning();
+    if (!created) throw badRequest("Rule profile was not created");
+    await writeAudit({
+      actor: actorFromRequest(request),
+      action: "rule_profile.create",
+      entityType: "trading_rule_profile",
+      entityId: created.id,
+      after: created,
+      correlationId: correlationIdFromRequest(request)
+    });
+    return created;
+  });
+
+  app.post("/rules/lot-sizes", async (request) => {
+    const body = lotBody.parse(request.body);
+    const [created] = await db.insert(lotSizeRules).values(body).returning();
+    if (!created) throw badRequest("Lot size rule was not created");
+    return created;
+  });
+
+  app.post("/rules/tick-sizes", async (request) => {
+    const body = tickBody.parse(request.body);
+    const [created] = await db
+      .insert(tickSizeRules)
+      .values({
+        profileId: body.profileId,
+        minPrice: body.minPrice.toString(),
+        maxPrice: body.maxPrice?.toString(),
+        tickSize: body.tickSize.toString()
+      })
+      .returning();
+    if (!created) throw badRequest("Tick size rule was not created");
+    return created;
+  });
+
+  app.post("/rules/price-bands", async (request) => {
+    const body = priceBandBody.parse(request.body);
+    const [created] = await db
+      .insert(priceBandRules)
+      .values({
+        profileId: body.profileId,
+        minReferencePrice: body.minReferencePrice.toString(),
+        maxReferencePrice: body.maxReferencePrice?.toString(),
+        araPercent: body.araPercent.toString(),
+        arbPercent: body.arbPercent.toString(),
+        minPrice: body.minPrice.toString()
+      })
+      .returning();
+    if (!created) throw badRequest("Price band rule was not created");
+    return created;
+  });
+
+  app.post("/rules/auto-rejections", async (request) => {
+    const body = autoRejectBody.parse(request.body);
+    const [created] = await db
+      .insert(autoRejectionRules)
+      .values({
+        profileId: body.profileId,
+        maxLotsPerOrder: body.maxLotsPerOrder,
+        maxListedSharesPercent: body.maxListedSharesPercent?.toString()
+      })
+      .returning();
+    if (!created) throw badRequest("Auto rejection rule was not created");
+    return created;
+  });
+
+  app.post("/sessions/templates", async (request) => {
+    const body = sessionTemplateBody.parse(request.body);
+    const [created] = await db.insert(sessionTemplates).values(body).returning();
+    if (!created) throw badRequest("Session template was not created");
+    return created;
+  });
+
+  app.post("/sessions/segments", async (request) => {
+    const body = sessionSegmentBody.parse(request.body);
+    const [created] = await db.insert(sessionSegments).values(body).returning();
+    if (!created) throw badRequest("Session segment was not created");
+    return created;
+  });
+
+  app.get("/integration/mats/sessions/active", async () => {
+    const result = await pool.query(`
+      SELECT t.*, COALESCE(json_agg(s.* ORDER BY s.sequence) FILTER (WHERE s.id IS NOT NULL), '[]') AS segments
+      FROM session_templates t
+      LEFT JOIN session_segments s ON s.template_id = t.id
+      WHERE t.is_active = true
+      GROUP BY t.id
+      ORDER BY t.created_at DESC
+      LIMIT 1
+    `);
+    return result.rows[0] ?? null;
+  });
+
+  app.post("/fee-schedules", async (request) => {
+    const body = feeScheduleBody.parse(request.body);
+    const [created] = await db
+      .insert(feeSchedules)
+      .values({
+        name: body.name,
+        brokerBuyRate: body.brokerBuyRate.toString(),
+        brokerSellRate: body.brokerSellRate.toString(),
+        exchangeFeeRate: body.exchangeFeeRate.toString(),
+        clearingFeeRate: body.clearingFeeRate.toString(),
+        settlementFeeRate: body.settlementFeeRate.toString(),
+        guaranteeFundRate: body.guaranteeFundRate.toString(),
+        vatRate: body.vatRate.toString(),
+        sellTaxRate: body.sellTaxRate.toString(),
+        minimumFee: body.minimumFee.toString(),
+        effectiveDate: body.effectiveDate,
+        isActive: body.isActive
+      })
+      .returning();
+    if (!created) throw badRequest("Fee schedule was not created");
+    return created;
+  });
+
+  app.get("/public/fee-schedule", async () => {
+    const rows = await db
+      .select()
+      .from(feeSchedules)
+      .where(eq(feeSchedules.isActive, true))
+      .orderBy(desc(feeSchedules.effectiveDate));
+    return rows[0] ?? null;
+  });
+
+  app.post("/trading-halts", async (request) => {
+    const body = haltBody.parse(request.body);
+    const [created] = await db.insert(tradingHalts).values(body).returning();
+    if (!created) throw badRequest("Trading halt was not created");
+    await writeAudit({
+      actor: actorFromRequest(request),
+      action: "trading_halt.create",
+      entityType: "trading_halt",
+      entityId: created.id,
+      after: created,
+      reason: created.reason,
+      correlationId: correlationIdFromRequest(request)
+    });
+    return created;
+  });
+
+  app.post("/market-summaries", async (request) => {
+    const body = z
+      .object({
+        sessionId: z.string(),
+        securityId: z.string().uuid().optional(),
+        open: z.coerce.number().optional(),
+        high: z.coerce.number().optional(),
+        low: z.coerce.number().optional(),
+        close: z.coerce.number().optional(),
+        last: z.coerce.number().optional(),
+        volume: z.coerce.number().default(0),
+        value: z.coerce.number().default(0),
+        frequency: z.coerce.number().int().default(0),
+        metadata: z.record(z.unknown()).default({})
+      })
+      .parse(request.body);
+
+    const [created] = await db
+      .insert(marketSummaries)
+      .values({
+        sessionId: body.sessionId,
+        securityId: body.securityId,
+        open: body.open?.toString(),
+        high: body.high?.toString(),
+        low: body.low?.toString(),
+        close: body.close?.toString(),
+        last: body.last?.toString(),
+        volume: body.volume.toString(),
+        value: body.value.toString(),
+        frequency: body.frequency,
+        metadata: body.metadata
+      })
+      .returning();
+    if (!created) throw badRequest("Market summary was not created");
+    return created;
+  });
+
+  app.get("/integration/mats/rules", async () => {
+    const result = await pool.query(`
+      SELECT p.*,
+        COALESCE(json_agg(DISTINCT l.*) FILTER (WHERE l.id IS NOT NULL), '[]') AS lot_size_rules,
+        COALESCE(json_agg(DISTINCT t.*) FILTER (WHERE t.id IS NOT NULL), '[]') AS tick_size_rules,
+        COALESCE(json_agg(DISTINCT b.*) FILTER (WHERE b.id IS NOT NULL), '[]') AS price_band_rules,
+        COALESCE(json_agg(DISTINCT a.*) FILTER (WHERE a.id IS NOT NULL), '[]') AS auto_rejection_rules
+      FROM trading_rule_profiles p
+      LEFT JOIN lot_size_rules l ON l.profile_id = p.id
+      LEFT JOIN tick_size_rules t ON t.profile_id = p.id
+      LEFT JOIN price_band_rules b ON b.profile_id = p.id
+      LEFT JOIN auto_rejection_rules a ON a.profile_id = p.id
+      GROUP BY p.id
+      ORDER BY p.board, p.market_segment
+    `);
+    return result.rows;
+  });
+}
