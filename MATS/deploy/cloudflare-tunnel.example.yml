@@ -1,0 +1,7 @@
+tunnel: mandala-mats
+credentials-file: /etc/cloudflared/mandala-mats.json
+
+ingress:
+  - hostname: mats.internal.example.com
+    service: http://localhost:8082
+  - service: http_status:404
