@@ -1,0 +1,9 @@
+{
+  "name": "mandala-sekuritas",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
