@@ -1,0 +1,21 @@
+services:
+  mats-postgres:
+    image: postgres:17-alpine
+    container_name: mandala-mats-postgres
+    environment:
+      POSTGRES_USER: mandala_mats
+      POSTGRES_PASSWORD: mandala_mats
+      POSTGRES_DB: mandala_mats
+    ports:
+      - "5434:5432"
+    volumes:
+      - mats-postgres-data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mandala_mats -d mandala_mats"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mats-postgres-data:
