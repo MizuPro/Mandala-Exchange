@@ -93,6 +93,17 @@ func (c *Cache) ActiveSessionStatus() domain.SessionStatus {
 	return c.session.Status
 }
 
+// ActiveSessionID returns the BEI session ID from the last successful sync.
+// Returns an empty string if no session has been synced yet.
+func (c *Cache) ActiveSessionID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.session == nil {
+		return ""
+	}
+	return c.session.ID
+}
+
 func (c *Cache) SessionState() domain.SessionStatus {
 	return c.ActiveSessionStatus()
 }
@@ -336,7 +347,7 @@ func resolveLotSize(profile bei.RuleProfile) int64 {
 func validTick(price int64, rules []bei.TickSizeRule) bool {
 	for _, rule := range rules {
 		minPrice := int64(rule.MinPrice)
-		maxPrice := int64(rule.MaxPrice)
+		maxPrice := rule.MaxPrice.Value
 		if price < minPrice {
 			continue
 		}
@@ -355,7 +366,7 @@ func validPriceBand(price, referencePrice int64, rules []bei.PriceBandRule) bool
 	}
 	for _, rule := range rules {
 		minRef := int64(rule.MinReferencePrice)
-		maxRef := int64(rule.MaxReferencePrice)
+		maxRef := rule.MaxReferencePrice.Value
 		if referencePrice < minRef {
 			continue
 		}
@@ -381,7 +392,7 @@ func validAutoRejection(quantity, lotSize, sharesOutstanding int64, rules []bei.
 		if rule.MaxLotsPerOrder > 0 && lots > rule.MaxLotsPerOrder {
 			return false
 		}
-		percent := float64(rule.MaxListedSharesPercent)
+		percent := rule.MaxListedSharesPercent.Value
 		if percent > 0 && sharesOutstanding > 0 {
 			maxShares := int64(math.Floor(float64(sharesOutstanding) * percent / 100))
 			if quantity > maxShares {

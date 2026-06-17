@@ -109,6 +109,14 @@ func (s *Service) Place(ctx context.Context, req PlaceRequest) (Response, error)
 	if response, ok := s.idempotentResponse(req.IdempotencyKey); ok {
 		return response, nil
 	}
+	// Fallback ke persistent store untuk ketahanan setelah restart
+	if req.IdempotencyKey != "" {
+		if existing, err := s.store.FindOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
+			response := Response{Order: existing.Clone(), Trades: nil}
+			s.remember(req.IdempotencyKey, response)
+			return response, nil
+		}
+	}
 
 	sequenceNumber, err := s.seq.Next(ctx)
 	if err != nil {
@@ -201,6 +209,12 @@ func (s *Service) Amend(ctx context.Context, req AmendRequest) (Response, error)
 	if response, ok := s.idempotentResponse(req.IdempotencyKey); ok {
 		return response, nil
 	}
+	// Fallback ke persistent store untuk ketahanan setelah restart
+	if existing, err := s.store.FindOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
+		response := Response{Order: existing.Clone(), Trades: nil}
+		s.remember(req.IdempotencyKey, response)
+		return response, nil
+	}
 	existing, ok := s.engine.Get(req.OrderID)
 	if !ok {
 		return Response{}, matching.ErrOrderNotFound
@@ -279,6 +293,15 @@ func (s *Service) Cancel(ctx context.Context, req CancelRequest) (Response, erro
 	}
 	if response, ok := s.idempotentResponse(req.IdempotencyKey); ok {
 		return response, nil
+	}
+	// Fallback ke persistent store untuk ketahanan setelah restart
+	if existing, err := s.store.FindOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
+		// Jika order sudah cancelled di store, kembalikan langsung
+		if existing.Status == domain.OrderStatusCancelled {
+			response := Response{Order: existing.Clone(), Trades: nil}
+			s.remember(req.IdempotencyKey, response)
+			return response, nil
+		}
 	}
 	if rejectReason := s.rules.ValidateAmend(rules.AmendValidationRequest{OrderID: req.OrderID}); rejectReason != "" {
 		if rejectReason == string(domain.OrderStatusLockedNonCancellable) {

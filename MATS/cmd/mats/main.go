@@ -62,10 +62,14 @@ func main() {
 	if err := rulesCache.Refresh(ctx); err != nil {
 		logger.Warn("initial BEI sync failed; order validation will reject until sync succeeds", "error", err)
 	}
-	go syncRulesPeriodically(ctx, logger, rulesCache, cfg.SyncInterval)
-
 	summaries := marketdata.NewSummaryStore()
-	engine := matching.NewEngine(seq, cfg.SessionID, summaries)
+	// Gunakan session ID dari BEI jika sync berhasil, fallback ke cfg.SessionID
+	initialSessionID := rulesCache.ActiveSessionID()
+	if initialSessionID == "" {
+		initialSessionID = cfg.SessionID
+	}
+	engine := matching.NewEngine(seq, initialSessionID, summaries)
+	go syncRulesPeriodically(ctx, logger, rulesCache, engine, cfg.SyncInterval)
 	hub := marketdata.NewHub()
 	hub.SetProviders(engine, rulesCache)
 	dispatcher := events.NewDispatcher(store, seq, beiClient, hub, events.Config{
@@ -107,7 +111,7 @@ func main() {
 	}
 }
 
-func syncRulesPeriodically(ctx context.Context, logger *slog.Logger, cache *rules.Cache, interval time.Duration) {
+func syncRulesPeriodically(ctx context.Context, logger *slog.Logger, cache *rules.Cache, engine *matching.Engine, interval time.Duration) {
 	if interval <= 0 {
 		return
 	}
@@ -120,6 +124,9 @@ func syncRulesPeriodically(ctx context.Context, logger *slog.Logger, cache *rule
 		case <-ticker.C:
 			if err := cache.Refresh(ctx); err != nil {
 				logger.Warn("periodic BEI sync failed", "error", err)
+			} else {
+				// Perbarui session ID engine agar trade baru memakai session ID aktual dari BEI
+				engine.UpdateSessionID(cache.ActiveSessionID())
 			}
 		}
 	}

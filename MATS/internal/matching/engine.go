@@ -33,6 +33,17 @@ func NewEngine(seq sequence.Generator, sessionID string, summaries *marketdata.S
 	}
 }
 
+// UpdateSessionID updates the session ID used for new trades.
+// Should be called after a successful BEI sync when the active session ID changes.
+func (e *Engine) UpdateSessionID(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.sessionID = sessionID
+}
+
 func (e *Engine) Recover(orders []*domain.Order) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
