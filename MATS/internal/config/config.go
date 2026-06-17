@@ -25,6 +25,7 @@ type Config struct {
 	SessionID             string
 	SyncInterval          time.Duration
 	DeliveryMaxAttempts   int
+	RedisURL              string
 }
 
 func Load() (Config, error) {
@@ -38,6 +39,7 @@ func Load() (Config, error) {
 		SessionID:             getEnv("MATS_SESSION_ID", "local-session"),
 		SyncInterval:          time.Duration(getEnvInt("MATS_SYNC_INTERVAL_SECONDS", 60)) * time.Second,
 		DeliveryMaxAttempts:   getEnvInt("MATS_DELIVERY_MAX_ATTEMPTS", 5),
+		RedisURL:              getEnv("REDIS_URL", "redis://localhost:6379"),
 	}
 
 	rawTokens := getEnv("MATS_SERVICE_TOKENS", "[]")

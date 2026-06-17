@@ -35,6 +35,10 @@ func NewCache(client *bei.Client) *Cache {
 	}
 }
 
+func (c *Cache) Client() *bei.Client {
+	return c.client
+}
+
 func (c *Cache) Refresh(ctx context.Context) error {
 	securities, err := c.client.Securities(ctx)
 	if err != nil {
@@ -104,8 +108,29 @@ func (c *Cache) ActiveSessionID() string {
 	return c.session.ID
 }
 
+// ActiveSessionTemplate returns a copy of the current session template if any.
+func (c *Cache) ActiveSessionTemplate() *bei.SessionTemplate {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.session == nil {
+		return nil
+	}
+	clone := *c.session
+	return &clone
+}
+
 func (c *Cache) SessionState() domain.SessionStatus {
 	return c.ActiveSessionStatus()
+}
+
+func (c *Cache) ListedSymbols() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	symbols := make([]string, 0, len(c.securities))
+	for s := range c.securities {
+		symbols = append(symbols, s)
+	}
+	return symbols
 }
 
 func (c *Cache) ValidatePlace(req PlaceValidationRequest) string {

@@ -137,6 +137,19 @@ func (c *Client) ActiveSession(ctx context.Context) (*SessionTemplate, error) {
 	return session, err
 }
 
+type UpdateSessionStatusPayload struct {
+	SessionID string               `json:"sessionId"`
+	Status    domain.SessionStatus `json:"status"`
+}
+
+func (c *Client) UpdateSessionStatus(ctx context.Context, sessionID string, status domain.SessionStatus) error {
+	payload := UpdateSessionStatusPayload{
+		SessionID: sessionID,
+		Status:    status,
+	}
+	return c.post(ctx, "/integration/mats/sessions/active/status", payload, nil)
+}
+
 func (c *Client) ValidateBroker(ctx context.Context, code string) (BrokerValidation, error) {
 	var validation BrokerValidation
 	err := c.get(ctx, "/brokers/"+strings.ToUpper(code)+"/validate", &validation)

@@ -29,7 +29,7 @@ func NewController(rulesCache *rules.Cache, orderService *orders.Service, dispat
 func (c *Controller) SetStatus(ctx context.Context, status domain.SessionStatus) {
 	_ = ctx
 	c.rules.SetSessionStatus(status)
-	c.publish("", "session_state", map[string]any{
+	c.Publish("", "session_state", map[string]any{
 		"status":      status,
 		"occurred_at": time.Now().UTC(),
 	})
@@ -41,7 +41,7 @@ func (c *Controller) HaltMarket(ctx context.Context, reason string) {
 		reason = "manual_market_halt"
 	}
 	c.rules.SetSessionStatus(domain.SessionHalted)
-	c.publish("", "market_halt", map[string]any{
+	c.Publish("", "market_halt", map[string]any{
 		"status":      "halted",
 		"reason":      reason,
 		"occurred_at": time.Now().UTC(),
@@ -54,12 +54,12 @@ func (c *Controller) ResumeMarket(ctx context.Context, status domain.SessionStat
 		status = domain.SessionContinuous
 	}
 	c.rules.SetSessionStatus(status)
-	c.publish("", "market_halt", map[string]any{
+	c.Publish("", "market_halt", map[string]any{
 		"status":      "resumed",
 		"session":     status,
 		"occurred_at": time.Now().UTC(),
 	})
-	c.publish("", "session_state", map[string]any{
+	c.Publish("", "session_state", map[string]any{
 		"status":      status,
 		"occurred_at": time.Now().UTC(),
 	})
@@ -72,13 +72,13 @@ func (c *Controller) SuspendSymbol(ctx context.Context, symbol, reason string) {
 		reason = "symbol_suspended"
 	}
 	c.rules.SuspendSymbol(symbol, reason)
-	c.publish(symbol, "market_halt", map[string]any{
+	c.Publish(symbol, "market_halt", map[string]any{
 		"symbol":      symbol,
 		"status":      "suspended",
 		"reason":      reason,
 		"occurred_at": time.Now().UTC(),
 	})
-	c.publish(symbol, "special_notation", map[string]any{
+	c.Publish(symbol, "special_notation", map[string]any{
 		"symbol":      symbol,
 		"notations":   []string{"suspend"},
 		"reason":      reason,
@@ -90,12 +90,12 @@ func (c *Controller) ResumeSymbol(ctx context.Context, symbol string) {
 	_ = ctx
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	c.rules.ResumeSymbol(symbol)
-	c.publish(symbol, "market_halt", map[string]any{
+	c.Publish(symbol, "market_halt", map[string]any{
 		"symbol":      symbol,
 		"status":      "resumed",
 		"occurred_at": time.Now().UTC(),
 	})
-	c.publish(symbol, "special_notation", map[string]any{
+	c.Publish(symbol, "special_notation", map[string]any{
 		"symbol":      symbol,
 		"notations":   []string{},
 		"occurred_at": time.Now().UTC(),
@@ -111,7 +111,7 @@ func (c *Controller) StartRandomClosing(maxSeconds int) int {
 		delaySeconds = rand.New(rand.NewSource(time.Now().UnixNano())).Intn(maxSeconds + 1)
 	}
 	c.rules.SetSessionStatus(domain.SessionRandomClosing)
-	c.publish("", "session_state", map[string]any{
+	c.Publish("", "session_state", map[string]any{
 		"status":        domain.SessionRandomClosing,
 		"delay_seconds": delaySeconds,
 		"occurred_at":   time.Now().UTC(),
@@ -121,7 +121,7 @@ func (c *Controller) StartRandomClosing(maxSeconds int) int {
 			time.Sleep(time.Duration(delaySeconds) * time.Second)
 		}
 		c.rules.SetSessionStatus(domain.SessionClosingAuction)
-		c.publish("", "session_state", map[string]any{
+		c.Publish("", "session_state", map[string]any{
 			"status":      domain.SessionClosingAuction,
 			"occurred_at": time.Now().UTC(),
 		})
@@ -138,7 +138,7 @@ func (c *Controller) UncrossAuction(ctx context.Context, symbol string) (domain.
 	if err != nil {
 		return indicative, nil, nil, err
 	}
-	c.publish(strings.ToUpper(strings.TrimSpace(symbol)), "auction_uncrossed", map[string]any{
+	c.Publish(strings.ToUpper(strings.TrimSpace(symbol)), "auction_uncrossed", map[string]any{
 		"indicative":  indicative,
 		"trade_count": len(trades),
 		"occurred_at": time.Now().UTC(),
@@ -151,14 +151,14 @@ func (c *Controller) ExpireOpenOrders(ctx context.Context) ([]*domain.Order, err
 	if err != nil {
 		return nil, err
 	}
-	c.publish("", "expired_orders", map[string]any{
+	c.Publish("", "expired_orders", map[string]any{
 		"count":       len(expired),
 		"occurred_at": time.Now().UTC(),
 	})
 	return expired, nil
 }
 
-func (c *Controller) publish(symbol, eventType string, payload any) {
+func (c *Controller) Publish(symbol, eventType string, payload any) {
 	if c.dispatcher != nil {
 		c.dispatcher.PublishMarketData(symbol, eventType, payload)
 	}
