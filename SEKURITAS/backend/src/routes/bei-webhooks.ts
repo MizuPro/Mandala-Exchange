@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { processSettlement } from "../services/settlement-service.js";
+import { processCorporateAction } from "../services/corporate-action-service.js";
 import { z } from "zod";
 import { requireServiceToken } from "../lib/auth.js";
 
@@ -19,9 +20,16 @@ const settlementWebhookSchema = z.object({
 }).passthrough();
 
 const corporateActionWebhookSchema = z.object({
+  event_id: z.string().min(1).optional(),
+  idempotency_key: z.string().min(1).optional(),
+  corporate_action_id: z.string().min(1).optional(),
+  action_id: z.string().min(1).optional(),
   action_type: z.string().min(1),
-  symbol: z.string().min(1),
-  details: z.unknown().optional(),
+  symbol: z.string().min(1).transform((value) => value.toUpperCase()),
+  title: z.string().optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+  entitlements: z.array(z.record(z.string(), z.unknown())).optional(),
+  generated_ledger_entries: z.array(z.record(z.string(), z.unknown())).optional(),
 }).passthrough();
 
 export default async function beiWebhookRoutes(app: FastifyInstance) {
@@ -56,10 +64,12 @@ export default async function beiWebhookRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid corporate action webhook payload" });
     }
 
-    return reply.status(501).send({
-      error: "Corporate action webhook is not implemented safely yet",
-      action_type: parsed.data.action_type,
-      symbol: parsed.data.symbol.toUpperCase(),
-    });
+    try {
+      const result = await processCorporateAction(parsed.data as any);
+      return reply.send({ success: true, ...result });
+    } catch (error: any) {
+      app.log.error(error, "Corporate action processing failed");
+      return reply.status(500).send({ error: error.message || "Corporate action processing error" });
+    }
   });
 }
