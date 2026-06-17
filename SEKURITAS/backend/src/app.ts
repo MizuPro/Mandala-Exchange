@@ -8,6 +8,8 @@ import orderRoutes from "./routes/orders.js";
 import beiWebhookRoutes from "./routes/bei-webhooks.js";
 import marketRoutes from "./routes/market.js";
 import matsWebhookRoutes from "./routes/mats-webhooks.js";
+import leaderboardRoutes from "./routes/leaderboard.js";
+import notificationRoutes from "./routes/notifications.js";
 
 
 export async function createApp() {
@@ -33,6 +35,8 @@ export async function createApp() {
   await app.register(beiWebhookRoutes, { prefix: "/internal" });
   await app.register(matsWebhookRoutes, { prefix: "/internal/mats" });
   await app.register(marketRoutes, { prefix: "/api/v1/market" });
+  await app.register(leaderboardRoutes, { prefix: "/api/v1/leaderboard" });
+  await app.register(notificationRoutes, { prefix: "/api/v1/notifications" });
 
   return app;
 }

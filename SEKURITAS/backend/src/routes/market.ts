@@ -22,6 +22,86 @@ export default async function marketRoutes(app: FastifyInstance) {
     }
   });
 
-  // Additional endpoints for Announcements, IPO, Corporate Actions would go here
-  // proxying the BEI API.
+  app.get("/securities/:symbol", async (request: any, reply) => {
+    try {
+      const data = await beiClient.getSecurity(request.params.symbol);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch security detail from BEI" });
+    }
+  });
+
+  app.get("/securities/:symbol/fundamentals", async (request: any, reply) => {
+    try {
+      const data = await beiClient.getFundamentals(request.params.symbol);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch fundamentals from BEI" });
+    }
+  });
+
+  app.get("/securities/:symbol/announcements", async (request: any, reply) => {
+    try {
+      const data = await beiClient.getAnnouncements(request.params.symbol);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch issuer announcements from BEI" });
+    }
+  });
+
+  app.get("/announcements", async (request: any, reply) => {
+    const symbol = String(request.query?.symbol || "").trim();
+    if (!symbol) return reply.status(400).send({ error: "symbol query is required" });
+    try {
+      const data = await beiClient.getAnnouncements(symbol);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch issuer announcements from BEI" });
+    }
+  });
+
+  app.get("/corporate-actions", async (_request, reply) => {
+    try {
+      const data = await beiClient.getCorporateActions();
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch corporate actions from BEI" });
+    }
+  });
+
+  app.get("/ipo-events", async (_request, reply) => {
+    try {
+      const data = await beiClient.getIpoEvents();
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch IPO events from BEI" });
+    }
+  });
+
+  app.get("/reports/trades/:sessionId", async (request: any, reply) => {
+    try {
+      const data = await beiClient.getTradesReport(request.params.sessionId);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch trades report from BEI" });
+    }
+  });
+
+  app.get("/reports/settlements/:sessionId", async (request: any, reply) => {
+    try {
+      const data = await beiClient.getSettlementsReport(request.params.sessionId);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch settlements report from BEI" });
+    }
+  });
+
+  app.get("/reports/market-summary/:sessionId", async (request: any, reply) => {
+    try {
+      const data = await beiClient.getMarketSummaryReport(request.params.sessionId);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch market summary report from BEI" });
+    }
+  });
 }

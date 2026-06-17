@@ -23,14 +23,70 @@ export class BeiClient {
     return data;
   }
 
+  private async get(path: string, action: string) {
+    const res = await fetch(`${this.baseUrl}${path}`, { headers: this.headers() });
+    return this.readJson(res, action);
+  }
+
   async getListedSecurities() {
-    const res = await fetch(`${this.baseUrl}/v1/public/securities`, { headers: this.headers() });
-    return this.readJson(res, "Fetch securities from BEI");
+    return this.get("/v1/public/securities", "Fetch securities from BEI");
   }
 
   async getFeeSchedule() {
-    const res = await fetch(`${this.baseUrl}/v1/public/fee-schedule`, { headers: this.headers() });
-    return this.readJson(res, "Fetch fee schedule from BEI");
+    return this.get("/v1/public/fee-schedule", "Fetch fee schedule from BEI");
+  }
+
+  async getSecurity(symbol: string) {
+    return this.get(`/v1/public/securities/${encodeURIComponent(symbol.toUpperCase())}`, "Fetch security detail from BEI");
+  }
+
+  async getFundamentals(symbol: string) {
+    return this.get(`/v1/public/securities/${encodeURIComponent(symbol.toUpperCase())}/fundamentals`, "Fetch fundamentals from BEI");
+  }
+
+  async getCorporateActions() {
+    return this.get("/v1/reports/corporate-actions", "Fetch corporate actions from BEI");
+  }
+
+  async getIpoEvents() {
+    return this.get("/v1/ipo-events", "Fetch IPO events from BEI");
+  }
+
+  async getAnnouncements(symbol: string) {
+    const security = await this.getSecurity(symbol);
+    const issuerId = security?.issuer_id || security?.issuerId;
+    if (!issuerId) return [];
+    return this.get(`/v1/issuers/${encodeURIComponent(issuerId)}/announcements`, "Fetch issuer announcements from BEI");
+  }
+
+  async getSettlementSession(sessionId: string) {
+    return this.get(`/v1/settlement/session/${encodeURIComponent(sessionId)}`, "Fetch settlement session from BEI");
+  }
+
+  async getCustodySummary(brokerCode: string, investorId: string) {
+    return this.get(
+      `/v1/custody/accounts/${encodeURIComponent(brokerCode)}/${encodeURIComponent(investorId)}/summary`,
+      "Fetch custody summary from BEI"
+    );
+  }
+
+  async getReconciliation(brokerCode: string, investorId: string) {
+    return this.get(
+      `/v1/reconciliation/${encodeURIComponent(brokerCode)}/${encodeURIComponent(investorId)}`,
+      "Fetch reconciliation from BEI"
+    );
+  }
+
+  async getTradesReport(sessionId: string) {
+    return this.get(`/v1/reports/trades/${encodeURIComponent(sessionId)}`, "Fetch trades report from BEI");
+  }
+
+  async getSettlementsReport(sessionId: string) {
+    return this.get(`/v1/reports/settlements/${encodeURIComponent(sessionId)}`, "Fetch settlements report from BEI");
+  }
+
+  async getMarketSummaryReport(sessionId: string) {
+    return this.get(`/v1/reports/market-summary/${encodeURIComponent(sessionId)}`, "Fetch market summary from BEI");
   }
 }
 
