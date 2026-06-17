@@ -9,7 +9,12 @@ function targetUrl(target: WebhookTarget) {
 
 export async function postSekuritasWebhook(target: WebhookTarget, payload: unknown) {
   const url = targetUrl(target);
-  if (!url) return { skipped: true, reason: "webhook_url_not_configured" };
+  if (!url) {
+    if (target === "settlement") {
+      throw new Error("SEKURITAS_SETTLEMENT_WEBHOOK_URL is not configured — cannot skip settlement notification");
+    }
+    return { skipped: true, reason: "webhook_url_not_configured" };
+  }
 
   const response = await fetch(url, {
     method: "POST",

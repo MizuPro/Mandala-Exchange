@@ -10,6 +10,7 @@ const authScopeSchema = z.enum([
   "broker:read",
   "trade:capture",
   "trade:read",
+  "session:write",
   "settlement:read",
   "settlement:write",
   "custody:read",
@@ -35,7 +36,7 @@ const defaultServiceTokens: ServiceIdentity[] = [
   {
     name: "mats",
     token: "dev-mats-service-token-change-me",
-    scopes: ["market:read", "rules:read", "broker:read", "trade:capture", "market-summary:write"]
+    scopes: ["market:read", "rules:read", "broker:read", "trade:capture", "market-summary:write", "session:write"]
   },
   {
     name: "sekuritas",
@@ -75,3 +76,10 @@ const configSchema = z.object({
 });
 
 export const config = configSchema.parse(process.env);
+
+if (!config.SEKURITAS_SETTLEMENT_WEBHOOK_URL) {
+  if (config.NODE_ENV === "production") {
+    throw new Error("SEKURITAS_SETTLEMENT_WEBHOOK_URL is required in production");
+  }
+  console.warn("[Config] SEKURITAS_SETTLEMENT_WEBHOOK_URL is not set — settlement notifications will fail");
+}

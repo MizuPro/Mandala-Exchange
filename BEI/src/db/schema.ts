@@ -382,17 +382,27 @@ export const trades = pgTable(
   })
 );
 
-export const settlementBatches = pgTable("settlement_batches", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  sessionId: text("session_id").notNull(),
-  mode: settlementModeEnum("mode").notNull().default("end_of_session"),
-  status: settlementStatusEnum("status").notNull().default("pending"),
-  scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull().defaultNow(),
-  processedAt: timestamp("processed_at", { withTimezone: true }),
-  errorMessage: text("error_message"),
-  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
-  ...timestamps
-});
+export const settlementBatches = pgTable(
+  "settlement_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: text("session_id").notNull(),
+    mode: settlementModeEnum("mode").notNull().default("end_of_session"),
+    status: settlementStatusEnum("status").notNull().default("pending"),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    notificationStatus: text("notification_status").notNull().default("pending"),
+    notificationAttempts: integer("notification_attempts").notNull().default(0),
+    lastNotificationError: text("last_notification_error"),
+    errorMessage: text("error_message"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    sessionUq: uniqueIndex("settlement_batches_session_uq").on(table.sessionId)
+  })
+);
 
 export const settlementInstructions = pgTable(
   "settlement_instructions",

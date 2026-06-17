@@ -8,6 +8,7 @@ export type AuthScope =
   | "broker:read"
   | "trade:capture"
   | "trade:read"
+  | "session:write"
   | "settlement:read"
   | "settlement:write"
   | "custody:read"

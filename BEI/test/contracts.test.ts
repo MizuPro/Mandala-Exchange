@@ -58,7 +58,7 @@ describe("BEI integration contract guard", () => {
     expect(findIdentity("not-a-valid-token")).toBeUndefined();
   });
 
-  it("allows MATS only for market/rules/broker reads, trade capture, and market summary write", () => {
+  it("allows MATS only for market/rules/broker reads, trade capture, market summary write, and session status sync", () => {
     const mats = identityFor("mats");
 
     expect(serviceCanAccess(mats, "GET", "/v1/integration/mats/rules")).toBe(true);
@@ -66,6 +66,7 @@ describe("BEI integration contract guard", () => {
     expect(serviceCanAccess(mats, "GET", "/v1/brokers/:code/validate")).toBe(true);
     expect(serviceCanAccess(mats, "POST", "/v1/trades/capture")).toBe(true);
     expect(serviceCanAccess(mats, "POST", "/v1/market-summaries")).toBe(true);
+    expect(serviceCanAccess(mats, "POST", "/v1/integration/mats/sessions/active/status")).toBe(true);
     expect(serviceCanAccess(mats, "POST", "/v1/issuers")).toBe(false);
     expect(serviceCanAccess(mats, "POST", "/v1/settlement/batches/:id/process")).toBe(false);
   });

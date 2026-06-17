@@ -18,6 +18,7 @@ import { actorFromRequest, correlationIdFromRequest, writeAudit } from "../lib/a
 import { badRequest } from "../lib/errors.js";
 import { boardTypes, sessionStatuses, settlementModes, tradingHaltStatuses } from "../types/enums.js";
 import { publishMarketUpdate } from "../lib/redis.js";
+import { config } from "../config.js";
 
 const profileBody = z.object({
   name: z.string().min(3),
@@ -98,6 +99,12 @@ const haltBody = z.object({
   endedAt: z.coerce.date().optional(),
   metadata: z.record(z.unknown()).default({})
 });
+
+function internalSettlementToken() {
+  return config.BEI_SERVICE_TOKENS.find((identity) =>
+    identity.scopes.includes("admin:*") || identity.scopes.includes("settlement:write")
+  )?.token;
+}
 
 export async function registerRuleRoutes(app: FastifyInstance) {
   app.get("/rules/profiles", async () => db.select().from(tradingRuleProfiles).orderBy(tradingRuleProfiles.name));
@@ -202,7 +209,9 @@ export async function registerRuleRoutes(app: FastifyInstance) {
   app.post("/integration/mats/sessions/active/status", async (request) => {
     const body = z.object({
       sessionId: z.string().uuid(),
-      status: z.enum(sessionStatuses)
+      status: z.enum(sessionStatuses),
+      expectedTradeCount: z.coerce.number().int().min(0).optional(),
+      finalTradeSequence: z.coerce.number().int().min(0).optional()
     }).parse(request.body);
 
     const [updated] = await db
@@ -215,29 +224,49 @@ export async function registerRuleRoutes(app: FastifyInstance) {
 
     // Auto-Settlement Trigger
     if (body.status === "closed") {
-      try {
-        const createRes = await app.inject({
-          method: "POST",
-          url: "/v1/settlement/batches",
-          headers: { "x-service-token": request.headers["x-service-token"] as string },
-          payload: { sessionId: body.sessionId, mode: "end_of_session" }
-        });
-        
-        if (createRes.statusCode >= 200 && createRes.statusCode < 300) {
-          const createData = JSON.parse(createRes.body);
-          if (createData.batch && createData.batch.id) {
-            await app.inject({
-              method: "POST",
-              url: `/v1/settlement/batches/${createData.batch.id}/process`,
-              headers: { "x-service-token": request.headers["x-service-token"] as string }
-            });
-            console.log(`[Auto-Settlement] Successfully created and processed batch for session ${body.sessionId}`);
-          }
-        } else {
-          console.error(`[Auto-Settlement] Failed to create batch: ${createRes.body}`);
+      // Trade capture finality barrier: if MATS provides an expected trade count,
+      // verify that BEI has captured all trades before proceeding with settlement.
+      if (body.expectedTradeCount !== undefined && body.expectedTradeCount > 0) {
+        const capturedResult = await pool.query(
+          `SELECT COUNT(*) AS trade_count FROM trades WHERE session_id = $1`,
+          [body.sessionId]
+        );
+        const capturedCount = Number(capturedResult.rows[0]?.trade_count || 0);
+        if (capturedCount < body.expectedTradeCount) {
+          throw badRequest(
+            `Settlement blocked: expected ${body.expectedTradeCount} trades but only ${capturedCount} captured. ` +
+            `Waiting for trade delivery to complete before settlement.`
+          );
         }
-      } catch (err) {
-        console.error(`[Auto-Settlement] Error triggering settlement:`, err);
+      }
+
+      const settlementToken = internalSettlementToken();
+      if (!settlementToken) {
+        throw badRequest("No internal settlement-capable service token configured — cannot trigger auto-settlement");
+      }
+
+      const createRes = await app.inject({
+        method: "POST",
+        url: "/v1/settlement/batches",
+        headers: { "x-service-token": settlementToken },
+        payload: { sessionId: body.sessionId, mode: "end_of_session" }
+      });
+
+      if (createRes.statusCode < 200 || createRes.statusCode >= 300) {
+        throw new Error(`[Auto-Settlement] Failed to create batch: ${createRes.statusCode} ${createRes.body}`);
+      }
+
+      const createData = JSON.parse(createRes.body);
+      if (createData.batch && createData.batch.id) {
+        const processRes = await app.inject({
+          method: "POST",
+          url: `/v1/settlement/batches/${createData.batch.id}/process`,
+          headers: { "x-service-token": settlementToken }
+        });
+        if (processRes.statusCode < 200 || processRes.statusCode >= 300) {
+          throw new Error(`[Auto-Settlement] Failed to process settlement batch: ${processRes.statusCode} ${processRes.body}`);
+        }
+        console.log(`[Auto-Settlement] Successfully created and processed batch for session ${body.sessionId}`);
       }
     }
 

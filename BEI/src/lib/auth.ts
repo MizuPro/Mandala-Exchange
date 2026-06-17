@@ -12,6 +12,7 @@ const routePermissions: RoutePermission[] = [
   { method: "GET", path: "/v1/integration/mats/securities", scopes: ["market:read"] },
   { method: "GET", path: "/v1/integration/mats/rules", scopes: ["rules:read"] },
   { method: "GET", path: "/v1/integration/mats/sessions/active", scopes: ["rules:read"] },
+  { method: "POST", path: "/v1/integration/mats/sessions/active/status", scopes: ["session:write"] },
   { method: "GET", path: "/v1/brokers/:code/validate", scopes: ["broker:read"] },
   { method: "POST", path: "/v1/trades/capture", scopes: ["trade:capture"] },
   { method: "POST", path: "/v1/market-summaries", scopes: ["market-summary:write"] },

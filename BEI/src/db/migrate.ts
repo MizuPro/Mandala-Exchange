@@ -336,11 +336,20 @@ CREATE TABLE IF NOT EXISTS settlement_batches (
   status settlement_status NOT NULL DEFAULT 'pending',
   scheduled_for timestamptz NOT NULL DEFAULT now(),
   processed_at timestamptz,
+  notified_at timestamptz,
+  notification_status text NOT NULL DEFAULT 'pending',
+  notification_attempts integer NOT NULL DEFAULT 0,
+  last_notification_error text,
   error_message text,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE settlement_batches ADD COLUMN IF NOT EXISTS notified_at timestamptz;
+ALTER TABLE settlement_batches ADD COLUMN IF NOT EXISTS notification_status text NOT NULL DEFAULT 'pending';
+ALTER TABLE settlement_batches ADD COLUMN IF NOT EXISTS notification_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE settlement_batches ADD COLUMN IF NOT EXISTS last_notification_error text;
+CREATE UNIQUE INDEX IF NOT EXISTS settlement_batches_session_uq ON settlement_batches(session_id);
 
 CREATE TABLE IF NOT EXISTS settlement_instructions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

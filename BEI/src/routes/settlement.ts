@@ -41,7 +41,7 @@ async function notifySekuritasSettlement(sessionId: string, batchId: string) {
     {
       mats_order_id: trade.buy_order_id,
       trade_id: trade.mats_trade_id,
-      idempotency_key: `settlement:${batchId}:${trade.mats_trade_id}:buy`,
+      idempotency_key: `settlement:${sessionId}:${trade.mats_trade_id}:buy`,
       price: Number(trade.price),
       quantity: Number(trade.quantity),
       side: "BUY",
@@ -50,7 +50,7 @@ async function notifySekuritasSettlement(sessionId: string, batchId: string) {
     {
       mats_order_id: trade.sell_order_id,
       trade_id: trade.mats_trade_id,
-      idempotency_key: `settlement:${batchId}:${trade.mats_trade_id}:sell`,
+      idempotency_key: `settlement:${sessionId}:${trade.mats_trade_id}:sell`,
       price: Number(trade.price),
       quantity: Number(trade.quantity),
       side: "SELL",
@@ -71,10 +71,14 @@ async function notifySekuritasSettlement(sessionId: string, batchId: string) {
 export async function registerSettlementRoutes(app: FastifyInstance) {
   app.post("/settlement/batches", async (request) => {
     const body = batchBody.parse(request.body);
-    const [batch] = await db
+    const [createdBatch] = await db
       .insert(settlementBatches)
       .values({ sessionId: body.sessionId, mode: body.mode, scheduledFor: body.scheduledFor })
+      .onConflictDoNothing({ target: settlementBatches.sessionId })
       .returning();
+    const [batch] = createdBatch
+      ? [createdBatch]
+      : await db.select().from(settlementBatches).where(eq(settlementBatches.sessionId, body.sessionId)).limit(1);
     if (!batch) throw badRequest("Settlement batch was not created");
 
     const sessionTrades = await loadTradeContext(body.sessionId);
@@ -103,7 +107,7 @@ export async function registerSettlementRoutes(app: FastifyInstance) {
             securityId: trade.security_id,
             quantity: trade.quantity,
             cashAmount: "0",
-            idempotencyKey: `settlement:${batch.id}:${trade.id}:security`
+            idempotencyKey: `settlement:${body.sessionId}:${trade.id}:security`
           },
           {
             batchId: batch.id,
@@ -115,7 +119,7 @@ export async function registerSettlementRoutes(app: FastifyInstance) {
             securityId: trade.security_id,
             quantity: "0",
             cashAmount: trade.value,
-            idempotencyKey: `settlement:${batch.id}:${trade.id}:cash`
+            idempotencyKey: `settlement:${body.sessionId}:${trade.id}:cash`
           }
         ])
         .onConflictDoNothing();
@@ -220,8 +224,32 @@ export async function registerSettlementRoutes(app: FastifyInstance) {
       .set({ status: "settled", processedAt: new Date(), updatedAt: new Date() })
       .where(eq(settlementBatches.id, params.id))
       .returning();
-    await notifySekuritasSettlement(batch.sessionId, batch.id);
-    return updatedBatch;
+    try {
+      await notifySekuritasSettlement(batch.sessionId, batch.id);
+      const [notifiedBatch] = await db
+        .update(settlementBatches)
+        .set({
+          notificationStatus: "sent",
+          notificationAttempts: sql`${settlementBatches.notificationAttempts} + 1` as any,
+          lastNotificationError: null,
+          notifiedAt: new Date(),
+          updatedAt: new Date()
+        })
+        .where(eq(settlementBatches.id, params.id))
+        .returning();
+      return notifiedBatch || updatedBatch;
+    } catch (error: any) {
+      await db
+        .update(settlementBatches)
+        .set({
+          notificationStatus: "failed",
+          notificationAttempts: sql`${settlementBatches.notificationAttempts} + 1` as any,
+          lastNotificationError: error?.message || "Settlement notification failed",
+          updatedAt: new Date()
+        })
+        .where(eq(settlementBatches.id, params.id));
+      throw error;
+    }
   });
 
   app.get("/settlement/session/:sessionId", async (request) => {
