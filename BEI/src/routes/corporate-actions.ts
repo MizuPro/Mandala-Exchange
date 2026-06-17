@@ -15,6 +15,7 @@ import { badRequest, notFound } from "../lib/errors.js";
 import { corporateActionStatuses, corporateActionTypes, ipoStatuses } from "../types/enums.js";
 import { ensureCustodyAccount } from "../services/custody.js";
 import { toNumber } from "../lib/number.js";
+import { postSekuritasWebhook } from "../services/sekuritas-webhook.js";
 
 const corporateActionBody = z.object({
   securityId: z.string().uuid(),
@@ -50,15 +51,94 @@ const ipoEventBody = z.object({
 async function positiveSecurityPositions(securityId: string) {
   const result = await pool.query(
     `
-    SELECT custody_account_id, SUM(quantity) AS quantity
-    FROM custody_ledger_entries
-    WHERE security_id = $1 AND asset_type = 'security'
-    GROUP BY custody_account_id
-    HAVING SUM(quantity) > 0
+    SELECT cle.custody_account_id, ca.investor_id, ca.sid, ca.sre, ca.rdn, bm.code AS broker_code, SUM(cle.quantity) AS quantity
+    FROM custody_ledger_entries cle
+    JOIN custody_accounts ca ON ca.id = cle.custody_account_id
+    JOIN broker_members bm ON bm.id = ca.broker_id
+    WHERE cle.security_id = $1 AND cle.asset_type = 'security'
+    GROUP BY cle.custody_account_id, ca.id, bm.id
+    HAVING SUM(cle.quantity) > 0
     `,
     [securityId]
   );
-  return result.rows as Array<{ custody_account_id: string; quantity: string }>;
+  return result.rows as Array<{
+    custody_account_id: string;
+    investor_id: string;
+    sid: string;
+    sre: string;
+    rdn: string;
+    broker_code: string;
+    quantity: string;
+  }>;
+}
+
+function entitlementFromLedgerRow(row: any, position: Awaited<ReturnType<typeof positiveSecurityPositions>>[number], symbol: string) {
+  return {
+    broker_account_id: position.investor_id,
+    investor_id: position.investor_id,
+    broker_code: position.broker_code,
+    custody_account_id: position.custody_account_id,
+    sid: position.sid,
+    sre: position.sre,
+    rdn: position.rdn,
+    symbol,
+    asset_type: row.assetType,
+    quantity: row.quantity,
+    cash_amount: row.cashAmount,
+    idempotency_key: row.idempotencyKey
+  };
+}
+
+async function existingEntitlementsForAction(actionId: string, symbol: string) {
+  const result = await pool.query(
+    `
+    SELECT cle.*, ca.investor_id, ca.sid, ca.sre, ca.rdn, bm.code AS broker_code
+    FROM custody_ledger_entries cle
+    JOIN custody_accounts ca ON ca.id = cle.custody_account_id
+    JOIN broker_members bm ON bm.id = ca.broker_id
+    WHERE cle.reference_type = 'corporate_action' AND cle.reference_id = $1
+    ORDER BY cle.created_at
+    `,
+    [actionId]
+  );
+  return result.rows.map((row) => ({
+    broker_account_id: row.investor_id,
+    investor_id: row.investor_id,
+    broker_code: row.broker_code,
+    custody_account_id: row.custody_account_id,
+    sid: row.sid,
+    sre: row.sre,
+    rdn: row.rdn,
+    symbol,
+    asset_type: row.asset_type,
+    quantity: row.quantity,
+    cash_amount: row.cash_amount,
+    idempotency_key: row.idempotency_key
+  }));
+}
+
+async function sendCorporateActionWebhook(action: typeof corporateActions.$inferSelect, symbol: string, entitlements: unknown[]) {
+  await postSekuritasWebhook("corporate_action", {
+    event_id: `bei:corporate-action:${action.id}:completed`,
+    idempotency_key: action.idempotencyKey || `bei:corporate-action:${action.id}:completed`,
+    corporate_action_id: action.id,
+    action_type: action.type,
+    symbol,
+    title: action.title,
+    details: {
+      security_id: action.securityId,
+      ratio_numerator: action.ratioNumerator,
+      ratio_denominator: action.ratioDenominator,
+      cash_amount_per_share: action.cashAmountPerShare,
+      exercise_price: action.exercisePrice,
+      announcement_date: action.announcementDate,
+      recording_date: action.recordingDate,
+      execution_date: action.executionDate,
+      description: action.description,
+      metadata: action.metadata
+    },
+    entitlements
+  });
 }
 
 export async function registerCorporateActionRoutes(app: FastifyInstance) {
@@ -86,16 +166,23 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const [action] = await db.select().from(corporateActions).where(eq(corporateActions.id, params.id));
     if (!action) throw notFound("Corporate action not found");
-    if (action.status === "completed") return { idempotent: true, corporateAction: action };
+    const [security] = await db.select().from(listedSecurities).where(eq(listedSecurities.id, action.securityId));
+    if (!security) throw notFound("Security not found");
+    if (action.status === "completed") {
+      const entitlements = await existingEntitlementsForAction(action.id, security.symbol);
+      await sendCorporateActionWebhook(action, security.symbol, entitlements);
+      return { idempotent: true, corporateAction: action, webhookEntitlements: entitlements.length };
+    }
 
     const positions = await positiveSecurityPositions(action.securityId);
     const ledgerRows = [];
+    const entitlements = [];
 
     for (const position of positions) {
       const quantity = toNumber(position.quantity);
       if (action.type === "cash_dividend") {
         const amount = quantity * toNumber(action.cashAmountPerShare);
-        ledgerRows.push({
+        const row = {
           custodyAccountId: position.custody_account_id,
           securityId: action.securityId,
           entryType: "cash_dividend" as const,
@@ -106,7 +193,9 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
           referenceType: "corporate_action",
           referenceId: action.id,
           idempotencyKey: `ledger:ca:${action.id}:${position.custody_account_id}:cash-dividend`
-        });
+        };
+        ledgerRows.push(row);
+        entitlements.push(entitlementFromLedgerRow(row, position, security.symbol));
       }
 
       if (action.type === "stock_split" || action.type === "reverse_split") {
@@ -114,7 +203,7 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
         const denominator = toNumber(action.ratioDenominator, 1);
         const adjusted = quantity * (numerator / denominator);
         const delta = adjusted - quantity;
-        ledgerRows.push({
+        const row = {
           custodyAccountId: position.custody_account_id,
           securityId: action.securityId,
           entryType: action.type,
@@ -125,14 +214,16 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
           referenceType: "corporate_action",
           referenceId: action.id,
           idempotencyKey: `ledger:ca:${action.id}:${position.custody_account_id}:${action.type}`
-        });
+        };
+        ledgerRows.push(row);
+        entitlements.push(entitlementFromLedgerRow(row, position, security.symbol));
       }
 
       if (action.type === "bonus_share") {
         const numerator = toNumber(action.ratioNumerator, 1);
         const denominator = toNumber(action.ratioDenominator, 1);
         const bonus = quantity * (numerator / denominator);
-        ledgerRows.push({
+        const row = {
           custodyAccountId: position.custody_account_id,
           securityId: action.securityId,
           entryType: "bonus_share" as const,
@@ -143,14 +234,16 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
           referenceType: "corporate_action",
           referenceId: action.id,
           idempotencyKey: `ledger:ca:${action.id}:${position.custody_account_id}:bonus`
-        });
+        };
+        ledgerRows.push(row);
+        entitlements.push(entitlementFromLedgerRow(row, position, security.symbol));
       }
 
       if (action.type === "rights_issue" || action.type === "warrant") {
         const numerator = toNumber(action.ratioNumerator, 1);
         const denominator = toNumber(action.ratioDenominator, 1);
         const entitlement = quantity * (numerator / denominator);
-        ledgerRows.push({
+        const row = {
           custodyAccountId: position.custody_account_id,
           securityId: action.securityId,
           entryType: action.type,
@@ -161,7 +254,9 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
           referenceType: "corporate_action",
           referenceId: action.id,
           idempotencyKey: `ledger:ca:${action.id}:${position.custody_account_id}:${action.type}`
-        });
+        };
+        ledgerRows.push(row);
+        entitlements.push(entitlementFromLedgerRow(row, position, security.symbol));
       }
     }
 
@@ -174,7 +269,8 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
       .set({ status: "completed", updatedAt: new Date() })
       .where(eq(corporateActions.id, action.id))
       .returning();
-    return { corporateAction: updated, generatedLedgerEntries: ledgerRows.length };
+    await sendCorporateActionWebhook(action, security.symbol, entitlements);
+    return { corporateAction: updated, generatedLedgerEntries: ledgerRows.length, webhookEntitlements: entitlements.length };
   });
 
   app.post("/ipo-events", async (request) => {

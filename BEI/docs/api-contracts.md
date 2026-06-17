@@ -41,8 +41,70 @@ Expected scopes: `market:read`, `rules:read`, `broker:read`, `trade:capture`, `m
 - `GET /v1/corporate-actions`
 - `GET /v1/reports/trades/:sessionId`
 - `GET /v1/reports/settlements/:sessionId`
+- `GET /v1/reports/corporate-actions`
+- `GET /v1/ipo-events`
 
 Expected scopes: `market:read`, `rules:read`, `broker:read`, `settlement:read`, `custody:read`, `corporate-action:read`, `report:read`.
+
+## BEI -> Sekuritas Webhooks
+
+BEI sends settlement and corporate action results to Sekuritas when the corresponding process endpoint completes.
+
+### Settlement Completed
+
+Target: `SEKURITAS_SETTLEMENT_WEBHOOK_URL`
+
+```json
+{
+  "session_id": "SESSION-1",
+  "batch_id": "settlement-batch-id",
+  "status": "COMPLETED",
+  "details": [
+    {
+      "mats_order_id": "MATS-O-1",
+      "trade_id": "MATS-T-1",
+      "idempotency_key": "settlement:settlement-batch-id:MATS-T-1:buy",
+      "price": 100,
+      "quantity": 100,
+      "side": "BUY",
+      "settled_at": "2026-06-17T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Corporate Action Completed
+
+Target: `SEKURITAS_CORPORATE_ACTION_WEBHOOK_URL`
+
+```json
+{
+  "event_id": "bei:corporate-action:ca-id:completed",
+  "idempotency_key": "bei:corporate-action:ca-id:completed",
+  "corporate_action_id": "ca-id",
+  "action_type": "stock_split",
+  "symbol": "MNDL",
+  "details": {
+    "ratio_numerator": "2",
+    "ratio_denominator": "1",
+    "recording_date": "2026-06-17"
+  },
+  "entitlements": [
+    {
+      "broker_account_id": "sekuritas-broker-account-id",
+      "broker_code": "MANDALA",
+      "custody_account_id": "bei-custody-account-id",
+      "asset_type": "security",
+      "symbol": "MNDL",
+      "quantity": "100.0000",
+      "cash_amount": "0",
+      "idempotency_key": "ledger:ca:ca-id:bei-custody-account-id:stock_split"
+    }
+  ]
+}
+```
+
+Outbound requests use `BEI_TO_SEKURITAS_TOKEN` as `x-service-token`. Corporate action entitlements map BEI `custody_accounts.investor_id` back to Sekuritas `broker_accounts.id`.
 
 ## Admin/Operator Consumes
 

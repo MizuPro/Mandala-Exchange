@@ -12,7 +12,7 @@ import {
 import { badRequest, notFound } from "../lib/errors.js";
 import { settlementModes } from "../types/enums.js";
 import { ensureCustodyAccount } from "../services/custody.js";
-import { config } from "../config.js";
+import { postSekuritasWebhook } from "../services/sekuritas-webhook.js";
 
 const batchBody = z.object({
   sessionId: z.string().min(1),
@@ -36,8 +36,6 @@ async function loadTradeContext(sessionId: string) {
 }
 
 async function notifySekuritasSettlement(sessionId: string, batchId: string) {
-  if (!config.SEKURITAS_SETTLEMENT_WEBHOOK_URL) return;
-
   const sessionTrades = await loadTradeContext(sessionId);
   const details = sessionTrades.flatMap((trade) => [
     {
@@ -62,23 +60,12 @@ async function notifySekuritasSettlement(sessionId: string, batchId: string) {
 
   if (details.length === 0) return;
 
-  const response = await fetch(config.SEKURITAS_SETTLEMENT_WEBHOOK_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(config.BEI_TO_SEKURITAS_TOKEN ? { "x-service-token": config.BEI_TO_SEKURITAS_TOKEN } : {})
-    },
-    body: JSON.stringify({
-      session_id: sessionId,
-      batch_id: batchId,
-      status: "COMPLETED",
-      details
-    })
+  await postSekuritasWebhook("settlement", {
+    session_id: sessionId,
+    batch_id: batchId,
+    status: "COMPLETED",
+    details
   });
-
-  if (!response.ok) {
-    throw badRequest(`Sekuritas settlement webhook failed: ${response.status} ${response.statusText}`);
-  }
 }
 
 export async function registerSettlementRoutes(app: FastifyInstance) {
