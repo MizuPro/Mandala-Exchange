@@ -78,10 +78,10 @@ export const orders = pgTable("orders", {
   mats_order_id: text("mats_order_id"),
   broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
   symbol: text("symbol").notNull(),
-  side: text("side").notNull(), // BUY, SELL
-  order_type: text("order_type").notNull().default("LIMIT"), // LIMIT, MARKET
+  side: text("side").notNull(), // buy, sell
+  order_type: text("order_type").notNull().default("limit"), // limit, market
   price: numeric("price").notNull(),
-  quantity: integer("quantity").notNull(),
+  original_quantity: integer("original_quantity").notNull(),
   filled_quantity: integer("filled_quantity").notNull().default(0),
   remaining_quantity: integer("remaining_quantity").notNull(),
   reserved_amount: numeric("reserved_amount").notNull().default("0"),
@@ -102,9 +102,9 @@ export const order_amendments = pgTable("order_amendments", {
   id: uuid("id").primaryKey().defaultRandom(),
   order_id: uuid("order_id").references(() => orders.id).notNull(),
   old_price: numeric("old_price").notNull(),
-  old_quantity: integer("old_quantity").notNull(),
+  old_original_quantity: integer("old_original_quantity").notNull(),
   new_price: numeric("new_price").notNull(),
-  new_quantity: integer("new_quantity").notNull(),
+  new_original_quantity: integer("new_original_quantity").notNull(),
   status: text("status").notNull(), // pending, accepted, rejected
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),

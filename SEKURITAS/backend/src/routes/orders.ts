@@ -8,11 +8,11 @@ import { authenticateActiveUser } from "../lib/auth.js";
 
 const placeOrderSchema = z.object({
   symbol: z.string().trim().min(1).max(12).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()),
-  side: z.enum(["BUY", "SELL", "buy", "sell"]).transform((value) => value.toUpperCase() as "BUY" | "SELL"),
-  order_type: z.enum(["LIMIT", "MARKET", "limit", "market"]).default("LIMIT").transform((value) => value.toUpperCase() as "LIMIT" | "MARKET"),
+  side: z.enum(["BUY", "SELL", "buy", "sell"]).transform((value) => value.toLowerCase() as "buy" | "sell"),
+  order_type: z.enum(["LIMIT", "MARKET", "limit", "market"]).default("limit").transform((value) => value.toLowerCase() as "limit" | "market"),
   price: z.coerce.number().finite().int().positive().optional(),
   quantity: z.coerce.number().finite().int().positive(),
-}).refine((value) => value.order_type === "MARKET" || value.price !== undefined, {
+}).refine((value) => value.order_type === "market" || value.price !== undefined, {
   message: "price is required for limit orders",
 });
 

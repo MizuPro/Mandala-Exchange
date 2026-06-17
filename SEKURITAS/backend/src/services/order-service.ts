@@ -8,7 +8,7 @@ import { matsClient } from "./mats-client.js";
 import { createNotificationTx } from "./notification-service.js";
 
 const BROKER_CODE = process.env.BROKER_CODE || "MANDALA";
-type BrokerOrderType = "LIMIT" | "MARKET";
+type BrokerOrderType = "limit" | "market";
 
 function idempotencyKey(prefix: string) {
   return `${prefix}-${crypto.randomBytes(12).toString("hex")}`;
@@ -35,7 +35,7 @@ function matsOrderToWebhookPayload(matsOrder: any, trades: any[] = []) {
       mats_order_id: matsOrder.id,
       price: Number(trade.price),
       quantity: Number(trade.quantity),
-      side: trade.buy_order_id === matsOrder.id ? "BUY" : "SELL",
+      side: trade.buy_order_id === matsOrder.id ? "buy" : "sell",
       occurred_at: trade.occurred_at,
       idempotency_key: trade.idempotency_key || `trade:${trade.id}:${matsOrder.id}`,
     }));
@@ -55,13 +55,13 @@ async function reserveForOrder(
   tx: any,
   brokerAccountId: string,
   symbol: string,
-  side: "BUY" | "SELL",
+  side: "buy" | "sell",
   price: number,
   quantity: number,
   orderType: BrokerOrderType
 ) {
-  if (side === "BUY") {
-    if (orderType === "MARKET") {
+  if (side === "buy") {
+    if (orderType === "market") {
       const [cash] = await tx
         .select()
         .from(cash_balances)
@@ -83,7 +83,7 @@ async function reserveForOrder(
     }
 
     const grossValue = price * quantity;
-    const fee = await estimateFee(grossValue, "BUY");
+    const fee = await estimateFee(grossValue, "BUY"); // Fee service might still expect uppercase BUY
     const totalRequired = grossValue + fee.totalFee;
     const [updatedCash] = await tx
       .update(cash_balances)
@@ -190,19 +190,19 @@ async function applySellReserveAdjustment(tx: any, brokerAccountId: string, symb
 export async function placeOrder(
   userId: string,
   symbol: string,
-  side: "BUY" | "SELL",
+  side: "buy" | "sell",
   price: number | undefined,
   quantity: number,
-  orderType: BrokerOrderType = "LIMIT"
+  orderType: BrokerOrderType = "limit"
 ) {
   const [brokerAcc] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, userId)).limit(1);
   if (!brokerAcc) throw new Error("Broker account not found");
   if (brokerAcc.status !== "ACTIVE") throw new Error("Broker account is not active");
-  if (orderType === "LIMIT" && (!price || price <= 0)) throw new Error("Price is required for limit orders");
+  if (orderType === "limit" && (!price || price <= 0)) throw new Error("Price is required for limit orders");
 
   const clientOrderId = `SEQ-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
   const placeIdempotencyKey = idempotencyKey(`place-${clientOrderId}`);
-  const orderPrice = orderType === "MARKET" ? 0 : Number(price);
+  const orderPrice = orderType === "market" ? 0 : Number(price);
 
   const orderRecord = await db.transaction(async (tx) => {
     const reservedAmount = await reserveForOrder(tx, brokerAcc.id, symbol, side, orderPrice, quantity, orderType);
@@ -214,9 +214,9 @@ export async function placeOrder(
       side,
       order_type: orderType,
       price: orderPrice.toString(),
-      quantity,
+      original_quantity: quantity,
       remaining_quantity: quantity,
-      reserved_amount: side === "BUY" ? reservedAmount.toFixed(6) : "0",
+      reserved_amount: side === "buy" ? reservedAmount.toFixed(6) : "0",
       place_idempotency_key: placeIdempotencyKey,
       submission_status: "pending",
       status: "pending",
@@ -231,9 +231,9 @@ export async function placeOrder(
       broker_code: BROKER_CODE,
       account_id: brokerAcc.id,
       symbol,
-      side: side.toLowerCase(),
-      order_type: orderType.toLowerCase(),
-      price: orderType === "LIMIT" ? orderPrice : undefined,
+      side,
+      order_type: orderType,
+      price: orderType === "limit" ? orderPrice : undefined,
       quantity,
       idempotency_key: placeIdempotencyKey,
     });
@@ -316,10 +316,10 @@ export async function handleWebhookUpdate(payload: any) {
       }
 
       const filledValue = executionPrice * fillQuantity;
-      const feeEstimate = await estimateFee(filledValue, order.side as "BUY" | "SELL");
+      const feeEstimate = await estimateFee(filledValue, order.side.toUpperCase() as "BUY" | "SELL");
       processedFillQuantity += fillQuantity;
 
-      if (order.side === "BUY") {
+      if (order.side === "buy") {
         const totalPending = filledValue + feeEstimate.totalFee;
         nextReservedAmount = Math.max(nextReservedAmount - totalPending, 0);
         await tx.update(cash_balances)
@@ -369,20 +369,20 @@ export async function handleWebhookUpdate(payload: any) {
     }
 
     if (processedFillQuantity > 0 && payload.filled_quantity === undefined) {
-      filledQuantity = Math.min(order.quantity, previousFilledQuantity + processedFillQuantity);
-      remainingQuantity = Math.max(order.quantity - filledQuantity, 0);
+      filledQuantity = Math.min(order.original_quantity, previousFilledQuantity + processedFillQuantity);
+      remainingQuantity = Math.max(order.original_quantity - filledQuantity, 0);
     }
 
     const status = rawStatus || (processedFillQuantity > 0 ? (remainingQuantity === 0 ? "filled" : "partially_filled") : order.status);
     const fillRows = await tx.select().from(trade_fills).where(eq(trade_fills.order_id, order.id));
     const accountedFilledQuantity = fillRows.reduce((sum: number, fill: typeof trade_fills.$inferSelect) => sum + fill.quantity, 0);
     const remainingReserveQuantity = status === "filled"
-      ? Math.max(order.quantity - accountedFilledQuantity, 0)
+      ? Math.max(order.original_quantity - accountedFilledQuantity, 0)
       : remainingQuantity;
     const terminalReleasesReservation = ["rejected", "cancelled", "expired"].includes(status) ||
       (status === "filled" && processedFillQuantity > 0 && remainingReserveQuantity === 0);
 
-    if (order.side === "BUY") {
+    if (order.side === "buy") {
       const targetFee = await estimateFee(Number(order.price) * remainingReserveQuantity, "BUY");
       const targetReservedAmount = terminalReleasesReservation
         ? 0
@@ -400,7 +400,7 @@ export async function handleWebhookUpdate(payload: any) {
       }
     }
 
-    if (order.side === "SELL" && ["rejected", "cancelled", "expired"].includes(status) && remainingQuantity > 0) {
+    if (order.side === "sell" && ["rejected", "cancelled", "expired"].includes(status) && remainingQuantity > 0) {
       await tx.update(securities_positions)
         .set({
           available: sql`${securities_positions.available} + ${remainingQuantity}` as any,
@@ -415,7 +415,7 @@ export async function handleWebhookUpdate(payload: any) {
       status,
       filled_quantity: filledQuantity,
       remaining_quantity: status === "rejected" ? 0 : remainingQuantity,
-      reserved_amount: order.side === "BUY" ? sqlNumeric(nextReservedAmount) : "0",
+      reserved_amount: order.side === "buy" ? sqlNumeric(nextReservedAmount) : "0",
       reject_reason: rejectReason,
       submission_status: matsOrderId || status !== "pending" ? "submitted" : order.submission_status,
       last_submission_error: null,
@@ -432,7 +432,7 @@ export async function handleWebhookUpdate(payload: any) {
         title: processedFillQuantity > 0 ? `Order filled: ${order.symbol}` : `Order ${status}: ${order.symbol}`,
         body: processedFillQuantity > 0
           ? `${processedFillQuantity} shares of ${order.symbol} were filled.`
-          : `Your ${order.side} ${order.order_type || "LIMIT"} order is now ${status.replace(/_/g, " ")}.`,
+          : `Your ${order.side} ${order.order_type || "limit"} order is now ${status.replace(/_/g, " ")}.`,
         referenceType: "ORDER",
         referenceId: order.id,
         idempotencyKey: `notification:order:${order.id}:${status}:${filledQuantity}:${remainingQuantity}`,
@@ -455,25 +455,25 @@ export async function amendOrder(userId: string, orderId: string, price?: number
 
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order || order.broker_account_id !== brokerAcc.id) throw new Error("Order not found or unauthorized");
-  if (order.order_type === "MARKET") throw new Error("Market orders cannot be amended");
+  if (order.order_type === "market") throw new Error("Market orders cannot be amended");
   if (isTerminalOrderStatus(order.status)) throw new Error("Order cannot be amended in its current state");
   if (!order.mats_order_id) throw new Error("Order not yet accepted by MATS");
 
   const nextPrice = price ?? Number(order.price);
-  const nextQuantity = quantity ?? order.quantity;
+  const nextQuantity = quantity ?? order.original_quantity;
   if (nextQuantity < order.filled_quantity) throw new Error("Amended quantity cannot be below filled quantity");
 
   const previousReservedAmount = Number(order.reserved_amount || 0);
   const previousRemainingQuantity = Number(order.remaining_quantity || 0);
   const nextRemainingQuantity = nextQuantity - order.filled_quantity;
   const nextGrossValue = nextPrice * nextRemainingQuantity;
-  const nextFee = order.side === "BUY" ? await estimateFee(nextGrossValue, "BUY") : null;
-  const nextReservedAmount = order.side === "BUY" ? nextGrossValue + (nextFee?.totalFee || 0) : 0;
+  const nextFee = order.side === "buy" ? await estimateFee(nextGrossValue, "BUY") : null;
+  const nextReservedAmount = order.side === "buy" ? nextGrossValue + (nextFee?.totalFee || 0) : 0;
   const amendIdempotencyKey = idempotencyKey(`amend-${order.client_order_id}`);
   let amendmentId = "";
 
   await db.transaction(async (tx) => {
-    if (order.side === "BUY") {
+    if (order.side === "buy") {
       await applyBuyReserveAdjustment(tx, order.broker_account_id, previousReservedAmount, nextReservedAmount);
     } else {
       await applySellReserveAdjustment(tx, order.broker_account_id, order.symbol, previousRemainingQuantity, nextRemainingQuantity);
@@ -481,9 +481,9 @@ export async function amendOrder(userId: string, orderId: string, price?: number
     const [amendment] = await tx.insert(order_amendments).values({
       order_id: order.id,
       old_price: order.price,
-      old_quantity: order.quantity,
+      old_original_quantity: order.original_quantity,
       new_price: nextPrice.toString(),
-      new_quantity: nextQuantity,
+      new_original_quantity: nextQuantity,
       status: "pending",
     }).returning();
     amendmentId = amendment.id;
@@ -504,7 +504,7 @@ export async function amendOrder(userId: string, orderId: string, price?: number
     }
   } catch (e: any) {
     await db.transaction(async (tx) => {
-      if (order.side === "BUY") {
+      if (order.side === "buy") {
         await applyBuyReserveAdjustment(tx, order.broker_account_id, nextReservedAmount, previousReservedAmount);
       } else {
         await applySellReserveAdjustment(tx, order.broker_account_id, order.symbol, nextRemainingQuantity, previousRemainingQuantity);
