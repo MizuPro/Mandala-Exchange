@@ -1,191 +1,218 @@
-# Implementation Plan - Perbaikan Integrasi BEI-MATS
+# Implementation Plan - Deep Bug Analyzer End-to-End Trading Flow
 
-## Ringkasan Hasil Deep Bug Analyzer
+Target analisis: End-to-End Trading Flow lintas BEI, MATS, dan SEKURITAS.
+Mode: deep.
+Fokus: hanya bug krusial yang dapat mengganggu kelancaran flow trading end-to-end, bukan kosmetik atau hardening kecil.
 
-Scope analisis: integrasi BEI-MATS, khususnya sync rules/instrument/session dari BEI ke MATS, order validation MATS, trade capture MATS ke BEI, test integrasi yang tersedia, dan checklist fitur yang ditandai selesai.
+## Ringkasan Temuan
 
-Hasil test otomatis:
+Ditemukan 5 bug krusial yang masih bisa memutus flow utama:
 
-- `MATS`: `go test ./...` lulus, 17 test passed.
-- `BEI`: `npm run check` lulus.
-- `BEI`: `npm test` lulus, 6 test passed.
+1. Settlement BEI bisa dibuat sebelum semua trade MATS berhasil tercapture di BEI.
+2. Failure auto-settlement BEI masih ditelan sehingga MATS menganggap close session sukses.
+3. Order SEKURITAS yang gagal submit ke MATS masuk `submit_unknown` dan reservasi dana/saham bisa terkunci permanen.
+4. Settlement webhook BEI ke SEKURITAS bisa diskip saat URL tidak dikonfigurasi tetapi batch tetap ditandai sukses/notified.
+5. Dead-letter delivery MATS tidak punya mekanisme replay/recovery, sehingga event trade/order penting bisa hilang permanen dari flow.
 
-Hasil smoke test real BEI-MATS:
+---
 
-- BEI health: OK.
-- MATS health: OK, tetapi `rules.securities=0`, `rules.rule_profiles=0`, dan `session_status=""`.
-- Manual sync MATS ke BEI gagal dengan error: `sync rules: unsupported numeric value <nil>`.
-- Order real ke MATS ditolak dengan `reject_reason: rules unavailable`.
+## 1. Critical - BEI Bisa Settlement Sebelum Semua Trade MATS Tercapture
 
-Kesimpulan: test otomatis lulus karena integration test MATS memakai fake BEI, bukan payload BEI nyata. Integrasi real BEI-MATS belum lancar.
+### Lokasi
 
-## Bug 1 - MATS Tidak Bisa Decode Rule BEI dengan Nilai Numeric Null
+- `MATS/internal/events/dispatcher.go:172-211`
+- `MATS/internal/session/daemon.go:112-117`
+- `BEI/src/routes/rules.ts:223-249`
+- `BEI/src/routes/settlement.ts:23-35`
 
-Lokasi:
+### Alur Bug
 
-- `MATS/internal/bei/client.go:62-78`
-- `MATS/internal/domain/types.go:138-191`
-- `BEI/src/db/seed.ts:63-81`
-- `BEI/src/routes/rules.ts:284`
+MATS mengirim trade ke BEI lewat delivery outbox. Jika delivery `trade_final` gagal sementara, event akan masuk status `pending` atau `dead`, bukan langsung blocking matching.
 
-Masalah:
+Saat session ditutup, MATS memanggil BEI `/integration/mats/sessions/active/status` dengan status `closed`. BEI langsung membuat dan memproses settlement batch dari isi tabel `trades` yang sudah tercapture saat itu.
 
-BEI mengirim field nullable seperti `max_price: null` dan `max_reference_price: null` untuk rule open-ended. Di MATS, field tersebut didefinisikan sebagai `domain.NumericInt`, dan `NumericInt.UnmarshalJSON` memanggil `numericToFloat`. Fungsi itu hanya menerima `float64` atau `string`, sehingga JSON `null` menjadi error `unsupported numeric value <nil>`.
+Masalahnya, BEI hanya membaca trade yang sudah masuk ke tabel `trades`. Jika ada trade MATS yang masih pending/dead di outbox, trade tersebut tidak ikut settlement batch. End-to-end flow menjadi tidak lengkap: order sudah match di MATS, tetapi tidak pernah settle di BEI/SEKURITAS kecuali ada intervensi manual.
 
-Dampak:
+### Dampak
 
-- `POST /v1/admin/sync/bei` gagal total.
-- Cache rules MATS kosong.
-- Order valid dari Sekuritas ke MATS ditolak dengan `rules unavailable`.
-- Flow BEI-MATS tidak bisa masuk matching real.
+- Trade valid di MATS bisa tidak pernah masuk settlement BEI.
+- SEKURITAS tidak menerima settlement untuk trade tersebut.
+- Pending cash/securities di SEKURITAS bisa menggantung.
+- Reconciliation antar MATS, BEI, dan SEKURITAS menjadi tidak konsisten.
 
-Rencana perbaikan:
+### Rencana Perbaikan
 
-1. Tambahkan tipe nullable numeric di MATS, misalnya `NullableNumericInt` dan `NullableNumericFloat`, atau ubah `numericToFloat` agar `nil` diperlakukan sebagai zero hanya untuk field optional.
-2. Ubah field optional di `MATS/internal/bei/client.go`:
-   - `TickSizeRule.MaxPrice`
-   - `PriceBandRule.MaxReferencePrice`
-   - `AutoRejectionRule.MaxListedSharesPercent`
-3. Pastikan logic rules tetap membedakan open-ended rule dengan nilai `0`, seperti kondisi existing `if maxPrice > 0`.
-4. Tambahkan test decode payload BEI nyata yang mengandung `max_price:null` dan `max_reference_price:null`.
-5. Jalankan ulang manual sync dan pastikan health MATS menunjukkan securities/rule_profiles/session terisi.
+1. Tambahkan barrier finalitas trade sebelum BEI memproses settlement.
+2. Saat MATS menutup session, sertakan metadata final seperti `final_trade_sequence` atau `expected_trade_count` untuk session tersebut.
+3. Di BEI, simpan metadata finalitas session dan validasi bahwa trade yang tercapture sudah lengkap sebelum settlement batch diproses.
+4. Jika trade belum lengkap, jangan proses settlement. Tandai batch sebagai `pending` atau `processing_blocked` dengan alasan `waiting_for_trade_capture`.
+5. Tambahkan job/endpoint retry yang memproses ulang settlement setelah trade capture yang tertunda berhasil masuk.
+6. Tambahkan test integrasi: satu trade delivery ke BEI dibuat gagal/pending, session ditutup, BEI tidak boleh settle sampai trade tersebut tercapture.
 
-## Bug 2 - Seed BEI Tidak Idempotent untuk Rules dan Session
+---
 
-Lokasi:
+## 2. Critical - Failure Auto-Settlement BEI Masih Ditelan
 
-- `BEI/src/db/seed.ts:41-49`
-- `BEI/src/db/seed.ts:51-93`
-- `BEI/src/db/seed.ts:96-118`
-- `BEI/src/db/migrate.ts:134-186`
+### Lokasi
 
-Masalah:
+- `BEI/src/routes/rules.ts:223-256`
+- `MATS/internal/session/daemon.go:113-116`
 
-Seed memakai `ON CONFLICT DO NOTHING`, tetapi tabel `trading_rule_profiles`, `lot_size_rules`, `tick_size_rules`, `price_band_rules`, `auto_rejection_rules`, dan `session_templates` tidak punya unique constraint yang cocok. Akibatnya seed berulang membuat data duplikat.
+### Alur Bug
 
-Bukti smoke test:
+Saat BEI menerima status session `closed`, BEI menjalankan auto-settlement di dalam `try/catch`. Jika create/process settlement gagal, error hanya di-log di `catch`, tetapi endpoint tetap bisa menyelesaikan request tanpa mengembalikan failure ke caller.
 
-- BEI mengembalikan `RULE_PROFILE_COUNT=16`, padahal seed logical hanya membuat 4 profile.
-- Rule nested di profile pertama berlipat, misalnya `tick:10` dan `band:6`.
+Di sisi MATS, `UpdateSessionStatus(..., closed)` hanya melihat response endpoint BEI. Jika BEI tidak mengembalikan error, MATS menganggap sinkronisasi close berhasil, padahal settlement gagal.
 
-Dampak:
+### Dampak
 
-- Payload rules makin besar setiap seed diulang.
-- Rule selection MATS bisa ambigu karena banyak profile default untuk board yang sama.
-- Session active dipilih berdasarkan `created_at DESC`, sehingga seed berulang mengganti active session tanpa lifecycle yang jelas.
+- Session terlihat sudah closed.
+- Settlement bisa gagal tanpa sinyal kuat ke MATS.
+- Operator/frontend melihat state session selesai, tetapi cash/securities belum terselesaikan.
+- Retry otomatis tidak terjadi karena failure tidak dipropagasikan.
 
-Rencana perbaikan:
+### Rencana Perbaikan
 
-1. Tambahkan unique index/constraint:
-   - `trading_rule_profiles(board, market_segment)`
-   - `lot_size_rules(profile_id, instrument_type, effective_date)`
-   - `tick_size_rules(profile_id, min_price, max_price)`
-   - `price_band_rules(profile_id, min_reference_price, max_reference_price)`
-   - `auto_rejection_rules(profile_id)`
-   - session template aktif perlu strategi jelas, misalnya partial unique untuk satu `is_active=true`.
-2. Ubah seed menjadi upsert deterministik dengan `ON CONFLICT (...) DO UPDATE`.
-3. Tambahkan migration cleanup untuk data duplikat di database lokal/dev.
-4. Tambahkan test atau script verifikasi bahwa seed dua kali menghasilkan jumlah profile/rule/session yang sama.
+1. Ubah `BEI/src/routes/rules.ts` agar failure auto-settlement tidak ditelan.
+2. Jika create/process settlement gagal, endpoint harus mengembalikan error eksplisit atau status yang menyatakan `settlement_trigger_failed`.
+3. Simpan failure ke field batch/session audit agar bisa diretry.
+4. Di MATS session daemon, tambahkan retry/backoff untuk update status session ke BEI, terutama saat transisi `closed`.
+5. Tambahkan test BEI: mock process settlement gagal, endpoint status closed harus mengembalikan failure dan tidak mencatat auto-settlement sukses.
 
-## Bug 3 - Idempotency Order MATS Hanya In-Memory
+---
 
-Lokasi:
+## 3. Critical - `submit_unknown` SEKURITAS Bisa Mengunci Reservasi Dana/Saham Permanen
 
-- `MATS/internal/orders/service.go:104-114`
-- `MATS/internal/orders/service.go:472-483`
-- `MATS/internal/persistence/store.go:131`
-- `MATS/db/migrations/001_init.sql:61-66`
+### Lokasi
 
-Masalah:
+- `SEKURITAS/backend/src/services/order-service.ts:233-249`
+- `SEKURITAS/backend/src/services/order-service.ts:271-278`
+- `SEKURITAS/backend/src/services/order-service.ts:633-640`
+- `SEKURITAS/frontend/src/components/OrderList.tsx:76`
 
-MATS hanya mengecek idempotency dari map memori `s.idempotency`. Padahal store sudah punya `FindOrderByIdempotency` dan migration sudah punya `mats_idempotency_records`, tetapi belum dipakai.
+### Alur Bug
 
-Dampak:
+SEKURITAS melakukan reservasi dana/saham lokal sebelum mengirim order ke MATS. Jika request ke MATS error, semua error diperlakukan sebagai `submit_unknown`.
 
-- Setelah restart service, retry dengan idempotency key sama bisa gagal karena unique constraint `mats_orders.idempotency_key`, atau menghasilkan response berbeda jika path operasi berbeda.
-- Pada multi-instance, idempotency tidak konsisten.
-- Task MATS `Implement idempotency untuk place/amend/cancel order` belum benar-benar production-safe.
+Masalahnya, pada status ini tidak ada mekanisme reconcile yang memastikan apakah MATS benar-benar menerima order atau tidak. Jika MATS tidak menerima order, reservasi lokal tetap terkunci. User juga tidak bisa membatalkan order karena `cancelOrder` mensyaratkan `mats_order_id`, sementara order `submit_unknown` biasanya belum punya `mats_order_id`.
 
-Rencana perbaikan:
+Frontend bahkan menampilkan tombol cancel untuk `submit_unknown`, tetapi backend akan menolak dengan `Order not yet accepted by MATS`.
 
-1. Sebelum membuat sequence/order baru, cek store persistent berdasarkan idempotency key.
-2. Simpan response idempotent untuk place/amend/cancel di `mats_idempotency_records`, atau minimal reconstruct response dari order/trade persistent.
-3. Bedakan operation idempotency (`place`, `amend`, `cancel`) supaya key sama tidak bisa dipakai lintas operasi.
-4. Tambahkan test restart/recreate service dengan store yang sama.
+### Dampak
 
-## Bug 4 - Trade Capture BEI Tidak Memvalidasi Session ID dari MATS
+- Cash buy order bisa terkunci di `reserved`.
+- Saham sell order bisa terkunci di `reserved`.
+- User tidak punya jalan normal untuk release reservasi.
+- Flow trading berikutnya terganggu karena saldo/posisi terlihat tidak tersedia.
 
-Lokasi:
+### Rencana Perbaikan
 
-- `MATS/cmd/mats/main.go:67-68`
-- `MATS/internal/matching/engine.go:236-249`
-- `MATS/internal/matching/engine.go:262-269`
-- `BEI/src/routes/trades.ts:9-22`
-- `BEI/src/routes/trades.ts:25-44`
+1. Bedakan error MATS menjadi:
+   - definitive reject/pre-accept failure,
+   - transport timeout/unknown,
+   - accepted response dengan order snapshot.
+2. Untuk definitive pre-accept failure, rollback reservasi dan tandai order `rejected` atau `submission_status=failed`.
+3. Untuk transport unknown, buat mekanisme reconciliation berdasarkan `place_idempotency_key` atau `client_order_id`.
+4. Tambahkan endpoint/job internal `reconcile submit_unknown`:
+   - cek MATS by idempotency/client order,
+   - jika ditemukan, apply snapshot ke order lokal,
+   - jika tidak ditemukan setelah batas retry, release reservasi dan tandai `failed`.
+5. Jangan tampilkan cancel sebagai aksi normal untuk `submit_unknown` sebelum backend mendukung cancel/reconcile status tersebut.
+6. Tambahkan test: MATS timeout sebelum menerima order harus release setelah reconcile; MATS timeout setelah menerima order harus menyambungkan `mats_order_id` dan status lokal.
 
-Masalah:
+---
 
-MATS mengisi `Trade.SessionID` dari `MATS_SESSION_ID`, default `local-session`, bukan dari active session BEI yang disinkronkan. BEI `POST /trades/capture` hanya mengecek `sessionId` non-empty, tetapi tidak memvalidasi session tersebut terhadap `session_templates`.
+## 4. Critical - Settlement Webhook Bisa Diskip Tetapi Batch Ditandai Notified
 
-Dampak:
+### Lokasi
 
-- Trade bisa tersimpan di BEI dengan session ID yang tidak sama dengan active session BEI.
-- Report, settlement, custody, fee/tax, dan surveillance berbasis session bisa kosong atau tidak sesuai.
-- Task BEI `Validasi symbol, session, broker, dan trade payload` belum lengkap untuk bagian session.
+- `BEI/src/services/sekuritas-webhook.ts:10-13`
+- `BEI/src/routes/settlement.ts:227-240`
+- `BEI/src/config.ts:72-73`
 
-Rencana perbaikan:
+### Alur Bug
 
-1. MATS harus memakai session ID dari `rulesCache.ActiveSession` hasil sync BEI, bukan hanya env `MATS_SESSION_ID`.
-2. BEI `trades/capture` harus validasi `sessionId` terhadap session aktif/valid.
-3. Tambahkan test bahwa trade capture dengan session tidak dikenal ditolak.
-4. Tambahkan integration test real/fake yang memastikan session ID trade sama dengan session dari `/integration/mats/sessions/active`.
+`postSekuritasWebhook()` mengembalikan `{ skipped: true }` jika URL webhook SEKURITAS tidak dikonfigurasi. Namun caller di settlement process tidak membedakan `skipped` dari pengiriman sukses. Setelah fungsi tersebut return tanpa error, batch settlement bisa ditandai `notificationStatus: "sent"`.
 
-## Gap Test dan Dokumentasi
+Dalam kondisi konfigurasi tidak lengkap, BEI akan menganggap notifikasi settlement sudah terkirim, padahal SEKURITAS tidak pernah menerima settlement webhook.
 
-Lokasi:
+### Dampak
 
-- `MATS/test/integration/flow_test.go:30-63`
-- `MATS/test/integration/flow_test.go:192-207`
-- `MATS/docs/runbook-debugging.md:29-30`
-- `MATS/docs/api-contracts.md:14`
-- `docs/SEKURITAS/API_CONTRACTS.md:11`
-- `SEKURITAS/backend/src/services/order-service.ts:10`
+- BEI batch terlihat settled dan notified.
+- SEKURITAS tidak memindahkan pending cash/securities menjadi available.
+- Tidak ada retry karena status sudah dianggap `sent`.
+- End-to-end settlement berhenti diam-diam.
 
-Masalah:
+### Rencana Perbaikan
 
-Integration test MATS memakai fake BEI yang tidak mengandung nullable numeric field. Selain itu dokumentasi/test MATS masih memakai broker `MDLA`, sedangkan seed BEI dan backend Sekuritas memakai `MANDALA`.
+1. Untuk target `settlement`, jangan silent-skip jika URL webhook kosong.
+2. Ubah `postSekuritasWebhook()` agar missing settlement URL melempar error atau mengembalikan status eksplisit yang tidak boleh dianggap sukses.
+3. Di `settlement.ts`, hanya set `notificationStatus="sent"` jika response benar-benar terkirim.
+4. Jika URL kosong, set `notificationStatus="failed"` atau `configuration_missing` dan simpan error.
+5. Tambahkan validasi startup di production agar `SEKURITAS_SETTLEMENT_WEBHOOK_URL` wajib ada.
+6. Tambahkan test BEI: settlement process dengan URL kosong tidak boleh menghasilkan `notificationStatus="sent"`.
 
-Rencana perbaikan:
+---
 
-1. Tambahkan contract fixture dari payload BEI nyata untuk MATS test.
-2. Tambahkan smoke/integration test yang menjalankan BEI app test instance dan MATS rules client terhadap payload BEI aktual.
-3. Samakan broker code di docs/test fixture, atau dokumentasikan mapping `MDLA` vs `MANDALA` bila memang sengaja berbeda.
+## 5. High - Dead-Letter Delivery MATS Tidak Bisa Direplay
 
-## Urutan Eksekusi Disarankan
+### Lokasi
 
-1. Perbaiki nullable numeric decode di MATS.
-2. Tambahkan test decode payload BEI nyata.
-3. Perbaiki seed idempotency dan unique constraints BEI.
-4. Bersihkan data duplikat dev/local.
-5. Perbaiki session ID source untuk trade MATS dan validasi session di BEI.
-6. Perbaiki persistent idempotency MATS.
-7. Tambahkan integration test BEI-MATS yang tidak hanya memakai fake BEI.
-8. Jalankan ulang:
-   - `go test ./...` di `MATS`
-   - `npm run check` dan `npm test` di `BEI`
-   - smoke sync `POST /v1/admin/sync/bei`
-   - smoke order buy/sell sampai trade capture BEI
+- `MATS/internal/events/dispatcher.go:142-169`
+- `MATS/internal/events/dispatcher.go:197-211`
+- `MATS/internal/api/handlers.go:139-146`
 
-## Fitur yang Belum Benar-Benar Terimplementasi
+### Alur Bug
 
-Berdasarkan checklist dokumen, tidak ada task BEI/MATS yang masih `[ ]`. Namun dari runtime dan audit kode, beberapa item yang ditandai selesai belum valid:
+Delivery event MATS dipindahkan ke status `dead` setelah melewati `MaxAttempts`. Saat ini endpoint API hanya bisa list delivery events. Tidak ada endpoint atau job untuk requeue/replay event `dead`.
 
-- Sync rules BEI-MATS belum berjalan terhadap payload BEI nyata.
-- Idempotency MATS belum persistent.
-- Validasi session trade capture BEI belum ada.
-- Integration test BEI-MATS belum menguji BEI service nyata.
-- Seed BEI belum aman diulang.
+Untuk event biasa ini mungkin hanya observability issue. Tetapi untuk End-to-End Trading Flow, event `trade_final` ke BEI dan `trade_fill/order_status` ke SEKURITAS adalah bagian utama dari state transition. Jika dead-letter tidak bisa direplay, trade atau fill bisa hilang permanen dari downstream.
 
-## Kelayakan Eksekusi Model
+### Dampak
 
-Plan ini bisa dieksekusi oleh Gemini 3 Flash untuk perbaikan mekanis kecil seperti nullable numeric dan dokumentasi. Namun untuk idempotency persistent, cleanup migration data duplikat, dan kontrak session BEI-MATS, disarankan memakai model yang lebih advanced karena menyentuh konsistensi data, migration, dan alur settlement/reporting lintas service.
+- BEI bisa tidak pernah menerima trade capture.
+- SEKURITAS bisa tidak pernah menerima fill/status order.
+- Settlement bisa tertahan karena fill accounting lokal tidak pernah terjadi.
+- Operator tidak punya recovery path selain manipulasi database/manual resend.
+
+### Rencana Perbaikan
+
+1. Tambahkan endpoint admin/service-token untuk requeue delivery event berdasarkan ID atau filter status `dead`.
+2. Endpoint harus mengubah status `dead` menjadi `pending`, reset `last_error`, set `next_attempt_at=now`, dan opsional menaikkan `max_attempts`.
+3. Tambahkan endpoint replay by `target/event_type/session/symbol` untuk operasi pemulihan batch.
+4. Tambahkan audit log untuk setiap replay.
+5. Tambahkan test: event yang sudah `dead` bisa direqueue dan dispatcher mengirim ulang event tersebut.
+
+---
+
+## Urutan Eksekusi yang Disarankan
+
+1. Perbaiki bug nomor 4 lebih dulu karena paling kecil scope-nya dan langsung mencegah false-positive notified.
+2. Perbaiki bug nomor 2 agar failure auto-settlement tidak lagi diam-diam.
+3. Perbaiki bug nomor 5 untuk menyediakan recovery path delivery.
+4. Perbaiki bug nomor 1 dengan finality barrier trade capture sebelum settlement.
+5. Perbaiki bug nomor 3 dengan reconciliation `submit_unknown` dan release reservasi yang aman.
+
+## Validasi Minimal Setelah Fix
+
+1. `MATS`: `go test ./...`
+2. `BEI`: `npm test -- --run` dan `npm run build`
+3. `SEKURITAS/backend`: `npm test -- --run` dan `npm run build`
+4. `SEKURITAS/frontend`: `npm run build`
+5. Test manual end-to-end:
+   - place buy/sell,
+   - match trade,
+   - paksa satu delivery gagal lalu replay,
+   - close session,
+   - settlement BEI terkirim ke SEKURITAS,
+   - pending cash/securities berubah menjadi available.
+
+## Status
+
+request_feedback = true
+
+Mohon konfirmasi sebelum implementasi. Plan ini menyentuh tiga ekosistem sekaligus dan membutuhkan perubahan kontrak kecil antar MATS, BEI, dan SEKURITAS.
+
+## Kebutuhan Model
+
+Plan ini sebaiknya dikerjakan oleh model yang lebih advanced daripada Gemini 3 Flash. Sebagian bug membutuhkan reasoning lintas service, idempotency, async delivery, dan settlement finality; Gemini 3 Flash berisiko melewatkan edge case atau membuat kontrak antar service tidak konsisten.
