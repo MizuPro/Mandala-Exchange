@@ -1,45 +1,76 @@
-import fetch from "node-fetch"; // Assuming using native fetch or node-fetch
+import fetch from "node-fetch";
 
 export class MatsClient {
   private baseUrl: string;
+  private serviceToken: string;
 
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl: string, serviceToken = "") {
+    this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.serviceToken = serviceToken;
+  }
+
+  private headers(extra: Record<string, string> = {}) {
+    const headers: Record<string, string> = { ...extra };
+    if (this.serviceToken) {
+      headers["x-service-token"] = this.serviceToken;
+    }
+    return headers;
+  }
+
+  private async parseError(res: any, action: string) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error || data?.message || `MATS ${action} failed: ${res.status} ${res.statusText}`);
   }
 
   async placeOrder(orderPayload: any) {
-    const res = await fetch(`${this.baseUrl}/api/v1/orders`, {
+    const idempotencyKey = orderPayload.idempotency_key;
+    const res = await fetch(`${this.baseUrl}/v1/orders`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this.headers({
+        "Content-Type": "application/json",
+        ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
+      }),
       body: JSON.stringify(orderPayload),
     });
     if (!res.ok) {
-      throw new Error(`MATS Place Order Failed: ${res.statusText}`);
+      await this.parseError(res, "place order");
     }
     return res.json();
   }
 
   async amendOrder(matsOrderId: string, amendPayload: any) {
-    const res = await fetch(`${this.baseUrl}/api/v1/orders/${matsOrderId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
+    const idempotencyKey = amendPayload.idempotency_key;
+    const res = await fetch(`${this.baseUrl}/v1/orders/${matsOrderId}`, {
+      method: "PATCH",
+      headers: this.headers({
+        "Content-Type": "application/json",
+        ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
+      }),
       body: JSON.stringify(amendPayload),
     });
     if (!res.ok) {
-      throw new Error(`MATS Amend Order Failed: ${res.statusText}`);
+      await this.parseError(res, "amend order");
     }
     return res.json();
   }
 
-  async cancelOrder(matsOrderId: string) {
-    const res = await fetch(`${this.baseUrl}/api/v1/orders/${matsOrderId}`, {
-      method: "DELETE",
+  async cancelOrder(matsOrderId: string, idempotencyKey: string) {
+    const res = await fetch(`${this.baseUrl}/v1/orders/${matsOrderId}/cancel`, {
+      method: "POST",
+      headers: this.headers({
+        "Content-Type": "application/json",
+        "idempotency-key": idempotencyKey,
+      }),
+      body: JSON.stringify({ idempotency_key: idempotencyKey }),
     });
     if (!res.ok) {
-      throw new Error(`MATS Cancel Order Failed: ${res.statusText}`);
+      await this.parseError(res, "cancel order");
     }
     return res.json();
   }
 }
 
-export const matsClient = new MatsClient(process.env.MATS_API_URL || "http://localhost:3000");
+export const matsClient = new MatsClient(
+  process.env.MATS_API_URL || "http://localhost:8082",
+  process.env.MATS_SERVICE_TOKEN || process.env.MATS_SEKURITAS_TOKEN || ""
+);
