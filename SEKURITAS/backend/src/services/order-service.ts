@@ -324,7 +324,8 @@ export async function handleWebhookUpdate(payload: any) {
         nextReservedAmount = Math.max(nextReservedAmount - totalPending, 0);
         await tx.update(cash_balances)
           .set({
-            reserved: sql`${cash_balances.reserved} - ${sqlNumeric(totalPending)}` as any,
+            reserved: sql`GREATEST(0, ${cash_balances.reserved} - ${sqlNumeric(totalPending)})` as any,
+            available: sql`${cash_balances.available} - GREATEST(0, ${sqlNumeric(totalPending)} - ${cash_balances.reserved})` as any,
             pending: sql`${cash_balances.pending} + ${sqlNumeric(totalPending)}` as any,
             updated_at: new Date(),
           })
@@ -384,9 +385,14 @@ export async function handleWebhookUpdate(payload: any) {
 
     if (order.side === "buy") {
       const targetFee = await estimateFee(Number(order.price) * remainingReserveQuantity, "BUY");
-      const targetReservedAmount = terminalReleasesReservation
-        ? 0
-        : Number(order.price) * remainingReserveQuantity + targetFee.totalFee;
+      let targetReservedAmount = 0;
+      if (!terminalReleasesReservation) {
+        if (order.order_type === "market") {
+          targetReservedAmount = nextReservedAmount;
+        } else {
+          targetReservedAmount = Number(order.price) * remainingReserveQuantity + targetFee.totalFee;
+        }
+      }
       const releaseExcess = Math.max(nextReservedAmount - targetReservedAmount, 0);
       if (releaseExcess > 0) {
         await tx.update(cash_balances)
@@ -469,13 +475,16 @@ export async function amendOrder(userId: string, orderId: string, price?: number
   const nextGrossValue = nextPrice * nextRemainingQuantity;
   const nextFee = order.side === "buy" ? await estimateFee(nextGrossValue, "BUY") : null;
   const nextReservedAmount = order.side === "buy" ? nextGrossValue + (nextFee?.totalFee || 0) : 0;
+  
+  const reserveDelta = nextReservedAmount - previousReservedAmount;
+  const qtyDelta = nextRemainingQuantity - previousRemainingQuantity;
   const amendIdempotencyKey = idempotencyKey(`amend-${order.client_order_id}`);
   let amendmentId = "";
 
   await db.transaction(async (tx) => {
-    if (order.side === "buy") {
+    if (order.side === "buy" && reserveDelta > 0) {
       await applyBuyReserveAdjustment(tx, order.broker_account_id, previousReservedAmount, nextReservedAmount);
-    } else {
+    } else if (order.side === "sell" && qtyDelta > 0) {
       await applySellReserveAdjustment(tx, order.broker_account_id, order.symbol, previousRemainingQuantity, nextRemainingQuantity);
     }
     const [amendment] = await tx.insert(order_amendments).values({
@@ -499,14 +508,21 @@ export async function amendOrder(userId: string, orderId: string, price?: number
     if (matsResponse?.order) {
       await handleWebhookUpdate(matsOrderToWebhookPayload(matsResponse.order, matsResponse.trades || []));
     }
-    if (amendmentId) {
-      await db.update(order_amendments).set({ status: "accepted", updated_at: new Date() }).where(eq(order_amendments.id, amendmentId));
-    }
+    await db.transaction(async (tx) => {
+      if (order.side === "buy" && reserveDelta < 0) {
+        await applyBuyReserveAdjustment(tx, order.broker_account_id, previousReservedAmount, nextReservedAmount);
+      } else if (order.side === "sell" && qtyDelta < 0) {
+        await applySellReserveAdjustment(tx, order.broker_account_id, order.symbol, previousRemainingQuantity, nextRemainingQuantity);
+      }
+      if (amendmentId) {
+        await tx.update(order_amendments).set({ status: "accepted", updated_at: new Date() }).where(eq(order_amendments.id, amendmentId));
+      }
+    });
   } catch (e: any) {
     await db.transaction(async (tx) => {
-      if (order.side === "buy") {
+      if (order.side === "buy" && reserveDelta > 0) {
         await applyBuyReserveAdjustment(tx, order.broker_account_id, nextReservedAmount, previousReservedAmount);
-      } else {
+      } else if (order.side === "sell" && qtyDelta > 0) {
         await applySellReserveAdjustment(tx, order.broker_account_id, order.symbol, nextRemainingQuantity, previousRemainingQuantity);
       }
       if (amendmentId) {
