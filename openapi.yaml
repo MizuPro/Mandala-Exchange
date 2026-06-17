@@ -1,0 +1,262 @@
+openapi: 3.0.3
+info:
+  title: Mandala Exchange API
+  version: 1.0.0
+  description: Contract-first API specifications for Mandala Exchange ecosystem (BEI, MATS, SEKURITAS).
+paths: {}
+components:
+  schemas:
+    Side:
+      type: string
+      enum:
+        - buy
+        - sell
+
+    OrderType:
+      type: string
+      enum:
+        - limit
+        - market
+
+    OrderStatus:
+      type: string
+      enum:
+        - accepted
+        - rejected
+        - open
+        - amended
+        - partially_filled
+        - filled
+        - cancelled
+        - expired
+        - locked_non_cancellable
+
+    SessionStatus:
+      type: string
+      enum:
+        - closed
+        - pre_open
+        - opening_auction
+        - continuous
+        - pre_close
+        - random_closing
+        - closing_auction
+        - non_cancellation
+        - post_closing
+        - halted
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+        client_order_id:
+          type: string
+        broker_code:
+          type: string
+        account_id:
+          type: string
+        symbol:
+          type: string
+        side:
+          $ref: '#/components/schemas/Side'
+        order_type:
+          $ref: '#/components/schemas/OrderType'
+        price:
+          type: integer
+          format: int64
+        original_quantity:
+          type: integer
+          format: int64
+        remaining_quantity:
+          type: integer
+          format: int64
+        filled_quantity:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        reject_reason:
+          type: string
+        idempotency_key:
+          type: string
+        sequence_number:
+          type: integer
+          format: int64
+        correlation_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - client_order_id
+        - broker_code
+        - account_id
+        - symbol
+        - side
+        - order_type
+        - price
+        - original_quantity
+        - remaining_quantity
+        - filled_quantity
+        - status
+        - sequence_number
+        - created_at
+        - updated_at
+
+    Trade:
+      type: object
+      properties:
+        id:
+          type: string
+        sequence_number:
+          type: integer
+          format: int64
+        session_id:
+          type: string
+        symbol:
+          type: string
+        price:
+          type: integer
+          format: int64
+        quantity:
+          type: integer
+          format: int64
+        buy_order_id:
+          type: string
+        sell_order_id:
+          type: string
+        buy_broker_code:
+          type: string
+        sell_broker_code:
+          type: string
+        buy_account_id:
+          type: string
+        sell_account_id:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        idempotency_key:
+          type: string
+      required:
+        - id
+        - sequence_number
+        - session_id
+        - symbol
+        - price
+        - quantity
+        - buy_order_id
+        - sell_order_id
+        - buy_broker_code
+        - sell_broker_code
+        - buy_account_id
+        - sell_account_id
+        - occurred_at
+        - idempotency_key
+
+    MarketSummary:
+      type: object
+      properties:
+        symbol:
+          type: string
+        open:
+          type: integer
+          format: int64
+        high:
+          type: integer
+          format: int64
+        low:
+          type: integer
+          format: int64
+        close:
+          type: integer
+          format: int64
+        last:
+          type: integer
+          format: int64
+        volume:
+          type: integer
+          format: int64
+        value:
+          type: integer
+          format: int64
+        frequency:
+          type: integer
+          format: int64
+      required:
+        - symbol
+        - open
+        - high
+        - low
+        - close
+        - last
+        - volume
+        - value
+        - frequency
+
+    BookLevel:
+      type: object
+      properties:
+        price:
+          type: integer
+          format: int64
+        quantity:
+          type: integer
+          format: int64
+        orders:
+          type: integer
+      required:
+        - price
+        - quantity
+        - orders
+
+    BookSnapshot:
+      type: object
+      properties:
+        symbol:
+          type: string
+        bids:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookLevel'
+        asks:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookLevel'
+      required:
+        - symbol
+        - bids
+        - asks
+
+    IndicativePriceVolume:
+      type: object
+      properties:
+        symbol:
+          type: string
+        price:
+          type: integer
+          format: int64
+        volume:
+          type: integer
+          format: int64
+        imbalance:
+          type: integer
+          format: int64
+        reference_price:
+          type: integer
+          format: int64
+        calculated_at:
+          type: string
+          format: date-time
+      required:
+        - symbol
+        - price
+        - volume
+        - imbalance
+        - reference_price
+        - calculated_at
