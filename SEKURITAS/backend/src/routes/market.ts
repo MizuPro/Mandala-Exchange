@@ -8,7 +8,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getListedSecurities();
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(500).send({ error: "Failed to fetch securities from BEI" });
+      return reply.status(502).send({ error: e.message || "Failed to fetch securities from BEI" });
     }
   });
 
@@ -18,7 +18,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getFeeSchedule();
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(500).send({ error: "Failed to fetch fees from BEI" });
+      return reply.status(502).send({ error: e.message || "Failed to fetch fees from BEI" });
     }
   });
 
