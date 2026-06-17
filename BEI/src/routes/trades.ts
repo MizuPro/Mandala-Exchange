@@ -50,7 +50,7 @@ export async function registerTradeRoutes(app: FastifyInstance) {
 
 
     const value = body.price * body.quantity;
-    const [created] = await db
+    let [created] = await db
       .insert(trades)
       .values({
         matsTradeId: body.matsTradeId,
@@ -71,9 +71,14 @@ export async function registerTradeRoutes(app: FastifyInstance) {
         idempotencyKey: body.idempotencyKey,
         rawPayload: body
       })
+      .onConflictDoNothing({ target: trades.idempotencyKey })
       .returning();
 
-    if (!created) throw badRequest("Trade was not captured");
+    if (!created) {
+      const [existingConcurrently] = await db.select().from(trades).where(eq(trades.idempotencyKey, body.idempotencyKey));
+      if (existingConcurrently) return { idempotent: true, trade: existingConcurrently };
+      throw badRequest("Trade was not captured");
+    }
     return { idempotent: false, trade: created };
   });
 
