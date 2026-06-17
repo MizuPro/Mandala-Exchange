@@ -1,6 +1,13 @@
 ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS reserved_amount numeric NOT NULL DEFAULT 0;
 
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS submission_status text NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS place_idempotency_key text,
+  ADD COLUMN IF NOT EXISTS last_submission_error text,
+  ADD COLUMN IF NOT EXISTS last_action_status text,
+  ADD COLUMN IF NOT EXISTS last_action_reason text;
+
 CREATE UNIQUE INDEX IF NOT EXISTS cash_balances_broker_account_uq
   ON cash_balances (broker_account_id);
 

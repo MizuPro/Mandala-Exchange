@@ -84,6 +84,11 @@ export const orders = pgTable("orders", {
   filled_quantity: integer("filled_quantity").notNull().default(0),
   remaining_quantity: integer("remaining_quantity").notNull(),
   reserved_amount: numeric("reserved_amount").notNull().default("0"),
+  submission_status: text("submission_status").notNull().default("pending"), // pending, submitted, unknown, failed
+  place_idempotency_key: text("place_idempotency_key"),
+  last_submission_error: text("last_submission_error"),
+  last_action_status: text("last_action_status"),
+  last_action_reason: text("last_action_reason"),
   status: text("status").notNull(), // pending, accepted, rejected, cancelled, filled, expired
   reject_reason: text("reject_reason"),
   created_at: timestamp("created_at").defaultNow(),

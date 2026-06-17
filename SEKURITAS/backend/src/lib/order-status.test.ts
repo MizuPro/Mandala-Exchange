@@ -6,6 +6,7 @@ describe("order status normalization", () => {
     expect(normalizeOrderStatus("PARTIAL_FILL")).toBe("partially_filled");
     expect(normalizeOrderStatus("partially_filled")).toBe("partially_filled");
     expect(normalizeOrderStatus("CANCELED")).toBe("cancelled");
+    expect(normalizeOrderStatus("SUBMIT_UNKNOWN")).toBe("submit_unknown");
   });
 
   it("classifies fill and terminal statuses", () => {

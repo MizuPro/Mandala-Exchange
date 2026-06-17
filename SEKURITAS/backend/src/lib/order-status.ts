@@ -1,5 +1,6 @@
 export type OrderStatus =
   | "pending"
+  | "submit_unknown"
   | "accepted"
   | "open"
   | "amended"
@@ -12,6 +13,7 @@ export type OrderStatus =
 
 const STATUS_MAP: Record<string, OrderStatus> = {
   PENDING: "pending",
+  SUBMIT_UNKNOWN: "submit_unknown",
   ACCEPTED: "accepted",
   OPEN: "open",
   AMENDED: "amended",
@@ -24,6 +26,7 @@ const STATUS_MAP: Record<string, OrderStatus> = {
   EXPIRED: "expired",
   LOCKED_NON_CANCELLABLE: "locked_non_cancellable",
   pending: "pending",
+  submit_unknown: "submit_unknown",
   accepted: "accepted",
   open: "open",
   amended: "amended",
@@ -55,4 +58,3 @@ export function isFillOrderStatus(status: unknown) {
   const normalized = normalizeOrderStatus(status);
   return normalized === "filled" || normalized === "partially_filled";
 }
-
