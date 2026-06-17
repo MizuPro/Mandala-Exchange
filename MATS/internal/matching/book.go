@@ -18,6 +18,9 @@ func NewBook(symbol string) *Book {
 }
 
 func (b *Book) Add(order *domain.Order) {
+	if order.OrderType == domain.OrderTypeMarket {
+		return
+	}
 	if order.Side == domain.SideBuy {
 		b.buys = append(b.buys, order)
 		sortBuyOrders(b.buys)
@@ -80,6 +83,14 @@ func (b *Book) Match(incoming *domain.Order, newTrade func(resting *domain.Order
 	switch {
 	case incoming.RemainingQuantity == 0:
 		incoming.Status = domain.OrderStatusFilled
+	case incoming.OrderType == domain.OrderTypeMarket && incoming.FilledQuantity > 0:
+		incoming.RemainingQuantity = 0
+		incoming.Status = domain.OrderStatusCancelled
+		incoming.RejectReason = "market_order_remaining_cancelled"
+	case incoming.OrderType == domain.OrderTypeMarket:
+		incoming.RemainingQuantity = 0
+		incoming.Status = domain.OrderStatusRejected
+		incoming.RejectReason = "market_order_no_liquidity"
 	case incoming.FilledQuantity > 0:
 		incoming.Status = domain.OrderStatusPartiallyFilled
 		b.Add(incoming)
@@ -113,6 +124,9 @@ func (b *Book) bestOpposite(side domain.Side) *domain.Order {
 }
 
 func crosses(incoming, resting *domain.Order) bool {
+	if incoming.OrderType == domain.OrderTypeMarket {
+		return true
+	}
 	if incoming.Side == domain.SideBuy {
 		return incoming.Price >= resting.Price
 	}

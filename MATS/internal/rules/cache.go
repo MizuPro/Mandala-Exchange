@@ -107,13 +107,13 @@ func (c *Cache) ValidatePlace(req PlaceValidationRequest) string {
 	if req.IsMargin {
 		return "margin_trading_not_supported"
 	}
-	if req.OrderType != domain.OrderTypeLimit {
+	if req.OrderType != domain.OrderTypeLimit && req.OrderType != domain.OrderTypeMarket {
 		return "unsupported_order_type"
 	}
 	if req.Quantity <= 0 {
 		return "quantity_must_be_positive"
 	}
-	if req.Price <= 0 {
+	if req.OrderType == domain.OrderTypeLimit && req.Price <= 0 {
 		return "price_must_be_positive"
 	}
 	if c.session == nil || len(c.profiles) == 0 || len(c.securities) == 0 {
@@ -122,6 +122,9 @@ func (c *Cache) ValidatePlace(req PlaceValidationRequest) string {
 	sessionStatus := c.sessionStatusLocked()
 	if !allowsOrderEntry(sessionStatus) {
 		return "market_not_open_for_order_entry"
+	}
+	if req.OrderType == domain.OrderTypeMarket && sessionStatus != domain.SessionContinuous {
+		return "market_order_requires_continuous_session"
 	}
 	if sessionStatus == domain.SessionPostClosing && c.session != nil && !c.session.PostClosingEnabled {
 		return "post_closing_not_enabled"
@@ -157,6 +160,12 @@ func (c *Cache) ValidatePlace(req PlaceValidationRequest) string {
 	}
 	if req.Quantity%lotSize != 0 {
 		return "quantity_not_multiple_of_lot_size"
+	}
+	if req.OrderType == domain.OrderTypeMarket {
+		if !validAutoRejection(req.Quantity, lotSize, int64(security.SharesOutstanding), profile.AutoRejectionRules) {
+			return "auto_rejection_volume"
+		}
+		return ""
 	}
 	if !validTick(req.Price, profile.TickSizeRules) {
 		return "price_not_valid_tick"

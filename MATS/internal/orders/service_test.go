@@ -91,6 +91,183 @@ func TestServiceRejectsInvalidTick(t *testing.T) {
 	}
 }
 
+func TestServiceMarketBuyExecutesAgainstBestAsk(t *testing.T) {
+	ctx := context.Background()
+	service, _ := newTestService()
+
+	ask, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "SELL-MKT-REST",
+		BrokerCode:     "MDLA",
+		AccountID:      "SELLER",
+		Symbol:         "MNDL",
+		Side:           domain.SideSell,
+		OrderType:      domain.OrderTypeLimit,
+		Price:          100,
+		Quantity:       100,
+		IdempotencyKey: "sell-mkt-rest",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ask.Order.Status != domain.OrderStatusOpen {
+		t.Fatalf("expected resting ask open, got %s", ask.Order.Status)
+	}
+
+	buy, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "BUY-MARKET",
+		BrokerCode:     "MDLA",
+		AccountID:      "BUYER",
+		Symbol:         "MNDL",
+		Side:           domain.SideBuy,
+		OrderType:      domain.OrderTypeMarket,
+		Quantity:       100,
+		IdempotencyKey: "buy-market",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buy.Order.Status != domain.OrderStatusFilled {
+		t.Fatalf("expected market buy filled, got %s", buy.Order.Status)
+	}
+	if len(buy.Trades) != 1 || buy.Trades[0].Price != 100 {
+		t.Fatalf("expected one trade at resting price 100, got %#v", buy.Trades)
+	}
+}
+
+func TestServiceMarketSellExecutesAgainstBestBid(t *testing.T) {
+	ctx := context.Background()
+	service, _ := newTestService()
+
+	_, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "BUY-MKT-REST",
+		BrokerCode:     "MDLA",
+		AccountID:      "BUYER",
+		Symbol:         "MNDL",
+		Side:           domain.SideBuy,
+		OrderType:      domain.OrderTypeLimit,
+		Price:          101,
+		Quantity:       100,
+		IdempotencyKey: "buy-mkt-rest",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sell, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "SELL-MARKET",
+		BrokerCode:     "MDLA",
+		AccountID:      "SELLER",
+		Symbol:         "MNDL",
+		Side:           domain.SideSell,
+		OrderType:      domain.OrderTypeMarket,
+		Quantity:       100,
+		IdempotencyKey: "sell-market",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sell.Order.Status != domain.OrderStatusFilled {
+		t.Fatalf("expected market sell filled, got %s", sell.Order.Status)
+	}
+	if len(sell.Trades) != 1 || sell.Trades[0].Price != 101 {
+		t.Fatalf("expected one trade at resting price 101, got %#v", sell.Trades)
+	}
+}
+
+func TestServicePartialMarketOrderCancelsRemainderAndDoesNotRest(t *testing.T) {
+	ctx := context.Background()
+	service, _ := newTestService()
+
+	_, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "SELL-PARTIAL-MKT",
+		BrokerCode:     "MDLA",
+		AccountID:      "SELLER",
+		Symbol:         "MNDL",
+		Side:           domain.SideSell,
+		OrderType:      domain.OrderTypeLimit,
+		Price:          100,
+		Quantity:       100,
+		IdempotencyKey: "sell-partial-mkt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buy, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "BUY-MARKET-PARTIAL",
+		BrokerCode:     "MDLA",
+		AccountID:      "BUYER",
+		Symbol:         "MNDL",
+		Side:           domain.SideBuy,
+		OrderType:      domain.OrderTypeMarket,
+		Quantity:       200,
+		IdempotencyKey: "buy-market-partial",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buy.Order.Status != domain.OrderStatusCancelled {
+		t.Fatalf("expected market remainder cancelled, got %s", buy.Order.Status)
+	}
+	if buy.Order.FilledQuantity != 100 || buy.Order.RemainingQuantity != 0 {
+		t.Fatalf("expected 100 filled and 0 remaining, got filled=%d remaining=%d", buy.Order.FilledQuantity, buy.Order.RemainingQuantity)
+	}
+	if buy.Order.RejectReason != "market_order_remaining_cancelled" {
+		t.Fatalf("unexpected reject reason %q", buy.Order.RejectReason)
+	}
+}
+
+func TestServiceRejectsMarketOrderWhenBookEmpty(t *testing.T) {
+	ctx := context.Background()
+	service, _ := newTestService()
+
+	buy, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "BUY-MARKET-EMPTY",
+		BrokerCode:     "MDLA",
+		AccountID:      "BUYER",
+		Symbol:         "MNDL",
+		Side:           domain.SideBuy,
+		OrderType:      domain.OrderTypeMarket,
+		Quantity:       100,
+		IdempotencyKey: "buy-market-empty",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buy.Order.Status != domain.OrderStatusRejected {
+		t.Fatalf("expected rejected market order, got %s", buy.Order.Status)
+	}
+	if buy.Order.RejectReason != "market_order_no_liquidity" {
+		t.Fatalf("unexpected reject reason %q", buy.Order.RejectReason)
+	}
+}
+
+func TestServiceRejectsMarketOrderDuringAuctionCollection(t *testing.T) {
+	ctx := context.Background()
+	service, cache := newTestService()
+	cache.SetSessionStatus(domain.SessionOpeningAuction)
+
+	buy, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "BUY-MARKET-AUCTION",
+		BrokerCode:     "MDLA",
+		AccountID:      "BUYER",
+		Symbol:         "MNDL",
+		Side:           domain.SideBuy,
+		OrderType:      domain.OrderTypeMarket,
+		Quantity:       100,
+		IdempotencyKey: "buy-market-auction",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buy.Order.Status != domain.OrderStatusRejected {
+		t.Fatalf("expected rejected market order, got %s", buy.Order.Status)
+	}
+	if buy.Order.RejectReason != "market_order_requires_continuous_session" {
+		t.Fatalf("unexpected reject reason %q", buy.Order.RejectReason)
+	}
+}
+
 func TestServiceExpiresOpenOrders(t *testing.T) {
 	ctx := context.Background()
 	service, _ := newTestService()

@@ -19,7 +19,8 @@ const (
 type OrderType string
 
 const (
-	OrderTypeLimit OrderType = "limit"
+	OrderTypeLimit  OrderType = "limit"
+	OrderTypeMarket OrderType = "market"
 )
 
 type OrderStatus string

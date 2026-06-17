@@ -6,7 +6,7 @@ All `/v1/*` endpoints require `x-service-token`. Request handlers also accept `x
 
 ### `POST /v1/orders`
 
-Places a limit order from Sekuritas.
+Places a limit or market order from Sekuritas.
 
 ```json
 {
@@ -34,6 +34,31 @@ Response:
 ```
 
 Rejects include an order with status `rejected` and explicit `reject_reason`.
+
+Market order request:
+
+```json
+{
+  "client_order_id": "SEC-ORDER-2",
+  "broker_code": "MDLA",
+  "account_id": "INV-1",
+  "symbol": "MNDL",
+  "side": "buy",
+  "order_type": "market",
+  "quantity": 100,
+  "idempotency_key": "place-SEC-ORDER-2"
+}
+```
+
+Market order behavior:
+
+- Accepted order type values are `limit` and `market`.
+- `price` is required for `limit` and ignored/optional for `market`.
+- Market orders are valid only during `continuous` session.
+- Market orders execute immediately against the best opposite prices.
+- If the book is empty or no opposite liquidity is available, the order is persisted with `status: "rejected"` and `reject_reason: "market_order_no_liquidity"`.
+- If only part of the quantity is executable, generated trades are returned, the remaining quantity is set to `0`, and the order is persisted with `status: "cancelled"` and `reject_reason: "market_order_remaining_cancelled"`.
+- Market orders never rest in the order book and cannot be amended.
 
 ### `PATCH /v1/orders/{orderId}`
 

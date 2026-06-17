@@ -205,6 +205,9 @@ func (s *Service) Amend(ctx context.Context, req AmendRequest) (Response, error)
 	if !ok {
 		return Response{}, matching.ErrOrderNotFound
 	}
+	if existing.OrderType == domain.OrderTypeMarket {
+		return Response{}, fmt.Errorf("market_order_cannot_be_amended")
+	}
 	if rejectReason := s.rules.ValidateAmend(rules.AmendValidationRequest{OrderID: req.OrderID}); rejectReason != "" {
 		if rejectReason == string(domain.OrderStatusLockedNonCancellable) {
 			existing.Status = domain.OrderStatusLockedNonCancellable
@@ -525,7 +528,9 @@ func (r PlaceRequest) validateShape() error {
 		return fmt.Errorf("symbol_required")
 	case r.Side != domain.SideBuy && r.Side != domain.SideSell:
 		return fmt.Errorf("invalid_side")
-	case r.Price <= 0:
+	case r.OrderType != domain.OrderTypeLimit && r.OrderType != domain.OrderTypeMarket:
+		return fmt.Errorf("unsupported_order_type")
+	case r.OrderType == domain.OrderTypeLimit && r.Price <= 0:
 		return fmt.Errorf("price_must_be_positive")
 	case r.Quantity <= 0:
 		return fmt.Errorf("quantity_must_be_positive")
