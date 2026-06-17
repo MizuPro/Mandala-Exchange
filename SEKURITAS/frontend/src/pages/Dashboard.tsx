@@ -4,6 +4,12 @@ import { useStore } from '../store/useStore';
 import Portfolio from '../components/Portfolio';
 import OrderEntry from '../components/OrderEntry';
 import OrderList from '../components/OrderList';
+import MarketPanel from '../components/MarketPanel';
+import CompanyPanel from '../components/CompanyPanel';
+import AccountProfile from '../components/AccountProfile';
+import SettlementPanel from '../components/SettlementPanel';
+import Leaderboard from '../components/Leaderboard';
+import Notifications from '../components/Notifications';
 import { LogOut, Activity } from 'lucide-react';
 
 export default function Dashboard() {
@@ -78,14 +84,20 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-        <div className="grid-2" style={{ gridTemplateColumns: '2fr 1fr', alignItems: 'start' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className="dashboard-shell">
+          <div className="dashboard-main">
+            <MarketPanel />
             <Portfolio />
             <OrderList />
+            <CompanyPanel />
+            <SettlementPanel />
           </div>
-          <div style={{ position: 'sticky', top: '100px' }}>
+          <aside className="dashboard-side">
             <OrderEntry />
-          </div>
+            <AccountProfile />
+            <Notifications />
+            <Leaderboard />
+          </aside>
         </div>
       </main>
     </>
