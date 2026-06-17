@@ -77,10 +77,27 @@ export default function Dashboard() {
           </div>
         )}
         {(market.sessionStatus || Object.keys(market.lastPrices).length > 0) && (
-          <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-            <span className="text-muted">Session: <strong style={{ color: 'var(--text-main)' }}>{market.sessionStatus || 'connected'}</strong></span>
+          <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="text-muted">
+              Session: <strong style={{ color: 'var(--text-main)' }}>{market.sessionStatus || 'connected'}</strong>
+              {market.timeRemainingSeconds !== undefined && (
+                <span style={{ marginLeft: '8px', fontSize: '0.85rem' }}>
+                  ({Math.floor(market.timeRemainingSeconds / 60)}:{(market.timeRemainingSeconds % 60).toString().padStart(2, '0')})
+                </span>
+              )}
+            </span>
+            {market.marketHalt && (
+              <span style={{ backgroundColor: 'var(--danger)', color: 'white', padding: '0.25rem 0.75rem', borderRadius: '4px', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                MARKET HALTED
+              </span>
+            )}
             {Object.entries(market.lastPrices).slice(0, 4).map(([symbol, price]) => (
-              <span key={symbol}>{symbol}: <strong>{new Intl.NumberFormat('id-ID').format(price)}</strong></span>
+              <span key={symbol}>
+                {symbol}: <strong>{new Intl.NumberFormat('id-ID').format(price)}</strong>
+                {market.suspendedSymbols.includes(symbol) && (
+                  <span style={{ color: 'var(--danger)', marginLeft: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>(SUSPENDED)</span>
+                )}
+              </span>
             ))}
           </div>
         )}

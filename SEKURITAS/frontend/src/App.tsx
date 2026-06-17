@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useStore } from './store/useStore';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import VerifyEmail from './pages/VerifyEmail';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -30,6 +31,11 @@ function App() {
         <Route path="/" element={
           <ProtectedRoute>
             <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin" element={
+          <ProtectedRoute>
+            <AdminDashboard />
           </ProtectedRoute>
         } />
       </Routes>

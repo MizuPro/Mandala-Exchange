@@ -4,8 +4,8 @@ import { Send, TrendingUp, TrendingDown } from 'lucide-react';
 
 export default function OrderEntry() {
   const [symbol, setSymbol] = useState('');
-  const [side, setSide] = useState<"BUY"|"SELL">("BUY");
-  const [orderType, setOrderType] = useState<"LIMIT"|"MARKET">("LIMIT");
+  const [side, setSide] = useState<"buy"|"sell">("buy");
+  const [orderType, setOrderType] = useState<"limit"|"market">("limit");
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
   
@@ -25,43 +25,43 @@ export default function OrderEntry() {
     e.preventDefault();
     const priceValue = Number(price);
     const quantityValue = Number(quantity);
-    const priceIsValid = orderType === 'MARKET' || (Number.isInteger(priceValue) && priceValue > 0);
+    const priceIsValid = orderType === 'market' || (Number.isInteger(priceValue) && priceValue > 0);
     if (!symbol || !priceIsValid || !Number.isInteger(quantityValue) || quantityValue <= 0) {
-      alert(orderType === 'MARKET' ? 'Symbol and quantity must be valid positive values.' : 'Symbol, price, and quantity must be valid positive values.');
+      alert(orderType === 'market' ? 'Symbol and quantity must be valid positive values.' : 'Symbol, price, and quantity must be valid positive values.');
       return;
     }
     try {
-      await placeOrder(symbol.toUpperCase(), side, orderType === 'MARKET' ? undefined : priceValue, quantityValue, orderType);
+      await placeOrder(symbol.toUpperCase(), side, orderType === 'market' ? undefined : priceValue, quantityValue, orderType);
       setSymbol('');
       setPrice('');
       setQuantity('');
-      alert(`${orderType} ${side} ${symbol} order placed successfully!`);
+      alert(`${orderType.toUpperCase()} ${side.toUpperCase()} ${symbol} order placed successfully!`);
     } catch (err: any) {
       alert(`Failed to place order: ${err.message}`);
     }
   };
 
   const lastPrice = market.lastPrices[symbol.toUpperCase()] || 0;
-  const priceValue = orderType === 'MARKET' ? lastPrice : Number(price);
+  const priceValue = orderType === 'market' ? lastPrice : Number(price);
   const quantityValue = Number(quantity);
   const estValue = Number.isFinite(priceValue * quantityValue) ? priceValue * quantityValue : 0;
-  const brokerRate = Number(side === 'BUY' ? feeSchedule?.brokerBuyRate : feeSchedule?.brokerSellRate) || 0.0015;
+  const brokerRate = Number(side === 'buy' ? feeSchedule?.brokerBuyRate : feeSchedule?.brokerSellRate) || 0.0015;
   const marketRate = (Number(feeSchedule?.exchangeFeeRate) || 0) +
     (Number(feeSchedule?.clearingFeeRate) || 0) +
     (Number(feeSchedule?.settlementFeeRate) || 0) +
     (Number(feeSchedule?.guaranteeFundRate) || 0);
   const vatRate = Number(feeSchedule?.vatRate) || 0;
-  const sellTaxRate = side === 'SELL' ? Number(feeSchedule?.sellTaxRate) || 0 : 0;
+  const sellTaxRate = side === 'sell' ? Number(feeSchedule?.sellTaxRate) || 0 : 0;
   const minimumFee = Number(feeSchedule?.minimumFee) || 0;
   const estFee = Math.max(minimumFee, estValue * (brokerRate + marketRate + sellTaxRate) + (estValue * brokerRate * vatRate));
-  const totalReq = side === 'BUY' ? estValue + estFee : estValue - estFee;
+  const totalReq = side === 'buy' ? estValue + estFee : estValue - estFee;
 
   const formatIDR = (val: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
 
   return (
     <div className="glass-panel animate-fade-in" style={{ padding: '1.5rem', height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        {side === 'BUY' ? <TrendingUp className="text-success" /> : <TrendingDown className="text-danger" />}
+        {side === 'buy' ? <TrendingUp className="text-success" /> : <TrendingDown className="text-danger" />}
         <h3>Order Entry</h3>
       </div>
 
@@ -70,26 +70,26 @@ export default function OrderEntry() {
           <button 
             type="button" 
             className={`btn-success`} 
-            style={{ flex: 1, opacity: side === 'BUY' ? 1 : 0.3 }}
-            onClick={() => setSide('BUY')}
+            style={{ flex: 1, opacity: side === 'buy' ? 1 : 0.3 }}
+            onClick={() => setSide('buy')}
           >
             BUY
           </button>
           <button 
             type="button" 
             className={`btn-danger`} 
-            style={{ flex: 1, opacity: side === 'SELL' ? 1 : 0.3 }}
-            onClick={() => setSide('SELL')}
+            style={{ flex: 1, opacity: side === 'sell' ? 1 : 0.3 }}
+            onClick={() => setSide('sell')}
           >
             SELL
           </button>
         </div>
 
         <div className="segmented-control" style={{ marginBottom: '1.25rem' }}>
-          <button type="button" className={orderType === 'LIMIT' ? 'active' : ''} onClick={() => setOrderType('LIMIT')}>
+          <button type="button" className={orderType === 'limit' ? 'active' : ''} onClick={() => setOrderType('limit')}>
             LIMIT
           </button>
-          <button type="button" className={orderType === 'MARKET' ? 'active' : ''} onClick={() => setOrderType('MARKET')}>
+          <button type="button" className={orderType === 'market' ? 'active' : ''} onClick={() => setOrderType('market')}>
             MARKET
           </button>
         </div>
@@ -120,10 +120,10 @@ export default function OrderEntry() {
               type="number" 
               value={price} 
               onChange={e => setPrice(e.target.value)} 
-              placeholder={orderType === 'MARKET' ? (lastPrice ? `Last ${lastPrice}` : 'Market') : '0'} 
+              placeholder={orderType === 'market' ? (lastPrice ? `Last ${lastPrice}` : 'market') : '0'} 
               min={1}
-              required={orderType === 'LIMIT'}
-              disabled={orderType === 'MARKET'}
+              required={orderType === 'limit'}
+              disabled={orderType === 'market'}
             />
           </div>
           <div>
@@ -140,13 +140,13 @@ export default function OrderEntry() {
           </div>
         </div>
 
-        {orderType === 'MARKET' && (
+        {orderType === 'market' && (
           <div className="risk-note" style={{ marginBottom: '1rem' }}>
             Market orders execute immediately against available opposite book. Unfilled remainder is cancelled.
           </div>
         )}
 
-        {((orderType === 'MARKET' || Number(price) > 0) && Number(quantity) > 0) && (
+        {((orderType === 'market' || Number(price) > 0) && Number(quantity) > 0) && (
           <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <span className="text-muted">Est. Value</span>
@@ -158,14 +158,14 @@ export default function OrderEntry() {
             </div>
             <hr style={{ borderColor: 'var(--border)', margin: '0.5rem 0' }}/>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-              <span>{side === 'BUY' ? 'Total Required' : 'Est. Proceeds'}</span>
-              <span className={side === 'BUY' ? 'text-warning' : 'text-success'}>{formatIDR(totalReq)}</span>
+              <span>{side === 'buy' ? 'Total Required' : 'Est. Proceeds'}</span>
+              <span className={side === 'buy' ? 'text-warning' : 'text-success'}>{formatIDR(totalReq)}</span>
             </div>
           </div>
         )}
 
         <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={isLoading}>
-          <Send size={16} /> Submit {orderType} {side}
+          <Send size={16} /> Submit {orderType.toUpperCase()} {side.toUpperCase()}
         </button>
         {error && <p className="text-danger" style={{ marginTop: '1rem', fontSize: '0.875rem' }}>{error}</p>}
       </form>

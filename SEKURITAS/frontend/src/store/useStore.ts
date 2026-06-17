@@ -13,20 +13,9 @@ export interface Portfolio {
   positions: Array<{ symbol: string, available: number, reserved: number, pending: number, average_price: string, realized_pl: string }>;
 }
 
-export interface Order {
-  id: string;
-  client_order_id: string;
-  symbol: string;
-  side: "BUY" | "SELL";
-  order_type?: "LIMIT" | "MARKET";
-  price: string;
-  quantity: number;
-  filled_quantity: number;
-  remaining_quantity: number;
-  status: string;
-  reject_reason?: string;
-  created_at: string;
-}
+import { components } from '../types/api';
+
+export type Order = components["schemas"]["Order"];
 
 export interface ListedSecurity {
   symbol?: string;
@@ -51,6 +40,10 @@ export interface FeeSchedule {
 export interface MarketState {
   connected: boolean;
   sessionStatus: string;
+  timeRemainingSeconds?: number;
+  durationSeconds?: number;
+  marketHalt: boolean;
+  suspendedSymbols: string[];
   lastPrices: Record<string, number>;
   depth: Record<string, { bids: any[]; asks: any[] }>;
   trades: any[];
@@ -122,7 +115,7 @@ interface AppState {
   fetchLeaderboard: () => Promise<void>;
   fetchNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
-  placeOrder: (symbol: string, side: "BUY" | "SELL", price: number | undefined, quantity: number, orderType?: "LIMIT" | "MARKET") => Promise<void>;
+  placeOrder: (symbol: string, side: "buy" | "sell", price: number | undefined, quantity: number, orderType?: "limit" | "market") => Promise<void>;
   amendOrder: (id: string, payload: { price?: number; quantity?: number }) => Promise<void>;
   cancelOrder: (id: string) => Promise<void>;
   applyMarketEvent: (event: any) => void;
@@ -165,7 +158,7 @@ export const useStore = create<AppState>((set, get) => ({
   tradeHistory: [],
   leaderboard: null,
   notifications: [],
-  market: { connected: false, sessionStatus: "", lastPrices: {}, depth: {}, trades: [] },
+  market: { connected: false, sessionStatus: "", marketHalt: false, suspendedSymbols: [], lastPrices: {}, depth: {}, trades: [] },
   portfolioLoading: false,
   ordersLoading: false,
   orderActionLoading: false,
@@ -390,7 +383,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  placeOrder: async (symbol, side, price, quantity, orderType = "LIMIT") => {
+  placeOrder: async (symbol, side, price, quantity, orderType = "limit") => {
     try {
       set({ orderActionLoading: true, isLoading: true, error: null });
       await fetchApi('/orders', {
@@ -399,7 +392,7 @@ export const useStore = create<AppState>((set, get) => ({
           symbol,
           side,
           order_type: orderType,
-          ...(orderType === "LIMIT" ? { price } : {}),
+          ...(orderType === "limit" ? { price } : {}),
           quantity
         })
       });
@@ -447,6 +440,24 @@ export const useStore = create<AppState>((set, get) => ({
       const market = { ...state.market, connected: true };
       if (event.type === 'session_state') {
         market.sessionStatus = event.payload?.status || event.payload?.session_status || '';
+      }
+      if (event.type === 'session_timer') {
+        market.timeRemainingSeconds = event.payload?.time_remaining_seconds;
+        market.durationSeconds = event.payload?.duration_seconds;
+      }
+      if (event.type === 'market_halt') {
+        const symbol = event.symbol || event.payload?.symbol;
+        if (symbol) {
+          if (event.payload?.status === 'suspended') {
+            if (!market.suspendedSymbols.includes(symbol)) {
+              market.suspendedSymbols = [...market.suspendedSymbols, symbol];
+            }
+          } else if (event.payload?.status === 'resumed') {
+            market.suspendedSymbols = market.suspendedSymbols.filter(s => s !== symbol);
+          }
+        } else {
+          market.marketHalt = event.payload?.status === 'halted';
+        }
       }
       if (event.type === 'last_price' && event.symbol) {
         market.lastPrices = { ...market.lastPrices, [event.symbol]: Number(event.payload?.last || event.payload?.price || 0) };

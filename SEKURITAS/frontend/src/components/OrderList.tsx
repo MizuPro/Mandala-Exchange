@@ -20,7 +20,7 @@ export default function OrderList() {
   const handleAmend = async (order: any) => {
     const priceInput = prompt('New price', String(order.price));
     if (priceInput === null) return;
-    const quantityInput = prompt('New total quantity', String(order.quantity));
+    const quantityInput = prompt('New total quantity', String(order.original_quantity));
     if (quantityInput === null) return;
     const price = Number(priceInput);
     const quantity = Number(quantityInput);
@@ -72,18 +72,18 @@ export default function OrderList() {
               {orders.map(o => {
                 const status = normalizeStatus(o.status);
                 const canCancel = ["pending", "submit_unknown", "accepted", "open", "amended", "partially_filled"].includes(status);
-                const canAmend = (o.order_type || "LIMIT") !== "MARKET" && ["accepted", "open", "amended", "partially_filled"].includes(status);
-                const sideColor = o.side === "BUY" ? "text-success" : "text-danger";
-                const orderType = o.order_type || "LIMIT";
+                const canAmend = (o.order_type || "limit") !== "market" && ["accepted", "open", "amended", "partially_filled"].includes(status);
+                const sideColor = o.side === "buy" ? "text-success" : "text-danger";
+                const orderType = o.order_type || "limit";
                 
                 return (
                   <tr key={o.id}>
                     <td className="text-muted">{new Date(o.created_at).toLocaleTimeString()}</td>
                     <td style={{ fontWeight: 600 }}>{o.symbol}</td>
-                    <td className={sideColor}>{o.side}</td>
-                    <td>{orderType}</td>
-                    <td>{orderType === "MARKET" ? "Market" : formatIDR(o.price)}</td>
-                    <td>{o.quantity}</td>
+                    <td className={sideColor}>{o.side.toUpperCase()}</td>
+                    <td>{orderType.toUpperCase()}</td>
+                    <td>{orderType === "market" ? "Market" : formatIDR(o.price)}</td>
+                    <td>{o.original_quantity}</td>
                     <td>{o.filled_quantity}</td>
                     <td>
                       <span style={{ 
