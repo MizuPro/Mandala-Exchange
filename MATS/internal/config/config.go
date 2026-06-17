@@ -31,7 +31,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr:              getEnv("MATS_HTTP_ADDR", ":8082"),
 		DatabaseURL:           getEnv("MATS_DATABASE_URL", ""),
-		BEIBaseURL:            getEnv("BEI_BASE_URL", "http://localhost:3001/v1"),
+		BEIBaseURL:            getEnv("BEI_BASE_URL", "http://localhost:4100/v1"),
 		BEIServiceToken:       getEnv("BEI_SERVICE_TOKEN", ""),
 		SekuritasEventsURL:    getEnv("SEKURITAS_EVENTS_URL", ""),
 		SekuritasServiceToken: getEnv("SEKURITAS_SERVICE_TOKEN", ""),

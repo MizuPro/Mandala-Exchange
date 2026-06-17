@@ -37,6 +37,9 @@ func (a *Authenticator) Middleware(requiredScope string) func(http.Handler) http
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := strings.TrimSpace(r.Header.Get("x-service-token"))
+			if token == "" {
+				token = strings.TrimSpace(r.URL.Query().Get("access_token"))
+			}
 			identity, ok := a.tokens[token]
 			if !ok || token == "" {
 				writeAuthError(w, http.StatusUnauthorized, "missing_or_invalid_service_token")

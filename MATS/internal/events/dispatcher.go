@@ -21,6 +21,7 @@ const (
 	TargetBEI       = "bei"
 
 	TypeOrderStatus = "order_status"
+	TypeTradeFill   = "trade_fill"
 	TypeTradeFinal  = "trade_final"
 )
 
@@ -87,12 +88,32 @@ func (d *Dispatcher) PublishTrade(ctx context.Context, trade domain.Trade, corre
 		CorrelationID: correlationID,
 	}
 	d.publish(ctx, TargetBEI, TypeTradeFinal, trade.Symbol, correlationID, payload)
+	d.publishTradeFill(ctx, trade, domain.SideBuy, trade.BuyOrderID, correlationID)
+	d.publishTradeFill(ctx, trade, domain.SideSell, trade.SellOrderID, correlationID)
 	d.publishMarketData(trade.Symbol, "trade_tape", trade)
 	d.publishMarketData(trade.Symbol, "last_price", map[string]any{
 		"symbol":      trade.Symbol,
 		"last":        trade.Price,
 		"occurred_at": trade.OccurredAt,
 	})
+}
+
+func (d *Dispatcher) publishTradeFill(ctx context.Context, trade domain.Trade, side domain.Side, orderID string, correlationID string) {
+	if orderID == "" {
+		return
+	}
+	payload := TradeFillPayload{
+		EventType:      TypeTradeFill,
+		MATSOrderID:    orderID,
+		TradeID:        trade.ID,
+		Price:          trade.Price,
+		Quantity:       trade.Quantity,
+		Side:           side,
+		OccurredAt:     trade.OccurredAt,
+		IdempotencyKey: fmt.Sprintf("fill:%s:%s", trade.ID, orderID),
+		CorrelationID:  correlationID,
+	}
+	d.publish(ctx, TargetSekuritas, TypeTradeFill, trade.Symbol, correlationID, payload)
 }
 
 func (d *Dispatcher) PublishMarketData(symbol string, eventType string, payload any) {
@@ -299,4 +320,16 @@ type OrderStatusPayload struct {
 type TradePayload struct {
 	Trade         domain.Trade `json:"trade"`
 	CorrelationID string       `json:"correlation_id,omitempty"`
+}
+
+type TradeFillPayload struct {
+	EventType      string      `json:"event_type"`
+	MATSOrderID    string      `json:"mats_order_id"`
+	TradeID        string      `json:"trade_id"`
+	Price          int64       `json:"price"`
+	Quantity       int64       `json:"quantity"`
+	Side           domain.Side `json:"side"`
+	OccurredAt     time.Time   `json:"occurred_at"`
+	IdempotencyKey string      `json:"idempotency_key"`
+	CorrelationID  string      `json:"correlation_id,omitempty"`
 }
