@@ -5,10 +5,10 @@ import { requireServiceToken } from "../lib/auth.js";
 
 const settlementDetailSchema = z.object({
   mats_order_id: z.string().min(1),
-  trade_id: z.string().min(1).optional(),
-  idempotency_key: z.string().min(1).optional(),
-  price: z.coerce.number().finite().positive().optional(),
-  quantity: z.coerce.number().int().positive().optional(),
+  trade_id: z.string().min(1),
+  idempotency_key: z.string().min(1),
+  price: z.coerce.number().finite().positive(),
+  quantity: z.coerce.number().int().positive(),
   side: z.enum(["BUY", "SELL", "buy", "sell"]).optional(),
   settled_at: z.string().optional(),
 }).passthrough();

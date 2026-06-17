@@ -2,23 +2,11 @@ import crypto from "crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { cash_balances, fee_ledgers, orders, securities_positions, settlement_events, trade_fills } from "../db/schema.js";
+import { calculateFee, getFeeScheduleSnapshot } from "./fee-service.js";
 
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function estimatedFee(value: number) {
-  return value * 0.0015;
-}
-
-function calculateFees(value: number, side: string) {
-  const brokerFee = value * 0.0010;
-  const levyFee = value * 0.00043;
-  const vatFee = brokerFee * 0.11;
-  const whtFee = side === "SELL" ? value * 0.001 : 0;
-  const totalFee = brokerFee + levyFee + vatFee + whtFee;
-  return { brokerFee, levyFee, vatFee, whtFee, totalFee };
 }
 
 function payloadHash(payload: unknown) {
@@ -40,6 +28,9 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
     if (!order) return;
 
     const tradeId = tradeDetails.trade_id ? String(tradeDetails.trade_id) : "";
+    if (!tradeId || !tradeDetails.idempotency_key) {
+      throw new Error("settlement_trade_id_and_idempotency_key_required");
+    }
     const [existingFill] = tradeId
       ? await tx.select().from(trade_fills).where(eq(trade_fills.trade_id, tradeId)).limit(1)
       : [];
@@ -53,7 +44,7 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
 
     const idempotencyKey = settlementKey(matsOrderId, tradeDetails, order.id);
     const value = actualPrice * quantity;
-    const fees = calculateFees(value, order.side);
+    const fee = calculateFee(value, order.side as "BUY" | "SELL", await getFeeScheduleSnapshot());
     const hash = payloadHash(tradeDetails);
 
     const [event] = await tx.insert(settlement_events).values({
@@ -65,7 +56,7 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
       price: actualPrice.toFixed(6),
       quantity,
       gross_value: value.toFixed(6),
-      total_fee: fees.totalFee.toFixed(6),
+      total_fee: fee.totalFee.toFixed(6),
       payload_hash: hash,
     }).onConflictDoNothing().returning();
 
@@ -82,10 +73,10 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
     }
 
     await tx.insert(fee_ledgers).values([
-      { broker_account_id: order.broker_account_id, order_id: order.id, trade_id: tradeId || null, amount: fees.brokerFee.toFixed(6), fee_type: "BROKER" },
-      { broker_account_id: order.broker_account_id, order_id: order.id, trade_id: tradeId || null, amount: fees.levyFee.toFixed(6), fee_type: "LEVY_CLEARING" },
-      { broker_account_id: order.broker_account_id, order_id: order.id, trade_id: tradeId || null, amount: fees.vatFee.toFixed(6), fee_type: "VAT" },
-      ...(fees.whtFee > 0 ? [{ broker_account_id: order.broker_account_id, order_id: order.id, trade_id: tradeId || null, amount: fees.whtFee.toFixed(6), fee_type: "WHT" }] : [])
+      { broker_account_id: order.broker_account_id, order_id: order.id, trade_id: tradeId, amount: fee.brokerFee.toFixed(6), fee_type: "BROKER" },
+      { broker_account_id: order.broker_account_id, order_id: order.id, trade_id: tradeId, amount: fee.marketFee.toFixed(6), fee_type: "LEVY_CLEARING" },
+      { broker_account_id: order.broker_account_id, order_id: order.id, trade_id: tradeId, amount: fee.vatFee.toFixed(6), fee_type: "VAT" },
+      ...(fee.sellTax > 0 ? [{ broker_account_id: order.broker_account_id, order_id: order.id, trade_id: tradeId, amount: fee.sellTax.toFixed(6), fee_type: "WHT" }] : [])
     ]);
 
     const [cash] = await tx.select().from(cash_balances).where(eq(cash_balances.broker_account_id, order.broker_account_id)).limit(1);
@@ -93,12 +84,12 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
 
     const pendingBasisPrice = existingFill ? actualPrice : toNumber(order.price);
     const pendingBasisValue = pendingBasisPrice * quantity;
-    const pendingBasisFee = estimatedFee(pendingBasisValue);
+    const pendingBasisFee = calculateFee(pendingBasisValue, order.side as "BUY" | "SELL", await getFeeScheduleSnapshot());
 
     if (order.side === "BUY") {
-      const cashReturn = (pendingBasisValue + pendingBasisFee) - (value + fees.totalFee);
+      const cashReturn = (pendingBasisValue + pendingBasisFee.totalFee) - (value + fee.totalFee);
       const newAvailableCash = toNumber(cash.available) + cashReturn;
-      const newPendingCash = Math.max(toNumber(cash.pending) - (pendingBasisValue + pendingBasisFee), 0);
+      const newPendingCash = Math.max(toNumber(cash.pending) - (pendingBasisValue + pendingBasisFee.totalFee), 0);
 
       await tx.update(cash_balances).set({
         available: newAvailableCash.toFixed(6),
@@ -126,8 +117,8 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
         }).where(eq(securities_positions.id, pos.id));
       }
     } else {
-      const pendingCashToClear = pendingBasisValue - pendingBasisFee;
-      const actualNetGained = value - fees.totalFee;
+      const pendingCashToClear = pendingBasisValue - pendingBasisFee.totalFee;
+      const actualNetGained = value - fee.totalFee;
       const newAvailableCash = toNumber(cash.available) + actualNetGained;
       const newPendingCash = Math.max(toNumber(cash.pending) - pendingCashToClear, 0);
 
@@ -143,7 +134,7 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
 
       if (pos) {
         const avgPrice = toNumber(pos.average_price);
-        const pl = ((actualPrice - avgPrice) * quantity) - fees.totalFee;
+        const pl = ((actualPrice - avgPrice) * quantity) - fee.totalFee;
 
         await tx.update(securities_positions).set({
           realized_pl: (toNumber(pos.realized_pl) + pl).toFixed(6),
