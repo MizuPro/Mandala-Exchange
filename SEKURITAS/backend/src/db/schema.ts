@@ -90,6 +90,7 @@ export const orders = pgTable("orders", {
   last_submission_error: text("last_submission_error"),
   last_action_status: text("last_action_status"),
   last_action_reason: text("last_action_reason"),
+  last_mats_event_sequence: integer("last_mats_event_sequence").notNull().default(0),
   status: text("status").notNull(), // pending, accepted, rejected, cancelled, filled, expired
   reject_reason: text("reject_reason"),
   created_at: timestamp("created_at").defaultNow(),
@@ -118,7 +119,7 @@ export const trade_fills = pgTable("trade_fills", {
   quantity: integer("quantity").notNull(),
   timestamp: timestamp("timestamp").notNull(),
 }, (table) => ({
-  tradeUq: uniqueIndex("trade_fills_trade_uq").on(table.trade_id),
+  tradeUq: uniqueIndex("trade_fills_order_trade_uq").on(table.order_id, table.trade_id),
 }));
 
 export const fee_ledgers = pgTable("fee_ledgers", {
@@ -171,6 +172,24 @@ export const settlement_events = pgTable("settlement_events", {
   created_at: timestamp("created_at").defaultNow(),
 }, (table) => ({
   idempotencyUq: uniqueIndex("settlement_events_idempotency_uq").on(table.idempotency_key),
+}));
+
+export const settlement_inbox = pgTable("settlement_inbox", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  idempotency_key: text("idempotency_key").notNull(),
+  mats_order_id: text("mats_order_id").notNull(),
+  trade_id: text("trade_id"),
+  status: text("status").notNull().default("received"),
+  payload_hash: text("payload_hash").notNull(),
+  payload: jsonb("payload").notNull().default({}),
+  attempts: integer("attempts").notNull().default(0),
+  last_error: text("last_error"),
+  processed_at: timestamp("processed_at"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  idempotencyUq: uniqueIndex("settlement_inbox_idempotency_uq").on(table.idempotency_key),
+  orderStatusIdx: index("settlement_inbox_order_status_idx").on(table.mats_order_id, table.status),
 }));
 
 export const corporate_action_events = pgTable("corporate_action_events", {

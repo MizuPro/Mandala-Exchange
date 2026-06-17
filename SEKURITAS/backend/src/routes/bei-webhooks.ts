@@ -44,10 +44,15 @@ export default async function beiWebhookRoutes(app: FastifyInstance) {
     }
     
     try {
+      const results = [];
       for (const trade of parsed.data.details) {
-        await processSettlement(trade.mats_order_id, trade);
+        results.push(await processSettlement(trade.mats_order_id, trade));
       }
-      return reply.send({ success: true });
+      const deferred = results.filter((result) => result.status === "deferred");
+      if (deferred.length > 0) {
+        return reply.status(202).send({ success: false, status: "deferred", deferred, results });
+      }
+      return reply.send({ success: true, results });
     } catch (error: any) {
       app.log.error(error, "Settlement processing failed");
       return reply.status(500).send({ error: "Settlement processing error" });

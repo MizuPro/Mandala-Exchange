@@ -1,7 +1,15 @@
 import crypto from "crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/db.js";
-import { cash_balances, fee_ledgers, orders, securities_positions, settlement_events, trade_fills } from "../db/schema.js";
+import {
+  cash_balances,
+  fee_ledgers,
+  orders,
+  securities_positions,
+  settlement_events,
+  settlement_inbox,
+  trade_fills
+} from "../db/schema.js";
 import { calculateFee, getFeeScheduleSnapshot } from "./fee-service.js";
 import { createNotificationTx } from "./notification-service.js";
 
@@ -23,37 +31,98 @@ function settlementKey(matsOrderId: string, tradeDetails: any, fallbackOrderId: 
   );
 }
 
-export async function processSettlement(matsOrderId: string, tradeDetails: any = {}) {
-  await db.transaction(async (tx) => {
-    const [order] = await tx.select().from(orders).where(eq(orders.mats_order_id, matsOrderId)).limit(1);
-    if (!order) return;
+function normalizeSide(side: unknown) {
+  const normalized = String(side || "").trim().toLowerCase();
+  if (normalized !== "buy" && normalized !== "sell") {
+    throw new Error("unsupported_order_side_for_settlement");
+  }
+  return normalized as "buy" | "sell";
+}
 
-    const tradeId = tradeDetails.trade_id ? String(tradeDetails.trade_id) : "";
-    if (!tradeId || !tradeDetails.idempotency_key) {
-      throw new Error("settlement_trade_id_and_idempotency_key_required");
+type SettlementProcessResult = {
+  status: "processed" | "duplicate" | "deferred";
+  idempotencyKey: string;
+  reason?: string;
+};
+
+async function deferSettlement(tx: any, idempotencyKey: string, reason: string): Promise<SettlementProcessResult> {
+  await tx.update(settlement_inbox).set({
+    status: "pending_dependency",
+    last_error: reason,
+    updated_at: new Date(),
+  }).where(eq(settlement_inbox.idempotency_key, idempotencyKey));
+  return { status: "deferred", idempotencyKey, reason };
+}
+
+export async function processSettlement(matsOrderId: string, tradeDetails: any = {}): Promise<SettlementProcessResult> {
+  const tradeId = tradeDetails.trade_id ? String(tradeDetails.trade_id) : "";
+  if (!tradeId || !tradeDetails.idempotency_key) {
+    throw new Error("settlement_trade_id_and_idempotency_key_required");
+  }
+  const idempotencyKey = settlementKey(matsOrderId, tradeDetails, "");
+  const hash = payloadHash(tradeDetails);
+
+  return db.transaction(async (tx) => {
+    const [existingInbox] = await tx
+      .select()
+      .from(settlement_inbox)
+      .where(eq(settlement_inbox.idempotency_key, idempotencyKey))
+      .limit(1);
+
+    if (existingInbox) {
+      if (existingInbox.payload_hash !== hash) {
+        throw new Error("settlement_idempotency_payload_conflict");
+      }
+      if (existingInbox.status === "processed") {
+        return { status: "duplicate", idempotencyKey };
+      }
+      await tx.update(settlement_inbox).set({
+        status: "received",
+        attempts: sql`${settlement_inbox.attempts} + 1` as any,
+        last_error: null,
+        updated_at: new Date(),
+      }).where(eq(settlement_inbox.idempotency_key, idempotencyKey));
+    } else {
+      await tx.insert(settlement_inbox).values({
+        idempotency_key: idempotencyKey,
+        mats_order_id: matsOrderId,
+        trade_id: tradeId,
+        status: "received",
+        payload_hash: hash,
+        payload: tradeDetails,
+        attempts: 1,
+      });
     }
+
+    const [order] = await tx.select().from(orders).where(eq(orders.mats_order_id, matsOrderId)).limit(1);
+    if (!order) return deferSettlement(tx, idempotencyKey, "order_not_found");
+    const side = normalizeSide(order.side);
+    const feeSide = side === "buy" ? "BUY" : "SELL";
+
     const [existingFill] = tradeId
-      ? await tx.select().from(trade_fills).where(eq(trade_fills.trade_id, tradeId)).limit(1)
+      ? await tx.select().from(trade_fills).where(and(eq(trade_fills.order_id, order.id), eq(trade_fills.trade_id, tradeId))).limit(1)
       : [];
+    if (!existingFill) {
+      return deferSettlement(tx, idempotencyKey, "waiting_for_fill_accounting");
+    }
 
-    const actualPrice = toNumber(tradeDetails.price, existingFill ? toNumber(existingFill.price, toNumber(order.price)) : toNumber(order.price));
+    const actualPrice = toNumber(tradeDetails.price, toNumber(existingFill.price, toNumber(order.price)));
     const quantity = Math.min(
-      toNumber(tradeDetails.quantity, existingFill ? existingFill.quantity : order.filled_quantity),
-      order.filled_quantity
+      toNumber(tradeDetails.quantity, existingFill.quantity),
+      existingFill.quantity
     );
-    if (quantity <= 0 || actualPrice <= 0) return;
+    if (quantity <= 0) return deferSettlement(tx, idempotencyKey, "fill_not_ready");
+    if (actualPrice <= 0) return deferSettlement(tx, idempotencyKey, "price_not_ready");
 
-    const idempotencyKey = settlementKey(matsOrderId, tradeDetails, order.id);
     const value = actualPrice * quantity;
-    const fee = calculateFee(value, order.side as "BUY" | "SELL", await getFeeScheduleSnapshot());
-    const hash = payloadHash(tradeDetails);
+    const fee = calculateFee(value, feeSide, await getFeeScheduleSnapshot());
 
     const [event] = await tx.insert(settlement_events).values({
       idempotency_key: idempotencyKey,
       order_id: order.id,
       trade_id: tradeId || null,
       mats_order_id: matsOrderId,
-      side: order.side,
+      side,
       price: actualPrice.toFixed(6),
       quantity,
       gross_value: value.toFixed(6),
@@ -61,16 +130,14 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
       payload_hash: hash,
     }).onConflictDoNothing().returning();
 
-    if (!event) return;
-
-    if (tradeId) {
-      await tx.insert(trade_fills).values({
-        order_id: order.id,
-        trade_id: tradeId,
-        price: actualPrice.toFixed(6),
-        quantity,
-        timestamp: tradeDetails.settled_at ? new Date(tradeDetails.settled_at) : new Date(),
-      }).onConflictDoNothing();
+    if (!event) {
+      await tx.update(settlement_inbox).set({
+        status: "processed",
+        processed_at: new Date(),
+        last_error: null,
+        updated_at: new Date(),
+      }).where(eq(settlement_inbox.idempotency_key, idempotencyKey));
+      return { status: "duplicate", idempotencyKey };
     }
 
     await tx.insert(fee_ledgers).values([
@@ -83,11 +150,11 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
     const [cash] = await tx.select().from(cash_balances).where(eq(cash_balances.broker_account_id, order.broker_account_id)).limit(1);
     if (!cash) throw new Error("Cash balance not found");
 
-    const pendingBasisPrice = existingFill ? actualPrice : toNumber(order.price);
+    const pendingBasisPrice = actualPrice;
     const pendingBasisValue = pendingBasisPrice * quantity;
-    const pendingBasisFee = calculateFee(pendingBasisValue, order.side as "BUY" | "SELL", await getFeeScheduleSnapshot());
+    const pendingBasisFee = calculateFee(pendingBasisValue, feeSide, await getFeeScheduleSnapshot());
 
-    if (order.side === "BUY") {
+    if (side === "buy") {
       const cashReturn = (pendingBasisValue + pendingBasisFee.totalFee) - (value + fee.totalFee);
       const newAvailableCash = toNumber(cash.available) + cashReturn;
       const newPendingCash = Math.max(toNumber(cash.pending) - (pendingBasisValue + pendingBasisFee.totalFee), 0);
@@ -154,12 +221,38 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
       idempotencyKey: `notification:settlement:${idempotencyKey}`,
       metadata: {
         symbol: order.symbol,
-        side: order.side,
+        side,
         trade_id: tradeId,
         mats_order_id: matsOrderId,
         quantity,
         price: actualPrice,
       },
     });
+
+    await tx.update(settlement_inbox).set({
+      status: "processed",
+      processed_at: new Date(),
+      last_error: null,
+      updated_at: new Date(),
+    }).where(eq(settlement_inbox.idempotency_key, idempotencyKey));
+
+    return { status: "processed", idempotencyKey };
   });
+}
+
+export async function processPendingSettlementsForOrder(matsOrderId: string) {
+  if (!matsOrderId) return [];
+  const pending = await db
+    .select()
+    .from(settlement_inbox)
+    .where(and(
+      eq(settlement_inbox.mats_order_id, matsOrderId),
+      sql`${settlement_inbox.status} IN ('pending_dependency', 'failed')`
+    ));
+
+  const results: SettlementProcessResult[] = [];
+  for (const item of pending) {
+    results.push(await processSettlement(item.mats_order_id, item.payload));
+  }
+  return results;
 }

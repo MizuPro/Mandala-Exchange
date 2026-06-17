@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireAdminToken, signUserToken } from "../lib/auth.js";
 import { hashPassword } from "../lib/password.js";
 import { createBrokerAccount } from "../services/account-service.js";
+import { reconcileSubmitUnknownOrders } from "../services/order-service.js";
 import crypto from "crypto";
 
 const depositSchema = z.object({
@@ -91,6 +92,16 @@ export default async function adminRoutes(app: FastifyInstance) {
       broker_account: brokerAccount,
       generated_password: parsed.data.password ? undefined : password,
     };
+  });
+
+  // Reconcile submit_unknown orders
+  app.post("/reconcile-orders", async (request, reply) => {
+    try {
+      const result = await reconcileSubmitUnknownOrders();
+      return reply.send(result);
+    } catch (error: any) {
+      return reply.status(500).send({ error: error.message });
+    }
   });
 }
 
