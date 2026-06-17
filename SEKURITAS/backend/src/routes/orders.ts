@@ -1,16 +1,19 @@
 import { FastifyInstance } from "fastify";
 import { placeOrder, cancelOrder, amendOrder } from "../services/order-service.js";
 import { db } from "../db/db.js";
-import { orders, broker_accounts } from "../db/schema.js";
-import { desc, eq } from "drizzle-orm";
+import { order_amendments, orders, broker_accounts } from "../db/schema.js";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { authenticateActiveUser } from "../lib/auth.js";
 
 const placeOrderSchema = z.object({
   symbol: z.string().trim().min(1).max(12).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()),
   side: z.enum(["BUY", "SELL", "buy", "sell"]).transform((value) => value.toUpperCase() as "BUY" | "SELL"),
-  price: z.coerce.number().finite().int().positive(),
+  order_type: z.enum(["LIMIT", "MARKET", "limit", "market"]).default("LIMIT").transform((value) => value.toUpperCase() as "LIMIT" | "MARKET"),
+  price: z.coerce.number().finite().int().positive().optional(),
   quantity: z.coerce.number().finite().int().positive(),
+}).refine((value) => value.order_type === "MARKET" || value.price !== undefined, {
+  message: "price is required for limit orders",
 });
 
 const amendOrderSchema = z.object({
@@ -30,10 +33,10 @@ export default async function orderRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid order payload" });
     }
-    const { symbol, side, price, quantity } = parsed.data;
+    const { symbol, side, price, quantity, order_type } = parsed.data;
 
     try {
-      const order = await placeOrder(user_id, symbol, side, price, quantity);
+      const order = await placeOrder(user_id, symbol, side, price, quantity, order_type);
       return reply.status(201).send(order);
     } catch (error: any) {
       return reply.status(400).send({ error: error.message });
@@ -79,5 +82,22 @@ export default async function orderRoutes(app: FastifyInstance) {
       .where(eq(orders.broker_account_id, brokerAcc.id))
       .orderBy(desc(orders.created_at));
     return reply.send(userOrders);
+  });
+
+  app.get("/:id/amendments", async (request: any, reply) => {
+    const user_id = request.user_id;
+    const { id } = request.params as any;
+    const [brokerAcc] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, user_id)).limit(1);
+    if (!brokerAcc) return reply.status(404).send({ error: "Broker account not found" });
+
+    const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.broker_account_id, brokerAcc.id))).limit(1);
+    if (!order) return reply.status(404).send({ error: "Order not found" });
+
+    const rows = await db
+      .select()
+      .from(order_amendments)
+      .where(eq(order_amendments.order_id, order.id))
+      .orderBy(desc(order_amendments.created_at));
+    return reply.send(rows);
   });
 }
