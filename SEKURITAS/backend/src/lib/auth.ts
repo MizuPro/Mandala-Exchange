@@ -54,7 +54,9 @@ export async function authenticateActiveUser(request: any, reply: FastifyReply) 
 }
 
 export function requireServiceToken(request: any, reply: FastifyReply, expectedToken: string | undefined, name: string) {
-  if (!expectedToken && process.env.NODE_ENV !== "production") {
+  const allowInsecureLocal = process.env.ALLOW_INSECURE_LOCAL_TOKENS === "true";
+  const host = String(request.hostname || request.headers.host || "");
+  if (!expectedToken && allowInsecureLocal && /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) {
     return true;
   }
   const provided = request.headers["x-service-token"];
@@ -67,7 +69,9 @@ export function requireServiceToken(request: any, reply: FastifyReply, expectedT
 
 export function requireAdminToken(request: any, reply: FastifyReply) {
   const expectedToken = process.env.ADMIN_TOKEN;
-  if (!expectedToken && process.env.NODE_ENV !== "production") {
+  const allowInsecureLocal = process.env.ALLOW_INSECURE_LOCAL_TOKENS === "true";
+  const host = String(request.hostname || request.headers.host || "");
+  if (!expectedToken && allowInsecureLocal && /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) {
     return true;
   }
   const provided = request.headers["x-admin-token"];
