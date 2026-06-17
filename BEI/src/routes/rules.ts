@@ -17,6 +17,7 @@ import {
 import { actorFromRequest, correlationIdFromRequest, writeAudit } from "../lib/audit.js";
 import { badRequest } from "../lib/errors.js";
 import { boardTypes, sessionStatuses, settlementModes, tradingHaltStatuses } from "../types/enums.js";
+import { publishMarketUpdate } from "../lib/redis.js";
 
 const profileBody = z.object({
   name: z.string().min(3),
@@ -173,6 +174,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
     const body = sessionTemplateBody.parse(request.body);
     const [created] = await db.insert(sessionTemplates).values(body).returning();
     if (!created) throw badRequest("Session template was not created");
+    await publishMarketUpdate("session_template_created", { id: created.id });
     return created;
   });
 
@@ -180,6 +182,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
     const body = sessionSegmentBody.parse(request.body);
     const [created] = await db.insert(sessionSegments).values(body).returning();
     if (!created) throw badRequest("Session segment was not created");
+    await publishMarketUpdate("session_segment_created", { id: created.id });
     return created;
   });
 
@@ -194,6 +197,51 @@ export async function registerRuleRoutes(app: FastifyInstance) {
       LIMIT 1
     `);
     return result.rows[0] ?? null;
+  });
+
+  app.post("/integration/mats/sessions/active/status", async (request) => {
+    const body = z.object({
+      sessionId: z.string().uuid(),
+      status: z.enum(sessionStatuses)
+    }).parse(request.body);
+
+    const [updated] = await db
+      .update(sessionTemplates)
+      .set({ status: body.status, updatedAt: new Date() })
+      .where(eq(sessionTemplates.id, body.sessionId))
+      .returning();
+
+    if (!updated) throw badRequest("Active session not found");
+
+    // Auto-Settlement Trigger
+    if (body.status === "closed") {
+      try {
+        const createRes = await app.inject({
+          method: "POST",
+          url: "/v1/settlement/batches",
+          headers: { "x-service-token": request.headers["x-service-token"] as string },
+          payload: { sessionId: body.sessionId, mode: "end_of_session" }
+        });
+        
+        if (createRes.statusCode >= 200 && createRes.statusCode < 300) {
+          const createData = JSON.parse(createRes.body);
+          if (createData.batch && createData.batch.id) {
+            await app.inject({
+              method: "POST",
+              url: `/v1/settlement/batches/${createData.batch.id}/process`,
+              headers: { "x-service-token": request.headers["x-service-token"] as string }
+            });
+            console.log(`[Auto-Settlement] Successfully created and processed batch for session ${body.sessionId}`);
+          }
+        } else {
+          console.error(`[Auto-Settlement] Failed to create batch: ${createRes.body}`);
+        }
+      } catch (err) {
+        console.error(`[Auto-Settlement] Error triggering settlement:`, err);
+      }
+    }
+
+    return updated;
   });
 
   app.post("/fee-schedules", async (request) => {

@@ -70,7 +70,8 @@ const configSchema = z.object({
   BEI_SERVICE_TOKENS: z.string().optional().transform(parseServiceTokens),
   SEKURITAS_SETTLEMENT_WEBHOOK_URL: z.string().url().optional(),
   SEKURITAS_CORPORATE_ACTION_WEBHOOK_URL: z.string().url().optional(),
-  BEI_TO_SEKURITAS_TOKEN: z.string().optional()
+  BEI_TO_SEKURITAS_TOKEN: z.string().optional(),
+  REDIS_URL: z.string().url().default("redis://localhost:6379")
 });
 
 export const config = configSchema.parse(process.env);

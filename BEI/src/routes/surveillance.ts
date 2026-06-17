@@ -4,6 +4,8 @@ import { z } from "zod";
 import { db, pool } from "../db/index.js";
 import { surveillanceAlerts } from "../db/schema.js";
 import { toNumber } from "../lib/number.js";
+import { sessionTemplates, listedSecurities, specialNotations } from "../db/schema.js";
+import { publishMarketUpdate } from "../lib/redis.js";
 
 export async function registerSurveillanceRoutes(app: FastifyInstance) {
   app.post("/surveillance/scan/:sessionId", async (request) => {
@@ -19,7 +21,7 @@ export async function registerSurveillanceRoutes(app: FastifyInstance) {
     );
     const generated = [];
 
-    for (const summary of summaries.rows) {
+    for (const summary of (summaries.rows as any[])) {
       const reference = toNumber(summary.reference_price);
       const last = toNumber(summary.last ?? summary.close);
       const volume = toNumber(summary.volume);
@@ -38,6 +40,20 @@ export async function registerSurveillanceRoutes(app: FastifyInstance) {
           })
           .returning();
         if (alert) generated.push(alert);
+
+        // CIRCUIT BREAKER: Auto Suspend Symbol on extreme drop/gain
+        // In real world, maybe wait for consecutive hits, but for this, we suspend directly.
+        await db.insert(specialNotations).values({
+          securityId: summary.security_id,
+          type: "suspend",
+          note: `Auto-suspended by circuit breaker due to extreme price movement (${(change * 100).toFixed(2)}%)`,
+          isActive: true
+        });
+        
+        await publishMarketUpdate("suspend_symbol", {
+          symbol: summary.symbol,
+          reason: `circuit_breaker_price_movement_${(change * 100).toFixed(2)}`
+        });
       }
 
       if (volume > 0 && volume >= toNumber(summary.metadata?.averageVolume, Number.POSITIVE_INFINITY) * 3) {
@@ -56,6 +72,46 @@ export async function registerSurveillanceRoutes(app: FastifyInstance) {
       }
     }
 
+    // CIRCUIT BREAKER: Market Halt on index drop
+    // We calculate a simple equally weighted index change from the scanned summaries
+    let totalChange = 0;
+    let validCount = 0;
+    for (const summary of (summaries.rows as any[])) {
+      const reference = toNumber(summary.reference_price);
+      if (reference > 0) {
+        const last = toNumber(summary.last ?? summary.close);
+        const change = (last - reference) / reference;
+        totalChange += change;
+        validCount++;
+      }
+    }
+    const averageChange = validCount > 0 ? totalChange / validCount : 0;
+
+    // If average drop is > 5%, trigger market halt
+    if (averageChange <= -0.05) {
+      await db
+        .update(sessionTemplates)
+        .set({ status: "halted", updatedAt: new Date() })
+        .where(eq(sessionTemplates.id, params.sessionId));
+
+      await publishMarketUpdate("market_halt", {
+        sessionId: params.sessionId,
+        reason: `circuit_breaker_index_drop_${(averageChange * 100).toFixed(2)}`
+      });
+
+      const [alert] = await db
+        .insert(surveillanceAlerts)
+        .values({
+          sessionId: params.sessionId,
+          type: "market_halt_signal",
+          severity: "high",
+          message: `Market HALTED due to extreme average drop of ${(averageChange * 100).toFixed(2)}%`,
+          evidence: { averageChange }
+        })
+        .returning();
+      if (alert) generated.push(alert);
+    }
+
     const washTrade = await pool.query(
       `
       SELECT symbol, buy_investor_id, sell_investor_id, COUNT(*) AS count
@@ -67,7 +123,7 @@ export async function registerSurveillanceRoutes(app: FastifyInstance) {
       [params.sessionId]
     );
 
-    for (const row of washTrade.rows) {
+    for (const row of (washTrade.rows as any[])) {
       const [alert] = await db
         .insert(surveillanceAlerts)
         .values({
@@ -92,7 +148,7 @@ export async function registerSurveillanceRoutes(app: FastifyInstance) {
       [params.sessionId]
     );
 
-    for (const row of botDominance.rows) {
+    for (const row of (botDominance.rows as any[])) {
       const [alert] = await db
         .insert(surveillanceAlerts)
         .values({
