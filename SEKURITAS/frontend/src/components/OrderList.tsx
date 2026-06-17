@@ -1,6 +1,8 @@
 import { useStore } from '../store/useStore';
 import { ListFilter, Pencil, XCircle } from 'lucide-react';
 
+const LOT_SIZE = 100;
+
 export default function OrderList() {
   const orders = useStore(state => state.orders);
   const cancelOrder = useStore(state => state.cancelOrder);
@@ -24,8 +26,8 @@ export default function OrderList() {
     if (quantityInput === null) return;
     const price = Number(priceInput);
     const quantity = Number(quantityInput);
-    if (!Number.isInteger(price) || !Number.isInteger(quantity) || price <= 0 || quantity <= 0) {
-      alert('Price and quantity must be positive integers.');
+    if (!Number.isInteger(price) || !Number.isInteger(quantity) || price <= 0 || quantity <= 0 || quantity % LOT_SIZE !== 0) {
+      alert(`Price must be a positive integer and quantity must be a multiple of ${LOT_SIZE} shares.`);
       return;
     }
     try {
@@ -71,7 +73,7 @@ export default function OrderList() {
             <tbody>
               {orders.map(o => {
                 const status = normalizeStatus(o.status);
-                const canCancel = ["pending", "submit_unknown", "accepted", "open", "amended", "partially_filled"].includes(status);
+                const canCancel = ["accepted", "open", "amended", "partially_filled"].includes(status);
                 const canAmend = (o.order_type || "limit") !== "market" && ["accepted", "open", "amended", "partially_filled"].includes(status);
                 const sideColor = o.side === "buy" ? "text-success" : "text-danger";
                 const orderType = o.order_type || "limit";

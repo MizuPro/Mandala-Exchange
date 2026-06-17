@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Send, TrendingUp, TrendingDown } from 'lucide-react';
 
+const LOT_SIZE = 100;
+
 export default function OrderEntry() {
   const [symbol, setSymbol] = useState('');
   const [side, setSide] = useState<"buy"|"sell">("buy");
@@ -26,8 +28,11 @@ export default function OrderEntry() {
     const priceValue = Number(price);
     const quantityValue = Number(quantity);
     const priceIsValid = orderType === 'market' || (Number.isInteger(priceValue) && priceValue > 0);
-    if (!symbol || !priceIsValid || !Number.isInteger(quantityValue) || quantityValue <= 0) {
-      alert(orderType === 'market' ? 'Symbol and quantity must be valid positive values.' : 'Symbol, price, and quantity must be valid positive values.');
+    if (!symbol || !priceIsValid || !Number.isInteger(quantityValue) || quantityValue <= 0 || quantityValue % LOT_SIZE !== 0) {
+      alert(orderType === 'market'
+        ? `Symbol and quantity must be valid. Quantity must be a multiple of ${LOT_SIZE} shares.`
+        : `Symbol, price, and quantity must be valid. Quantity must be a multiple of ${LOT_SIZE} shares.`
+      );
       return;
     }
     try {
@@ -132,9 +137,9 @@ export default function OrderEntry() {
               type="number" 
               value={quantity} 
               onChange={e => setQuantity(e.target.value)} 
-              placeholder="1" 
-              min={1}
-              step={1}
+              placeholder={String(LOT_SIZE)}
+              min={LOT_SIZE}
+              step={LOT_SIZE}
               required 
             />
           </div>
