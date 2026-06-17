@@ -4,53 +4,65 @@
 Sekuritas mengirim request ke MATS untuk order management. MATS mengirim callback/webhook ke Sekuritas untuk order status dan trades.
 
 ### Place Order (Sekuritas -> MATS)
-`POST /api/v1/orders`
+`POST /v1/orders`
 ```json
 {
   "client_order_id": "seq-12345",
   "broker_code": "MANDALA",
+  "account_id": "broker-account-id",
   "symbol": "BBCA",
-  "side": "BUY",
+  "side": "buy",
+  "order_type": "limit",
   "price": 10000,
   "quantity": 100,
-  "time_in_force": "DAY"
+  "idempotency_key": "place-seq-12345"
 }
 ```
 
 ### Amend Order (Sekuritas -> MATS)
-`PUT /api/v1/orders/{mats_order_id}`
+`PATCH /v1/orders/{mats_order_id}`
 ```json
 {
   "price": 10100,
-  "quantity": 100
+  "quantity": 100,
+  "idempotency_key": "amend-seq-12345-1"
 }
 ```
 
 ### Cancel Order (Sekuritas -> MATS)
-`DELETE /api/v1/orders/{mats_order_id}`
+`POST /v1/orders/{mats_order_id}/cancel`
+```json
+{
+  "idempotency_key": "cancel-seq-12345-1"
+}
+```
 
 ### Order Status Update (MATS -> Sekuritas Webhook)
-`POST /internal/webhook/mats/order-update`
+`POST /internal/mats/events`
+
+Header: `x-service-token: <MATS_TO_SEKURITAS_TOKEN>`
+
 ```json
 {
   "mats_order_id": "mats-888",
   "client_order_id": "seq-12345",
-  "status": "FILLED",
+  "status": "filled",
   "filled_quantity": 100,
   "remaining_quantity": 0,
-  "average_price": 10000,
-  "timestamp": "2026-06-16T12:00:00Z"
+  "occurred_at": "2026-06-16T12:00:00Z"
 }
 ```
 
 ## 2. Kontrak Sekuritas <-> BEI
 Sekuritas mengambil referensi data dari BEI.
 
+Header untuk semua request BEI: `x-service-token: <BEI_SERVICE_TOKEN>`
+
 ### Get Listed Securities
-`GET /api/v1/issuers/securities`
+`GET /v1/public/securities`
 
 ### Get Fee Schedule
-`GET /api/v1/rules/fees`
+`GET /v1/public/fee-schedule`
 
 ### Settlement Notification (BEI -> Sekuritas Webhook)
 `POST /internal/webhook/bei/settlement`
