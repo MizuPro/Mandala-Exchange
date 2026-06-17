@@ -112,7 +112,8 @@ func (s *Service) Place(ctx context.Context, req PlaceRequest) (Response, error)
 	// Fallback ke persistent store untuk ketahanan setelah restart
 	if req.IdempotencyKey != "" {
 		if existing, err := s.store.FindOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
-			response := Response{Order: existing.Clone(), Trades: nil}
+			trades, _ := s.store.FindTradesByOrderID(ctx, existing.ID)
+			response := Response{Order: existing.Clone(), Trades: trades}
 			s.remember(req.IdempotencyKey, response)
 			return response, nil
 		}
@@ -211,7 +212,8 @@ func (s *Service) Amend(ctx context.Context, req AmendRequest) (Response, error)
 	}
 	// Fallback ke persistent store untuk ketahanan setelah restart
 	if existing, err := s.store.FindOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
-		response := Response{Order: existing.Clone(), Trades: nil}
+		trades, _ := s.store.FindTradesByOrderID(ctx, existing.ID)
+		response := Response{Order: existing.Clone(), Trades: trades}
 		s.remember(req.IdempotencyKey, response)
 		return response, nil
 	}

@@ -52,6 +52,7 @@ type Store interface {
 	FindOrderByIdempotency(context.Context, string) (*domain.Order, error)
 	LoadOpenOrders(context.Context) ([]*domain.Order, error)
 	SaveTrade(context.Context, *domain.Trade) error
+	FindTradesByOrderID(context.Context, string) ([]domain.Trade, error)
 	AppendEvent(context.Context, Event) error
 	SaveDeliveryEvent(context.Context, DeliveryEvent) error
 	UpdateDeliveryEvent(context.Context, DeliveryEvent) error
@@ -163,9 +164,46 @@ func (s *PostgresStore) SaveTrade(ctx context.Context, trade *domain.Trade) erro
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (id) DO NOTHING
 	`, trade.ID, trade.SequenceNumber, trade.SessionID, trade.Symbol, trade.Price, trade.Quantity,
+	`, trade.ID, trade.SequenceNumber, trade.SessionID, trade.Symbol, trade.Price, trade.Quantity,
 		trade.BuyOrderID, trade.SellOrderID, trade.BuyBrokerCode, trade.SellBrokerCode,
 		trade.BuyAccountID, trade.SellAccountID, trade.OccurredAt, trade.IdempotencyKey)
 	return err
+}
+
+func (s *PostgresStore) FindTradesByOrderID(ctx context.Context, orderID string) ([]domain.Trade, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, sequence_number, session_id, symbol, price::text, quantity::text, buy_order_id, sell_order_id,
+		       buy_broker_code, sell_broker_code, buy_account_id, sell_account_id, occurred_at, idempotency_key
+		FROM mats_trades
+		WHERE buy_order_id = $1 OR sell_order_id = $1
+		ORDER BY sequence_number
+	`, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var trades []domain.Trade
+	for rows.Next() {
+		var trade domain.Trade
+		var price, quantity string
+		if err := rows.Scan(
+			&trade.ID, &trade.SequenceNumber, &trade.SessionID, &trade.Symbol, &price, &quantity,
+			&trade.BuyOrderID, &trade.SellOrderID, &trade.BuyBrokerCode, &trade.SellBrokerCode,
+			&trade.BuyAccountID, &trade.SellAccountID, &trade.OccurredAt, &trade.IdempotencyKey,
+		); err != nil {
+			return nil, err
+		}
+		var parseErr error
+		if trade.Price, parseErr = parseNumericInt(price); parseErr != nil {
+			return nil, fmt.Errorf("parse trade price: %w", parseErr)
+		}
+		if trade.Quantity, parseErr = parseNumericInt(quantity); parseErr != nil {
+			return nil, fmt.Errorf("parse trade quantity: %w", parseErr)
+		}
+		trades = append(trades, trade)
+	}
+	return trades, rows.Err()
 }
 
 func (s *PostgresStore) AppendEvent(ctx context.Context, event Event) error {
