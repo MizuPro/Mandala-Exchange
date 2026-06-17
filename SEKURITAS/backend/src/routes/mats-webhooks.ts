@@ -4,14 +4,31 @@ import { requireServiceToken } from "../lib/auth.js";
 import { handleWebhookUpdate } from "../services/order-service.js";
 
 const matsOrderStatusSchema = z.object({
-  client_order_id: z.string().min(1),
+  event_type: z.string().optional(),
+  client_order_id: z.string().min(1).optional(),
   mats_order_id: z.string().min(1).optional(),
-  status: z.string().min(1),
-  filled_quantity: z.coerce.number().int().nonnegative().default(0),
-  remaining_quantity: z.coerce.number().int().nonnegative(),
+  status: z.string().min(1).optional(),
+  filled_quantity: z.coerce.number().int().nonnegative().optional(),
+  remaining_quantity: z.coerce.number().int().nonnegative().optional(),
+  trade_id: z.string().min(1).optional(),
+  price: z.coerce.number().finite().positive().optional(),
+  quantity: z.coerce.number().int().positive().optional(),
+  side: z.enum(["BUY", "SELL", "buy", "sell"]).optional(),
+  idempotency_key: z.string().min(1).optional(),
+  fills: z.array(z.object({
+    trade_id: z.string().min(1),
+    mats_order_id: z.string().min(1).optional(),
+    price: z.coerce.number().finite().positive(),
+    quantity: z.coerce.number().int().positive(),
+    side: z.enum(["BUY", "SELL", "buy", "sell"]).optional(),
+    occurred_at: z.string().optional(),
+    idempotency_key: z.string().min(1).optional(),
+  })).optional(),
   reject_reason: z.string().optional(),
   occurred_at: z.string().optional(),
   correlation_id: z.string().optional(),
+}).refine((value) => value.client_order_id || value.mats_order_id, {
+  message: "client_order_id or mats_order_id is required",
 });
 
 export default async function matsWebhookRoutes(app: FastifyInstance) {
@@ -33,4 +50,3 @@ export default async function matsWebhookRoutes(app: FastifyInstance) {
     }
   });
 }
-

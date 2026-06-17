@@ -1,8 +1,8 @@
 import { FastifyInstance } from "fastify";
-import { placeOrder, cancelOrder } from "../services/order-service.js";
+import { placeOrder, cancelOrder, amendOrder } from "../services/order-service.js";
 import { db } from "../db/db.js";
 import { orders, broker_accounts } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { authenticateActiveUser } from "../lib/auth.js";
 
@@ -11,6 +11,13 @@ const placeOrderSchema = z.object({
   side: z.enum(["BUY", "SELL", "buy", "sell"]).transform((value) => value.toUpperCase() as "BUY" | "SELL"),
   price: z.coerce.number().finite().int().positive(),
   quantity: z.coerce.number().finite().int().positive(),
+});
+
+const amendOrderSchema = z.object({
+  price: z.coerce.number().finite().int().positive().optional(),
+  quantity: z.coerce.number().finite().int().positive().optional(),
+}).refine((value) => value.price !== undefined || value.quantity !== undefined, {
+  message: "price or quantity is required",
 });
 
 export default async function orderRoutes(app: FastifyInstance) {
@@ -46,13 +53,31 @@ export default async function orderRoutes(app: FastifyInstance) {
     }
   });
 
+  app.patch("/:id", async (request: any, reply) => {
+    const user_id = request.user_id;
+    const { id } = request.params as any;
+    const parsed = amendOrderSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid amend payload" });
+    }
+
+    try {
+      const result = await amendOrder(user_id, id, parsed.data.price, parsed.data.quantity);
+      return reply.status(200).send(result);
+    } catch (error: any) {
+      return reply.status(400).send({ error: error.message });
+    }
+  });
+
   // List user orders
   app.get("/", async (request: any, reply) => {
     const user_id = request.user_id;
     const [brokerAcc] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, user_id)).limit(1);
     if (!brokerAcc) return reply.status(404).send({ error: "Broker account not found" });
 
-    const userOrders = await db.select().from(orders).where(eq(orders.broker_account_id, brokerAcc.id));
+    const userOrders = await db.select().from(orders)
+      .where(eq(orders.broker_account_id, brokerAcc.id))
+      .orderBy(desc(orders.created_at));
     return reply.send(userOrders);
   });
 }

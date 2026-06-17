@@ -3,12 +3,10 @@ import crypto from "crypto";
 import { db } from "../db/db.js";
 import { broker_accounts, cash_balances, orders, securities_positions, trade_fills } from "../db/schema.js";
 import { isFillOrderStatus, isTerminalOrderStatus, normalizeOrderStatus } from "../lib/order-status.js";
+import { estimateFee } from "./fee-service.js";
 import { matsClient } from "./mats-client.js";
 
 const BROKER_CODE = process.env.BROKER_CODE || "MANDALA";
-
-// MVP estimate. Later this should come from BEI fee schedule.
-const calculateEstimatedFee = (price: number, qty: number) => price * qty * 0.0015;
 
 function idempotencyKey(prefix: string) {
   return `${prefix}-${crypto.randomBytes(12).toString("hex")}`;
@@ -18,7 +16,28 @@ function sqlNumeric(value: number) {
   return value.toFixed(6);
 }
 
-function matsOrderToWebhookPayload(matsOrder: any) {
+function toNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function sqlInteger(value: number) {
+  return Math.trunc(value);
+}
+
+function matsOrderToWebhookPayload(matsOrder: any, trades: any[] = []) {
+  const fills = trades
+    .filter((trade) => trade.buy_order_id === matsOrder.id || trade.sell_order_id === matsOrder.id)
+    .map((trade) => ({
+      trade_id: trade.id,
+      mats_order_id: matsOrder.id,
+      price: Number(trade.price),
+      quantity: Number(trade.quantity),
+      side: trade.buy_order_id === matsOrder.id ? "BUY" : "SELL",
+      occurred_at: trade.occurred_at,
+      idempotency_key: trade.idempotency_key || `trade:${trade.id}:${matsOrder.id}`,
+    }));
+
   return {
     client_order_id: matsOrder.client_order_id,
     mats_order_id: matsOrder.id,
@@ -26,12 +45,15 @@ function matsOrderToWebhookPayload(matsOrder: any) {
     filled_quantity: Number(matsOrder.filled_quantity || 0),
     remaining_quantity: Number(matsOrder.remaining_quantity || 0),
     reject_reason: matsOrder.reject_reason,
+    fills,
   };
 }
 
 async function reserveForOrder(tx: any, brokerAccountId: string, symbol: string, side: "BUY" | "SELL", price: number, quantity: number) {
   if (side === "BUY") {
-    const totalRequired = price * quantity + calculateEstimatedFee(price, quantity);
+    const grossValue = price * quantity;
+    const fee = await estimateFee(grossValue, "BUY");
+    const totalRequired = grossValue + fee.totalFee;
     const [updatedCash] = await tx
       .update(cash_balances)
       .set({
@@ -48,7 +70,7 @@ async function reserveForOrder(tx: any, brokerAccountId: string, symbol: string,
     if (!updatedCash) {
       throw new Error("Insufficient cash for buy order including estimated fees");
     }
-    return;
+    return totalRequired;
   }
 
   const [updatedPosition] = await tx
@@ -68,6 +90,70 @@ async function reserveForOrder(tx: any, brokerAccountId: string, symbol: string,
   if (!updatedPosition) {
     throw new Error("Insufficient shares for sell order");
   }
+  return 0;
+}
+
+async function applyBuyReserveAdjustment(tx: any, brokerAccountId: string, currentReserved: number, targetReserved: number) {
+  const delta = targetReserved - currentReserved;
+  if (Math.abs(delta) < 0.000001) return;
+
+  if (delta > 0) {
+    const [updatedCash] = await tx
+      .update(cash_balances)
+      .set({
+        available: sql`${cash_balances.available} - ${sqlNumeric(delta)}` as any,
+        reserved: sql`${cash_balances.reserved} + ${sqlNumeric(delta)}` as any,
+        updated_at: new Date(),
+      })
+      .where(and(
+        eq(cash_balances.broker_account_id, brokerAccountId),
+        gte(cash_balances.available, sqlNumeric(delta)),
+      ))
+      .returning();
+    if (!updatedCash) throw new Error("Insufficient cash for amended buy order");
+    return;
+  }
+
+  const release = Math.abs(delta);
+  await tx.update(cash_balances)
+    .set({
+      available: sql`${cash_balances.available} + ${sqlNumeric(release)}` as any,
+      reserved: sql`${cash_balances.reserved} - ${sqlNumeric(release)}` as any,
+      updated_at: new Date(),
+    })
+    .where(eq(cash_balances.broker_account_id, brokerAccountId));
+}
+
+async function applySellReserveAdjustment(tx: any, brokerAccountId: string, symbol: string, currentReservedQty: number, targetReservedQty: number) {
+  const delta = targetReservedQty - currentReservedQty;
+  if (delta === 0) return;
+
+  if (delta > 0) {
+    const [updatedPosition] = await tx
+      .update(securities_positions)
+      .set({
+        available: sql`${securities_positions.available} - ${delta}` as any,
+        reserved: sql`${securities_positions.reserved} + ${delta}` as any,
+        updated_at: new Date(),
+      })
+      .where(and(
+        eq(securities_positions.broker_account_id, brokerAccountId),
+        eq(securities_positions.symbol, symbol),
+        gte(securities_positions.available, delta),
+      ))
+      .returning();
+    if (!updatedPosition) throw new Error("Insufficient shares for amended sell order");
+    return;
+  }
+
+  const release = Math.abs(delta);
+  await tx.update(securities_positions)
+    .set({
+      available: sql`${securities_positions.available} + ${release}` as any,
+      reserved: sql`${securities_positions.reserved} - ${release}` as any,
+      updated_at: new Date(),
+    })
+    .where(and(eq(securities_positions.broker_account_id, brokerAccountId), eq(securities_positions.symbol, symbol)));
 }
 
 export async function placeOrder(
@@ -85,7 +171,7 @@ export async function placeOrder(
   const placeIdempotencyKey = idempotencyKey(`place-${clientOrderId}`);
 
   const orderRecord = await db.transaction(async (tx) => {
-    await reserveForOrder(tx, brokerAcc.id, symbol, side, price, quantity);
+    const reservedAmount = await reserveForOrder(tx, brokerAcc.id, symbol, side, price, quantity);
 
     const [newOrder] = await tx.insert(orders).values({
       client_order_id: clientOrderId,
@@ -95,7 +181,9 @@ export async function placeOrder(
       price: price.toString(),
       quantity,
       remaining_quantity: quantity,
-      reserved_amount: side === "BUY" ? (price * quantity + calculateEstimatedFee(price, quantity)).toFixed(6) : "0",
+      reserved_amount: side === "BUY" ? reservedAmount.toFixed(6) : "0",
+      place_idempotency_key: placeIdempotencyKey,
+      submission_status: "pending",
       status: "pending",
     }).returning();
 
@@ -117,16 +205,15 @@ export async function placeOrder(
 
     const matsResponse = matsRes as any;
     if (matsResponse?.order) {
-      await handleWebhookUpdate(matsOrderToWebhookPayload(matsResponse.order));
+      await handleWebhookUpdate(matsOrderToWebhookPayload(matsResponse.order, matsResponse.trades || []));
     }
   } catch (err: any) {
-    await handleWebhookUpdate({
-      client_order_id: clientOrderId,
-      status: "rejected",
-      filled_quantity: 0,
-      remaining_quantity: quantity,
-      reject_reason: err.message || "MATS connection error",
-    });
+    await db.update(orders).set({
+      status: "submit_unknown",
+      submission_status: "unknown",
+      last_submission_error: err.message || "MATS connection error",
+      updated_at: new Date(),
+    }).where(eq(orders.id, orderRecord.id));
     throw new Error(`Failed to place order to MATS: ${err.message}`);
   }
 
@@ -136,49 +223,69 @@ export async function placeOrder(
 
 export async function handleWebhookUpdate(payload: any) {
   const clientOrderId = String(payload.client_order_id || "").trim();
-  const status = normalizeOrderStatus(payload.status);
-  const filledQuantity = Number(payload.filled_quantity || 0);
-  const payloadRemainingQuantity = Number(payload.remaining_quantity || 0);
+  const matsOrderId = payload.mats_order_id ? String(payload.mats_order_id) : "";
+  const rawStatus = payload.status ? normalizeOrderStatus(payload.status) : "";
+  const fillPayloads = Array.isArray(payload.fills)
+    ? payload.fills
+    : (payload.trade_id || payload.price || payload.quantity)
+      ? [payload]
+      : [];
   const rejectReason = payload.reject_reason;
-  const matsOrderId = payload.mats_order_id;
-  const tradeId = payload.trade_id ? String(payload.trade_id) : "";
 
-  if (!clientOrderId) throw new Error("client_order_id_required");
+  if (!clientOrderId && !matsOrderId) throw new Error("client_order_id_or_mats_order_id_required");
 
   await db.transaction(async (tx) => {
-    const [order] = await tx.select().from(orders).where(eq(orders.client_order_id, clientOrderId)).limit(1);
+    const [order] = clientOrderId
+      ? await tx.select().from(orders).where(eq(orders.client_order_id, clientOrderId)).limit(1)
+      : await tx.select().from(orders).where(eq(orders.mats_order_id, matsOrderId)).limit(1);
     if (!order) return;
 
-    if (isTerminalOrderStatus(order.status)) {
+    if (rawStatus === "locked_non_cancellable") {
+      await tx.update(orders).set({
+        last_action_status: "locked_non_cancellable",
+        last_action_reason: rejectReason || "non_cancellation_period",
+        updated_at: new Date(),
+      }).where(eq(orders.id, order.id));
+      return;
+    }
+
+    if (isTerminalOrderStatus(order.status) && fillPayloads.length === 0) {
       return;
     }
 
     const previousFilledQuantity = Number(order.filled_quantity || 0);
-    const previousRemainingQuantity = Number(order.remaining_quantity || 0);
-    const remainingQuantity = status === "rejected"
-      ? previousRemainingQuantity
-      : Math.max(payloadRemainingQuantity, 0);
-
-    const freshlyFilledQty = Math.max(filledQuantity - previousFilledQuantity, 0);
+    let filledQuantity = payload.filled_quantity === undefined
+      ? previousFilledQuantity
+      : Math.max(Number(payload.filled_quantity || 0), previousFilledQuantity);
+    let remainingQuantity = payload.remaining_quantity === undefined
+      ? Number(order.remaining_quantity || 0)
+      : Math.max(Number(payload.remaining_quantity || 0), 0);
     let nextReservedAmount = Number(order.reserved_amount || 0);
+    let processedFillQuantity = 0;
 
-    if (isFillOrderStatus(status) && freshlyFilledQty > 0) {
-      const executionPrice = Number(payload.price || payload.average_price || order.price);
-      const filledValue = executionPrice * freshlyFilledQty;
-      const feeEstimate = calculateEstimatedFee(executionPrice, freshlyFilledQty);
+    for (const fill of fillPayloads) {
+      const tradeId = fill.trade_id ? String(fill.trade_id) : "";
+      const fillQuantity = sqlInteger(toNumber(fill.quantity, 0));
+      const executionPrice = toNumber(fill.price || fill.average_price, 0);
+      if (fillQuantity <= 0 || executionPrice <= 0) continue;
 
       if (tradeId) {
-        await tx.insert(trade_fills).values({
+        const [insertedFill] = await tx.insert(trade_fills).values({
           order_id: order.id,
           trade_id: tradeId,
           price: executionPrice.toString(),
-          quantity: freshlyFilledQty,
-          timestamp: payload.occurred_at ? new Date(payload.occurred_at) : new Date(),
-        }).onConflictDoNothing();
+          quantity: fillQuantity,
+          timestamp: fill.occurred_at ? new Date(fill.occurred_at) : new Date(),
+        }).onConflictDoNothing().returning();
+        if (!insertedFill) continue;
       }
 
+      const filledValue = executionPrice * fillQuantity;
+      const feeEstimate = await estimateFee(filledValue, order.side as "BUY" | "SELL");
+      processedFillQuantity += fillQuantity;
+
       if (order.side === "BUY") {
-        const totalPending = filledValue + feeEstimate;
+        const totalPending = filledValue + feeEstimate.totalFee;
         nextReservedAmount = Math.max(nextReservedAmount - totalPending, 0);
         await tx.update(cash_balances)
           .set({
@@ -194,29 +301,29 @@ export async function handleWebhookUpdate(payload: any) {
 
         if (pos) {
           await tx.update(securities_positions)
-            .set({ pending: sql`${securities_positions.pending} + ${freshlyFilledQty}` as any, updated_at: new Date() })
-            .where(eq(securities_positions.id, pos.id));
+          .set({ pending: sql`${securities_positions.pending} + ${fillQuantity}` as any, updated_at: new Date() })
+          .where(eq(securities_positions.id, pos.id));
         } else {
           await tx.insert(securities_positions).values({
             broker_account_id: order.broker_account_id,
             symbol: order.symbol,
             available: 0,
             reserved: 0,
-            pending: freshlyFilledQty,
+            pending: fillQuantity,
           }).onConflictDoUpdate({
             target: [securities_positions.broker_account_id, securities_positions.symbol],
             set: {
-              pending: sql`${securities_positions.pending} + ${freshlyFilledQty}` as any,
+              pending: sql`${securities_positions.pending} + ${fillQuantity}` as any,
               updated_at: new Date(),
             },
           });
         }
       } else {
         await tx.update(securities_positions)
-          .set({ reserved: sql`${securities_positions.reserved} - ${freshlyFilledQty}` as any, updated_at: new Date() })
+          .set({ reserved: sql`${securities_positions.reserved} - ${fillQuantity}` as any, updated_at: new Date() })
           .where(and(eq(securities_positions.broker_account_id, order.broker_account_id), eq(securities_positions.symbol, order.symbol)));
 
-        const pendingCashGained = filledValue - feeEstimate;
+        const pendingCashGained = filledValue - feeEstimate.totalFee;
         await tx.update(cash_balances)
           .set({
             pending: sql`${cash_balances.pending} + ${sqlNumeric(pendingCashGained)}` as any,
@@ -226,12 +333,25 @@ export async function handleWebhookUpdate(payload: any) {
       }
     }
 
-    const terminalReleasesReservation = ["filled", "rejected", "cancelled", "expired"].includes(status);
+    if (processedFillQuantity > 0 && payload.filled_quantity === undefined) {
+      filledQuantity = Math.min(order.quantity, previousFilledQuantity + processedFillQuantity);
+      remainingQuantity = Math.max(order.quantity - filledQuantity, 0);
+    }
+
+    const status = rawStatus || (processedFillQuantity > 0 ? (remainingQuantity === 0 ? "filled" : "partially_filled") : order.status);
+    const fillRows = await tx.select().from(trade_fills).where(eq(trade_fills.order_id, order.id));
+    const accountedFilledQuantity = fillRows.reduce((sum: number, fill: typeof trade_fills.$inferSelect) => sum + fill.quantity, 0);
+    const remainingReserveQuantity = status === "filled"
+      ? Math.max(order.quantity - accountedFilledQuantity, 0)
+      : remainingQuantity;
+    const terminalReleasesReservation = ["rejected", "cancelled", "expired"].includes(status) ||
+      (status === "filled" && processedFillQuantity > 0 && remainingReserveQuantity === 0);
 
     if (order.side === "BUY") {
+      const targetFee = await estimateFee(Number(order.price) * remainingReserveQuantity, "BUY");
       const targetReservedAmount = terminalReleasesReservation
         ? 0
-        : Number(order.price) * remainingQuantity + calculateEstimatedFee(Number(order.price), remainingQuantity);
+        : Number(order.price) * remainingReserveQuantity + targetFee.totalFee;
       const releaseExcess = Math.max(nextReservedAmount - targetReservedAmount, 0);
       if (releaseExcess > 0) {
         await tx.update(cash_balances)
@@ -262,9 +382,66 @@ export async function handleWebhookUpdate(payload: any) {
       remaining_quantity: status === "rejected" ? 0 : remainingQuantity,
       reserved_amount: order.side === "BUY" ? sqlNumeric(nextReservedAmount) : "0",
       reject_reason: rejectReason,
+      submission_status: matsOrderId || status !== "pending" ? "submitted" : order.submission_status,
+      last_submission_error: null,
+      last_action_status: null,
+      last_action_reason: null,
       updated_at: new Date(),
     }).where(eq(orders.id, order.id));
   });
+}
+
+export async function amendOrder(userId: string, orderId: string, price?: number, quantity?: number) {
+  const [brokerAcc] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, userId)).limit(1);
+  if (!brokerAcc) throw new Error("Broker account not found");
+
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order || order.broker_account_id !== brokerAcc.id) throw new Error("Order not found or unauthorized");
+  if (isTerminalOrderStatus(order.status)) throw new Error("Order cannot be amended in its current state");
+  if (!order.mats_order_id) throw new Error("Order not yet accepted by MATS");
+
+  const nextPrice = price ?? Number(order.price);
+  const nextQuantity = quantity ?? order.quantity;
+  if (nextQuantity < order.filled_quantity) throw new Error("Amended quantity cannot be below filled quantity");
+
+  const previousReservedAmount = Number(order.reserved_amount || 0);
+  const previousRemainingQuantity = Number(order.remaining_quantity || 0);
+  const nextRemainingQuantity = nextQuantity - order.filled_quantity;
+  const nextGrossValue = nextPrice * nextRemainingQuantity;
+  const nextFee = order.side === "BUY" ? await estimateFee(nextGrossValue, "BUY") : null;
+  const nextReservedAmount = order.side === "BUY" ? nextGrossValue + (nextFee?.totalFee || 0) : 0;
+  const amendIdempotencyKey = idempotencyKey(`amend-${order.client_order_id}`);
+
+  await db.transaction(async (tx) => {
+    if (order.side === "BUY") {
+      await applyBuyReserveAdjustment(tx, order.broker_account_id, previousReservedAmount, nextReservedAmount);
+    } else {
+      await applySellReserveAdjustment(tx, order.broker_account_id, order.symbol, previousRemainingQuantity, nextRemainingQuantity);
+    }
+  });
+
+  try {
+    const matsRes = await matsClient.amendOrder(order.mats_order_id, {
+      ...(price !== undefined ? { price } : {}),
+      ...(quantity !== undefined ? { quantity } : {}),
+      idempotency_key: amendIdempotencyKey,
+    });
+    const matsResponse = matsRes as any;
+    if (matsResponse?.order) {
+      await handleWebhookUpdate(matsOrderToWebhookPayload(matsResponse.order, matsResponse.trades || []));
+    }
+  } catch (e: any) {
+    await db.transaction(async (tx) => {
+      if (order.side === "BUY") {
+        await applyBuyReserveAdjustment(tx, order.broker_account_id, nextReservedAmount, previousReservedAmount);
+      } else {
+        await applySellReserveAdjustment(tx, order.broker_account_id, order.symbol, nextRemainingQuantity, previousRemainingQuantity);
+      }
+    });
+    throw new Error(`Failed to send amend request: ${e.message}`);
+  }
+
+  return { message: "Amend request sent to MATS" };
 }
 
 export async function cancelOrder(userId: string, orderId: string) {
@@ -280,7 +457,7 @@ export async function cancelOrder(userId: string, orderId: string) {
     const matsRes = await matsClient.cancelOrder(order.mats_order_id, idempotencyKey(`cancel-${order.client_order_id}`));
     const matsResponse = matsRes as any;
     if (matsResponse?.order) {
-      await handleWebhookUpdate(matsOrderToWebhookPayload(matsResponse.order));
+      await handleWebhookUpdate(matsOrderToWebhookPayload(matsResponse.order, matsResponse.trades || []));
     }
   } catch (e: any) {
     throw new Error(`Failed to send cancel request: ${e.message}`);
