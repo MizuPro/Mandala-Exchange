@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { config } from "../src/config.js";
+import { closeDb } from "../src/db/index.js";
 import { findIdentity, serviceCanAccess } from "../src/lib/auth.js";
 
 function tokenFor(serviceName: string) {
@@ -16,19 +18,26 @@ function identityFor(serviceName: string) {
 }
 
 describe("BEI integration contract guard", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = await createApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await closeDb();
+  });
+
   it("returns 401 when no service token is provided", async () => {
-    const app = await createApp();
     const matsRules = await app.inject({ method: "GET", url: "/v1/integration/mats/rules" });
     const sekuritasFee = await app.inject({ method: "GET", url: "/v1/public/fee-schedule" });
 
     expect(matsRules.statusCode).toBe(401);
     expect(sekuritasFee.statusCode).toBe(401);
-
-    await app.close();
   });
 
   it("returns 403 when a valid token does not have the route scope", async () => {
-    const app = await createApp();
     const response = await app.inject({
       method: "POST",
       url: "/v1/issuers",
@@ -41,8 +50,6 @@ describe("BEI integration contract guard", () => {
     });
 
     expect(response.statusCode).toBe(403);
-
-    await app.close();
   });
 
   it("maps tokens to service identities", () => {

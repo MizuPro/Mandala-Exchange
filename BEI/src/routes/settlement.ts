@@ -12,6 +12,7 @@ import {
 import { badRequest, notFound } from "../lib/errors.js";
 import { settlementModes } from "../types/enums.js";
 import { ensureCustodyAccount } from "../services/custody.js";
+import { config } from "../config.js";
 
 const batchBody = z.object({
   sessionId: z.string().min(1),
@@ -32,6 +33,52 @@ async function loadTradeContext(sessionId: string) {
     [sessionId]
   );
   return result.rows;
+}
+
+async function notifySekuritasSettlement(sessionId: string, batchId: string) {
+  if (!config.SEKURITAS_SETTLEMENT_WEBHOOK_URL) return;
+
+  const sessionTrades = await loadTradeContext(sessionId);
+  const details = sessionTrades.flatMap((trade) => [
+    {
+      mats_order_id: trade.buy_order_id,
+      trade_id: trade.mats_trade_id,
+      idempotency_key: `settlement:${batchId}:${trade.mats_trade_id}:buy`,
+      price: Number(trade.price),
+      quantity: Number(trade.quantity),
+      side: "BUY",
+      settled_at: new Date().toISOString()
+    },
+    {
+      mats_order_id: trade.sell_order_id,
+      trade_id: trade.mats_trade_id,
+      idempotency_key: `settlement:${batchId}:${trade.mats_trade_id}:sell`,
+      price: Number(trade.price),
+      quantity: Number(trade.quantity),
+      side: "SELL",
+      settled_at: new Date().toISOString()
+    }
+  ]);
+
+  if (details.length === 0) return;
+
+  const response = await fetch(config.SEKURITAS_SETTLEMENT_WEBHOOK_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(config.BEI_TO_SEKURITAS_TOKEN ? { "x-service-token": config.BEI_TO_SEKURITAS_TOKEN } : {})
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      batch_id: batchId,
+      status: "COMPLETED",
+      details
+    })
+  });
+
+  if (!response.ok) {
+    throw badRequest(`Sekuritas settlement webhook failed: ${response.status} ${response.statusText}`);
+  }
 }
 
 export async function registerSettlementRoutes(app: FastifyInstance) {
@@ -186,6 +233,7 @@ export async function registerSettlementRoutes(app: FastifyInstance) {
       .set({ status: "settled", processedAt: new Date(), updatedAt: new Date() })
       .where(eq(settlementBatches.id, params.id))
       .returning();
+    await notifySekuritasSettlement(batch.sessionId, batch.id);
     return updatedBatch;
   });
 

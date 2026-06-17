@@ -67,7 +67,10 @@ const configSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4100),
   HOST: z.string().default("0.0.0.0"),
   DATABASE_URL: z.string().url().default("postgres://mandala_bei:mandala_bei@localhost:5441/mandala_bei"),
-  BEI_SERVICE_TOKENS: z.string().optional().transform(parseServiceTokens)
+  BEI_SERVICE_TOKENS: z.string().optional().transform(parseServiceTokens),
+  SEKURITAS_SETTLEMENT_WEBHOOK_URL: z.string().url().optional(),
+  SEKURITAS_CORPORATE_ACTION_WEBHOOK_URL: z.string().url().optional(),
+  BEI_TO_SEKURITAS_TOKEN: z.string().optional()
 });
 
 export const config = configSchema.parse(process.env);
