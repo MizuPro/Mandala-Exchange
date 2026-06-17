@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { cash_balances, fee_ledgers, orders, securities_positions, settlement_events, trade_fills } from "../db/schema.js";
 import { calculateFee, getFeeScheduleSnapshot } from "./fee-service.js";
+import { createNotificationTx } from "./notification-service.js";
 
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
@@ -142,5 +143,23 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
         }).where(eq(securities_positions.id, pos.id));
       }
     }
+
+    await createNotificationTx(tx, {
+      brokerAccountId: order.broker_account_id,
+      type: "settlement_completed",
+      title: `Settlement completed: ${order.symbol}`,
+      body: `${quantity} shares of ${order.symbol} settled for order ${order.client_order_id}.`,
+      referenceType: "SETTLEMENT",
+      referenceId: event.id,
+      idempotencyKey: `notification:settlement:${idempotencyKey}`,
+      metadata: {
+        symbol: order.symbol,
+        side: order.side,
+        trade_id: tradeId,
+        mats_order_id: matsOrderId,
+        quantity,
+        price: actualPrice,
+      },
+    });
   });
 }
