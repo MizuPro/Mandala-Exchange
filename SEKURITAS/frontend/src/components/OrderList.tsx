@@ -20,6 +20,9 @@ export default function OrderList() {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(Number(val));
   };
 
+  const normalizeStatus = (status: string) => status.toLowerCase();
+  const formatStatus = (status: string) => normalizeStatus(status).replace(/_/g, ' ').toUpperCase();
+
   return (
     <div className="glass-panel animate-fade-in" style={{ padding: '1.5rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
@@ -46,7 +49,8 @@ export default function OrderList() {
             </thead>
             <tbody>
               {orders.map(o => {
-                const canCancel = ["PENDING", "ACCEPTED", "PARTIAL_FILL"].includes(o.status);
+                const status = normalizeStatus(o.status);
+                const canCancel = ["pending", "accepted", "open", "amended", "partially_filled"].includes(status);
                 const sideColor = o.side === "BUY" ? "text-success" : "text-danger";
                 
                 return (
@@ -64,8 +68,9 @@ export default function OrderList() {
                         fontSize: '0.75rem',
                         background: 'rgba(255,255,255,0.1)' 
                       }}>
-                        {o.status}
+                        {formatStatus(o.status)}
                       </span>
+                      {o.reject_reason && <div className="text-danger" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>{o.reject_reason}</div>}
                     </td>
                     <td>
                       {canCancel && (

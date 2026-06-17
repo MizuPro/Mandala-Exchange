@@ -11,12 +11,14 @@ export default function Dashboard() {
   const logout = useStore(state => state.logout);
   const fetchPortfolio = useStore(state => state.fetchPortfolio);
   const fetchOrders = useStore(state => state.fetchOrders);
+  const fetchMarketData = useStore(state => state.fetchMarketData);
+  const error = useStore(state => state.error);
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchPortfolio();
     fetchOrders();
-    // Setup polling for orders and portfolio
+    fetchMarketData();
     const interval = setInterval(() => {
       fetchPortfolio();
       fetchOrders();
@@ -45,6 +47,11 @@ export default function Dashboard() {
       </nav>
 
       <main className="container animate-fade-in">
+        {error && (
+          <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1rem', color: 'var(--warning)' }}>
+            {error}
+          </div>
+        )}
         <div className="grid-2" style={{ gridTemplateColumns: '2fr 1fr', alignItems: 'start' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <Portfolio />

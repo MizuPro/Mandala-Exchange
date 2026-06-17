@@ -3,7 +3,7 @@ import { Briefcase, Wallet } from 'lucide-react';
 
 export default function Portfolio() {
   const portfolio = useStore(state => state.portfolio);
-  const isLoading = useStore(state => state.isLoading);
+  const isLoading = useStore(state => state.portfolioLoading);
 
   if (isLoading && !portfolio) return <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>Loading portfolio...</div>;
   if (!portfolio) return <div className="glass-panel" style={{ padding: '2rem' }}>No portfolio data available.</div>;

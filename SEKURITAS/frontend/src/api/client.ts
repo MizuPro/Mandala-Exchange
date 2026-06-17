@@ -1,5 +1,15 @@
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3002/api/v1";
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const token = localStorage.getItem("token");
   const headers: Record<string, string> = {
@@ -19,7 +29,7 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(data?.error || "API Request failed");
+    throw new ApiError(data?.error || "API Request failed", response.status);
   }
 
   return data;

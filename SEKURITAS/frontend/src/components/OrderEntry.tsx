@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Send, TrendingUp, TrendingDown } from 'lucide-react';
 
@@ -9,14 +9,26 @@ export default function OrderEntry() {
   const [quantity, setQuantity] = useState('');
   
   const placeOrder = useStore(state => state.placeOrder);
-  const isLoading = useStore(state => state.isLoading);
+  const isLoading = useStore(state => state.orderActionLoading);
   const error = useStore(state => state.error);
+  const securities = useStore(state => state.securities);
+  const feeSchedule = useStore(state => state.feeSchedule);
+  const fetchMarketData = useStore(state => state.fetchMarketData);
+
+  useEffect(() => {
+    fetchMarketData();
+  }, [fetchMarketData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!symbol || !price || !quantity) return;
+    const priceValue = Number(price);
+    const quantityValue = Number(quantity);
+    if (!symbol || !Number.isInteger(priceValue) || !Number.isInteger(quantityValue) || priceValue <= 0 || quantityValue <= 0) {
+      alert('Symbol, price, and quantity must be valid positive values.');
+      return;
+    }
     try {
-      await placeOrder(symbol.toUpperCase(), side, Number(price), Number(quantity));
+      await placeOrder(symbol.toUpperCase(), side, priceValue, quantityValue);
       setSymbol('');
       setPrice('');
       setQuantity('');
@@ -26,8 +38,18 @@ export default function OrderEntry() {
     }
   };
 
-  const estValue = Number(price) * Number(quantity);
-  const estFee = side === 'BUY' ? estValue * 0.0015 : estValue * 0.0025; // 0.15% buy, 0.25% sell (inc tax)
+  const priceValue = Number(price);
+  const quantityValue = Number(quantity);
+  const estValue = Number.isFinite(priceValue * quantityValue) ? priceValue * quantityValue : 0;
+  const brokerRate = Number(side === 'BUY' ? feeSchedule?.brokerBuyRate : feeSchedule?.brokerSellRate) || 0.0015;
+  const marketRate = (Number(feeSchedule?.exchangeFeeRate) || 0) +
+    (Number(feeSchedule?.clearingFeeRate) || 0) +
+    (Number(feeSchedule?.settlementFeeRate) || 0) +
+    (Number(feeSchedule?.guaranteeFundRate) || 0);
+  const vatRate = Number(feeSchedule?.vatRate) || 0;
+  const sellTaxRate = side === 'SELL' ? Number(feeSchedule?.sellTaxRate) || 0 : 0;
+  const minimumFee = Number(feeSchedule?.minimumFee) || 0;
+  const estFee = Math.max(minimumFee, estValue * (brokerRate + marketRate + sellTaxRate) + (estValue * brokerRate * vatRate));
   const totalReq = side === 'BUY' ? estValue + estFee : estValue - estFee;
 
   const formatIDR = (val: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
@@ -66,9 +88,16 @@ export default function OrderEntry() {
             value={symbol} 
             onChange={e => setSymbol(e.target.value.toUpperCase())} 
             placeholder="e.g. BBCA" 
-            maxLength={4}
+            maxLength={12}
+            list="listed-securities"
             required 
           />
+          <datalist id="listed-securities">
+            {securities.map((security) => {
+              const code = security.symbol || security.code;
+              return code ? <option key={code} value={code}>{security.name || code}</option> : null;
+            })}
+          </datalist>
         </div>
 
         <div className="grid-2" style={{ gap: '1rem', marginBottom: '1.5rem' }}>
@@ -84,13 +113,14 @@ export default function OrderEntry() {
             />
           </div>
           <div>
-            <label>Quantity (Lots)</label>
+            <label>Quantity (Shares)</label>
             <input 
               type="number" 
               value={quantity} 
               onChange={e => setQuantity(e.target.value)} 
               placeholder="1" 
               min={1}
+              step={1}
               required 
             />
           </div>
@@ -117,6 +147,7 @@ export default function OrderEntry() {
         <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={isLoading}>
           <Send size={16} /> Submit {side} Order
         </button>
+        {error && <p className="text-danger" style={{ marginTop: '1rem', fontSize: '0.875rem' }}>{error}</p>}
       </form>
     </div>
   );

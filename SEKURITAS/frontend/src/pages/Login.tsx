@@ -10,7 +10,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   const login = useStore(state => state.login);
   const navigate = useNavigate();
 
@@ -20,21 +20,17 @@ export default function Login() {
     setLoading(true);
 
     try {
-      if (isLogin) {
-        const res = await fetchApi('/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ email, password })
-        });
-        login(res.token, res.user);
-        navigate('/');
-      } else {
-        const res = await fetchApi('/auth/register', {
-          method: 'POST',
-          body: JSON.stringify({ email, password })
-        });
-        login(res.token, res.user);
-        navigate('/');
+      const res = await fetchApi(isLogin ? '/auth/login' : '/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+
+      if (!res.token || !res.user) {
+        throw new Error(isLogin ? 'Invalid login response' : 'Invalid registration response');
       }
+
+      login(res.token, res.user);
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {
@@ -55,22 +51,23 @@ export default function Login() {
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Email Address</label>
-            <input 
-              type="email" 
-              value={email} 
-              onChange={e => setEmail(e.target.value)} 
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
               placeholder="investor@example.com"
-              required 
+              required
             />
           </div>
           <div className="form-group">
             <label>Password</label>
-            <input 
-              type="password" 
-              value={password} 
-              onChange={e => setPassword(e.target.value)} 
-              placeholder="••••••••"
-              required 
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Password"
+              required
+              minLength={6}
             />
           </div>
           <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1rem' }} disabled={loading}>
@@ -79,9 +76,9 @@ export default function Login() {
         </form>
 
         <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-          <button 
+          <button
             type="button"
-            onClick={() => setIsLogin(!isLogin)} 
+            onClick={() => setIsLogin(!isLogin)}
             style={{ background: 'transparent', color: 'var(--primary)', padding: 0 }}
           >
             {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
@@ -91,3 +88,4 @@ export default function Login() {
     </div>
   );
 }
+
