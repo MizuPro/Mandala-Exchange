@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, numeric, integer, uuid, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, numeric, integer, uuid, uniqueIndex, index, jsonb } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -79,6 +79,7 @@ export const orders = pgTable("orders", {
   broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
   symbol: text("symbol").notNull(),
   side: text("side").notNull(), // BUY, SELL
+  order_type: text("order_type").notNull().default("LIMIT"), // LIMIT, MARKET
   price: numeric("price").notNull(),
   quantity: integer("quantity").notNull(),
   filled_quantity: integer("filled_quantity").notNull().default(0),
@@ -106,6 +107,7 @@ export const order_amendments = pgTable("order_amendments", {
   new_quantity: integer("new_quantity").notNull(),
   status: text("status").notNull(), // pending, accepted, rejected
   created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 });
 
 export const trade_fills = pgTable("trade_fills", {
@@ -150,7 +152,9 @@ export const leaderboard_snapshots = pgTable("leaderboard_snapshots", {
   realized_pl: numeric("realized_pl").notNull(),
   snapshot_date: timestamp("snapshot_date").notNull(),
   created_at: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  brokerAccountDateIdx: index("leaderboard_snapshots_account_date_idx").on(table.broker_account_id, table.snapshot_date),
+}));
 
 export const settlement_events = pgTable("settlement_events", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -167,4 +171,38 @@ export const settlement_events = pgTable("settlement_events", {
   created_at: timestamp("created_at").defaultNow(),
 }, (table) => ({
   idempotencyUq: uniqueIndex("settlement_events_idempotency_uq").on(table.idempotency_key),
+}));
+
+export const corporate_action_events = pgTable("corporate_action_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  idempotency_key: text("idempotency_key").notNull(),
+  corporate_action_id: text("corporate_action_id").notNull(),
+  action_type: text("action_type").notNull(),
+  symbol: text("symbol").notNull(),
+  payload_hash: text("payload_hash").notNull(),
+  status: text("status").notNull().default("processed"),
+  processed_at: timestamp("processed_at"),
+  created_at: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  idempotencyUq: uniqueIndex("corporate_action_events_idempotency_uq").on(table.idempotency_key),
+  actionIdx: index("corporate_action_events_action_idx").on(table.action_type, table.symbol),
+}));
+
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: uuid("user_id").references(() => users.id).notNull(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  reference_type: text("reference_type"),
+  reference_id: text("reference_id"),
+  idempotency_key: text("idempotency_key").notNull(),
+  metadata: jsonb("metadata").notNull().default({}),
+  read_at: timestamp("read_at"),
+  created_at: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  idempotencyUq: uniqueIndex("notifications_idempotency_uq").on(table.idempotency_key),
+  accountCreatedIdx: index("notifications_account_created_idx").on(table.broker_account_id, table.created_at),
+  userReadIdx: index("notifications_user_read_idx").on(table.user_id, table.read_at),
 }));
