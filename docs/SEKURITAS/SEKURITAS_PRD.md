@@ -73,3 +73,7 @@
 - Keputusan: Leaderboard/ranking portfolio dan P/L antar player masuk MVP.
 - Keputusan: Fee broker dan biaya transaksi dicatat sejak awal dan memengaruhi gameplay.
 - Keputusan: Admin Sekuritas dipisahkan dari Admin BEI agar boundary operasional jelas.
+
+## [V2 / Post-MVP] Fitur Terkini
+
+- **OpenAPI Compliant Schema**: Backend dan Frontend Sekuritas kini telah di-refactor secara penuh agar mengikuti standar openapi.yaml. Variabel seperti quantity telah diganti menjadi original_quantity. Serta nilai tipe data enumerasi (seperti uy/sell, limit/market) kini ditulis dengan format lowercase (huruf kecil) murni di seluruh state, route, dan servis.

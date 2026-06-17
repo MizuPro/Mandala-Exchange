@@ -107,3 +107,8 @@
   - [x] Task 10.5: Siapkan konfigurasi Cloudflare Tunnel untuk MATS.
   - [x] Task 10.6: Tambahkan runbook debugging order/trade.
 - **Catatan**: Fokus pada traceability saat bug terjadi.
+
+## [V2 / Post-MVP] Status Pelaksanaan
+
+- **Integrasi Admin UI & Session Runner**: Selesai.
+- **Redis Pub/Sub Subscription**: Selesai.

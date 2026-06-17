@@ -12,7 +12,7 @@ MVP dianggap selesai jika pemain bisa melakukan alur trading simulasi lengkap:
 4. Sekuritas membaca status settlement/custody dari BEI dan memperbarui tampilan portfolio.
 5. Frontend Sekuritas bisa dipakai pemain untuk melihat market, submit order, memantau order, dan melihat portfolio.
 
-## Tahap 1: MATS MVP
+## Tahap 1: MATS MVP (SELESAI)
 
 ### Tujuan
 
@@ -62,7 +62,7 @@ Membangun MATS sebagai matching engine yang terpisah dari BEI dan Sekuritas. MAT
 - Trade berhasil tersimpan di BEI melalui `POST /v1/trades/capture`.
 - Order reject punya alasan yang jelas.
 
-## Tahap 2: Integration Test BEI-MATS
+## Tahap 2: Integration Test BEI-MATS (SELESAI)
 
 ### Tujuan
 
@@ -98,7 +98,7 @@ Membuktikan boundary BEI dan MATS benar sebelum Sekuritas dibangun. Tahap ini pe
 - Rules dari BEI benar-benar dipakai MATS untuk validasi.
 - Minimal ada test/script yang bisa mengulang skenario integrasi.
 
-## Tahap 3: Sekuritas Backend MVP
+## Tahap 3: Sekuritas Backend MVP (SELESAI)
 
 ### Tujuan
 
@@ -170,7 +170,7 @@ Membangun backend Mandala Sekuritas sebagai gateway resmi pemain. Pemain tidak b
 - Sekuritas bisa membaca data saham/rules/fee dari BEI.
 - Sekuritas bisa membaca custody/settlement summary dari BEI.
 
-## Tahap 4: End-to-End Trading Flow
+## Tahap 4: End-to-End Trading Flow (SELESAI)
 
 ### Tujuan
 
@@ -218,7 +218,7 @@ Menggabungkan BEI, MATS, dan Sekuritas menjadi satu alur trading yang bisa diuji
 - Data trade dan settlement bisa dilaporkan.
 - Alur bisa diulang dengan seed/reset lokal.
 
-## Tahap 5: Frontend Sekuritas MVP
+## Tahap 5: Frontend Sekuritas MVP (SELESAI)
 
 ### Tujuan
 
@@ -426,7 +426,7 @@ MVP selesai bukan berarti production-ready. Setelah lima tahap di atas selesai, 
 
 ## 7. UX & Admin Tooling
 
-1. Buat admin dashboard BEI:
+1. Buat admin dashboard BEI: (V2 - Parsial/Dalam Pengerjaan)
    - emiten
    - saham
    - rules
@@ -435,7 +435,7 @@ MVP selesai bukan berarti production-ready. Setelah lima tahap di atas selesai, 
    - settlement
    - corporate action
    - surveillance alerts
-2. Buat admin dashboard Sekuritas:
+2. Buat admin dashboard Sekuritas: (V2 - Parsial/Dalam Pengerjaan)
    - user
    - broker account
    - cash adjustment
@@ -456,9 +456,10 @@ MVP selesai bukan berarti production-ready. Setelah lima tahap di atas selesai, 
 
 ## Rekomendasi Urutan Setelah Dokumen Ini
 
-1. Kerjakan MATS MVP.
-2. Buat integration test BEI-MATS.
-3. Kerjakan Sekuritas Backend MVP.
-4. Jalankan end-to-end trading flow.
-5. Kerjakan Frontend Sekuritas MVP.
-6. Baru masuk production hardening.
+1. ~~Kerjakan MATS MVP.~~ (Selesai)
+2. ~~Buat integration test BEI-MATS.~~ (Selesai)
+3. ~~Kerjakan Sekuritas Backend MVP.~~ (Selesai)
+4. ~~Jalankan end-to-end trading flow.~~ (Selesai)
+5. ~~Kerjakan Frontend Sekuritas MVP.~~ (Selesai)
+6. Masuk ke Tahap V2: Automation (Session Runner, Circuit Breaker), Admin UI, dan Penyelarasan Skema OpenAPI (Selesai/Ongoing).
+7. Lanjutkan ke Production Hardening.

@@ -86,3 +86,8 @@
 - Keputusan: Formula biaya mengikuti struktur pasar Indonesia secara komponen, bukan satu angka flat. Semua rate disimpan di fee schedule agar bisa diubah admin ketika aturan atau desain gameplay berubah.
 - Keputusan: Price band mengikuti model BEI-like berbasis reference price, board, dan rentang harga, bukan persentase flat untuk semua saham.
 - Asumsi: Full periodic call auction untuk Papan Pemantauan Khusus disiapkan di rule/schema, tetapi implement penuh dapat dilakukan setelah regular market stabil.
+
+## [V2 / Post-MVP] Fitur Terkini
+
+- **Automated Circuit Breaker (Market Halt & Suspend)**: BEI dapat secara otomatis menghentikan perdagangan (Suspend) emiten tertentu jika harga melewati batas fluktuasi esktrem (contoh: > 15%). Status ini dipublikasikan via Redis Pub/Sub agar MATS segera menolak pesanan baru dan membatalkan pesanan terkait.
+- **Automated Session Synchronization**: Konsep integrasi sistem dimana fase market dapat berpindah secara otomatis.

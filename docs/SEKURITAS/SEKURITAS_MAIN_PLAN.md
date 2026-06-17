@@ -123,3 +123,7 @@
 ***
 **Status Keseluruhan**: [x] Selesai - MVP Mandala Sekuritas siap meluncur!
 **Model AI Execution**: Bisa dieksekusi menggunakan **Gemini 2.5 Flash** (sebagian besar) dengan *context-awareness* tinggi, namun untuk *deep logic/race condition* sangat disarankan **Gemini 2.5 Pro/Advanced**.
+
+## [V2 / Post-MVP] Status Pelaksanaan
+
+- **OpenAPI Refactor & Migration**: Telah diselesaikan secara end-to-end (meliputi schema Drizzle, Service, API Routes, Frontend Zustand Store, UI Components, serta migrasi Push database).

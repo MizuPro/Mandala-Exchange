@@ -123,7 +123,7 @@ Sekuritas menyimpan `corporate_action_events` dengan unique `idempotency_key`, l
 
 ### Sekuritas Frontend/API Endpoints
 
-- `POST /api/v1/orders`: menerima `order_type: "LIMIT" | "MARKET"`; `price` wajib hanya untuk `LIMIT`.
+- `POST /api/v1/orders`: menerima `order_type: "limit" | "market"`; `price` wajib hanya untuk `limit`.
 - `GET /api/v1/orders/:id/amendments`: riwayat amend order.
 - `GET /api/v1/portfolio/account`: SID/SRE/RDN dan status account.
 - `GET /api/v1/portfolio/fills`: trade fills lokal.

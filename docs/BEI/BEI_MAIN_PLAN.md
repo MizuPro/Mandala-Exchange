@@ -111,3 +111,8 @@
   - [x] Task 10.6: Tambahkan integration test dengan MATS dan Sekuritas.
   - [x] Task 10.7: Siapkan konfigurasi deployment via Cloudflare Tunnel.
 - **Catatan**: Frontend admin dapat dikerjakan setelah API stabil.
+
+## [V2 / Post-MVP] Status Pelaksanaan
+
+- **Circuit Breaker & Surveillance**: Telah diimplementasikan dan diverifikasi (Tahap 4 pada eksekusi sebelumnya).
+- **Sinkronisasi Sesi**: Telah diimplementasikan.

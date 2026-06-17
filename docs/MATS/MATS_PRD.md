@@ -76,3 +76,10 @@
 - Keputusan: Order yang belum matched otomatis expired pada akhir sesi.
 - Keputusan: Price band tidak dibuat satu persentase flat untuk semua saham. MATS menghitung batas harga dari reference price, board, dan rentang harga sesuai rule BEI-like yang diterbitkan BEI Service.
 - Asumsi: Papan Pemantauan Khusus/full periodic call auction disiapkan di rule engine dan schema, tetapi implement penuh dilakukan setelah regular market stabil.
+
+## [V2 / Post-MVP] Fitur Terkini
+
+- **Admin UI (Control Panel)**: Antarmuka terpadu bagi administrator untuk memantau status engine, melihat log event, mengatur durasi sesi, men-trigger Uncross secara manual, dan memantau status suspend saham.
+- **Automated Session Runner**: MATS kini diperlengkapi dengan daemon (Ticker) yang dapat membaca durasi duration_seconds setiap segmen sesi pasar, dan melakukan perpindahan fase status secara otomatis (tanpa intervensi manual).
+- **Redis Pub/Sub Circuit Breaker**: Integrasi event-driven via Redis untuk merespon secara instan event suspend_symbol atau session_state dari BEI, lalu melakukan *market halt* pada level matching engine.
+
