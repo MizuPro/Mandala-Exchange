@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, pool } from "../db/index.js";
-import { brokerMembers, listedSecurities, trades } from "../db/schema.js";
+import { brokerMembers, listedSecurities, sessionTemplates, trades } from "../db/schema.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 
 const tradeCaptureBody = z.object({
@@ -28,6 +28,11 @@ export async function registerTradeRoutes(app: FastifyInstance) {
     const [existing] = await db.select().from(trades).where(eq(trades.idempotencyKey, body.idempotencyKey));
     if (existing) return { idempotent: true, trade: existing };
 
+    // Validasi sessionId terhadap session_templates yang terdaftar di BEI
+    const [session] = await db.select().from(sessionTemplates).where(eq(sessionTemplates.id, body.sessionId));
+    if (!session) throw badRequest("Session not found: sessionId does not match any known session template", { sessionId: body.sessionId });
+    if (!session.isActive) throw badRequest("Session is not active", { sessionId: body.sessionId, sessionName: session.name });
+
     const [security] = await db.select().from(listedSecurities).where(eq(listedSecurities.symbol, body.symbol));
     if (!security) throw notFound("Security not found");
     if (security.status !== "listed") throw badRequest("Security is not listed", { status: security.status });
@@ -42,6 +47,7 @@ export async function registerTradeRoutes(app: FastifyInstance) {
       .from(trades)
       .where(and(eq(trades.matsTradeId, body.matsTradeId), eq(trades.sequenceNumber, body.sequenceNumber)));
     if (duplicate.length > 0) throw conflict("Trade already captured with different idempotency key");
+
 
     const value = body.price * body.quantity;
     const [created] = await db
