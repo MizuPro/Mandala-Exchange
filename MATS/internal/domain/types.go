@@ -165,6 +165,66 @@ func (n *NumericFloat) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// NullableNumericInt is like NumericInt but tolerates JSON null (treated as 0).
+// Used for open-ended range fields from BEI such as max_price and max_reference_price.
+type NullableNumericInt struct {
+	Value  int64
+	IsNull bool
+}
+
+func (n *NullableNumericInt) UnmarshalJSON(data []byte) error {
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		n.IsNull = true
+		n.Value = 0
+		return nil
+	}
+	value, err := numericToInt(raw)
+	if err != nil {
+		return err
+	}
+	n.IsNull = false
+	n.Value = value
+	return nil
+}
+
+func (n NullableNumericInt) Int64() int64 {
+	return n.Value
+}
+
+// NullableNumericFloat is like NumericFloat but tolerates JSON null (treated as 0).
+// Used for open-ended fields from BEI such as max_listed_shares_percent.
+type NullableNumericFloat struct {
+	Value  float64
+	IsNull bool
+}
+
+func (n *NullableNumericFloat) UnmarshalJSON(data []byte) error {
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		n.IsNull = true
+		n.Value = 0
+		return nil
+	}
+	value, err := numericToFloat(raw)
+	if err != nil {
+		return err
+	}
+	n.IsNull = false
+	n.Value = value
+	return nil
+}
+
+func (n NullableNumericFloat) Float64() float64 {
+	return n.Value
+}
+
 func numericToInt(value any) (int64, error) {
 	floatValue, err := numericToFloat(value)
 	if err != nil {

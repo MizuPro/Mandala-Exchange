@@ -60,22 +60,22 @@ type LotSizeRule struct {
 }
 
 type TickSizeRule struct {
-	MinPrice domain.NumericInt `json:"min_price"`
-	MaxPrice domain.NumericInt `json:"max_price"`
-	TickSize domain.NumericInt `json:"tick_size"`
+	MinPrice domain.NumericInt     `json:"min_price"`
+	MaxPrice domain.NullableNumericInt `json:"max_price"`
+	TickSize domain.NumericInt     `json:"tick_size"`
 }
 
 type PriceBandRule struct {
-	MinReferencePrice domain.NumericInt   `json:"min_reference_price"`
-	MaxReferencePrice domain.NumericInt   `json:"max_reference_price"`
-	ARAPercent        domain.NumericFloat `json:"ara_percent"`
-	ARBPercent        domain.NumericFloat `json:"arb_percent"`
-	MinPrice          domain.NumericInt   `json:"min_price"`
+	MinReferencePrice domain.NumericInt         `json:"min_reference_price"`
+	MaxReferencePrice domain.NullableNumericInt  `json:"max_reference_price"`
+	ARAPercent        domain.NumericFloat        `json:"ara_percent"`
+	ARBPercent        domain.NumericFloat        `json:"arb_percent"`
+	MinPrice          domain.NumericInt          `json:"min_price"`
 }
 
 type AutoRejectionRule struct {
-	MaxLotsPerOrder        int64               `json:"max_lots_per_order"`
-	MaxListedSharesPercent domain.NumericFloat `json:"max_listed_shares_percent"`
+	MaxLotsPerOrder        int64                      `json:"max_lots_per_order"`
+	MaxListedSharesPercent domain.NullableNumericFloat `json:"max_listed_shares_percent"`
 }
 
 type SessionTemplate struct {
