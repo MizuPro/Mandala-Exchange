@@ -45,16 +45,21 @@ async function main() {
         ('BEI-like Development Regular', 'development', 'regular', true),
         ('BEI-like New Economy Regular', 'new_economy', 'regular', true),
         ('Special Monitoring Call Auction Ready', 'watchlist', 'regular', true)
-      ON CONFLICT DO NOTHING
+      ON CONFLICT (board, market_segment) DO UPDATE SET
+        name = excluded.name,
+        is_default = excluded.is_default,
+        updated_at = now()
     `);
 
-    const profiles = await pool.query("SELECT id, board FROM trading_rule_profiles");
+    const profiles = await pool.query("SELECT id, board FROM trading_rule_profiles WHERE board IN ('main','development','new_economy','watchlist')");
     for (const profile of profiles.rows) {
       await pool.query(
         `
-        INSERT INTO lot_size_rules (profile_id, instrument_type, lot_size)
-        VALUES ($1, 'stock', 100)
-        ON CONFLICT DO NOTHING
+        INSERT INTO lot_size_rules (profile_id, instrument_type, lot_size, effective_date)
+        VALUES ($1, 'stock', 100, CURRENT_DATE)
+        ON CONFLICT (profile_id, instrument_type, effective_date) DO UPDATE SET
+          lot_size = excluded.lot_size,
+          updated_at = now()
         `,
         [profile.id]
       );
@@ -67,7 +72,9 @@ async function main() {
           ($1, 500, 1999, 5),
           ($1, 2000, 4999, 10),
           ($1, 5000, NULL, 25)
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (profile_id, min_price, max_price) DO UPDATE SET
+          tick_size = excluded.tick_size,
+          updated_at = now()
         `,
         [profile.id]
       );
@@ -79,7 +86,11 @@ async function main() {
           ($1, 1, 200, 0.35, $2, 1),
           ($1, 201, 5000, 0.25, $2, 1),
           ($1, 5001, NULL, 0.20, $2, 1)
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (profile_id, min_reference_price, max_reference_price) DO UPDATE SET
+          ara_percent = excluded.ara_percent,
+          arb_percent = excluded.arb_percent,
+          min_price = excluded.min_price,
+          updated_at = now()
         `,
         [profile.id, arb]
       );
@@ -87,18 +98,26 @@ async function main() {
         `
         INSERT INTO auto_rejection_rules (profile_id, max_lots_per_order, max_listed_shares_percent)
         VALUES ($1, 50000, 0.05)
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (profile_id) DO UPDATE SET
+          max_lots_per_order = excluded.max_lots_per_order,
+          max_listed_shares_percent = excluded.max_listed_shares_percent,
+          updated_at = now()
         `,
         [profile.id]
       );
     }
 
-    const session = await pool.query(`
+    // Session template: idempotent berdasarkan nama unik
+    const sessionResult = await pool.query(`
       INSERT INTO session_templates (name, status, settlement_mode, settlement_delay_sessions, post_closing_enabled, is_active)
       VALUES ('Mandala Regular Session MVP', 'closed', 'end_of_session', 0, true, true)
+      ON CONFLICT DO NOTHING
       RETURNING id
     `);
-    const sessionId = session.rows[0]?.id;
+    // Jika sudah ada (ON CONFLICT DO NOTHING), ambil id yang existing
+    const sessionId = sessionResult.rows[0]?.id ?? (
+      await pool.query(`SELECT id FROM session_templates WHERE name = 'Mandala Regular Session MVP'`)
+    ).rows[0]?.id;
     if (sessionId) {
       await pool.query(
         `
@@ -112,7 +131,12 @@ async function main() {
           ($1, 6, 'closing_auction', 60, true, false),
           ($1, 7, 'post_closing', 300, true, false),
           ($1, 8, 'closed', 0, false, false)
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (template_id, sequence) DO UPDATE SET
+          status = excluded.status,
+          duration_seconds = excluded.duration_seconds,
+          allow_order_entry = excluded.allow_order_entry,
+          allow_cancel_amend = excluded.allow_cancel_amend,
+          updated_at = now()
         `,
         [sessionId]
       );

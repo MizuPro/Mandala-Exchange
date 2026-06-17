@@ -139,7 +139,8 @@ CREATE TABLE IF NOT EXISTS trading_rule_profiles (
   is_default boolean NOT NULL DEFAULT false,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (board, market_segment)
 );
 
 CREATE TABLE IF NOT EXISTS lot_size_rules (
@@ -149,7 +150,8 @@ CREATE TABLE IF NOT EXISTS lot_size_rules (
   lot_size integer NOT NULL DEFAULT 100,
   effective_date date NOT NULL DEFAULT CURRENT_DATE,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (profile_id, instrument_type, effective_date)
 );
 
 CREATE TABLE IF NOT EXISTS tick_size_rules (
@@ -159,7 +161,8 @@ CREATE TABLE IF NOT EXISTS tick_size_rules (
   max_price numeric(18,2),
   tick_size numeric(18,2) NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (profile_id, min_price, max_price)
 );
 
 CREATE TABLE IF NOT EXISTS price_band_rules (
@@ -171,7 +174,8 @@ CREATE TABLE IF NOT EXISTS price_band_rules (
   arb_percent numeric(8,4) NOT NULL,
   min_price numeric(18,2) NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (profile_id, min_reference_price, max_reference_price)
 );
 
 CREATE TABLE IF NOT EXISTS auto_rejection_rules (
@@ -180,7 +184,8 @@ CREATE TABLE IF NOT EXISTS auto_rejection_rules (
   max_lots_per_order integer NOT NULL,
   max_listed_shares_percent numeric(8,4),
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (profile_id)
 );
 
 CREATE TABLE IF NOT EXISTS session_templates (
@@ -205,7 +210,8 @@ CREATE TABLE IF NOT EXISTS session_segments (
   allow_order_entry boolean NOT NULL DEFAULT false,
   allow_cancel_amend boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (template_id, sequence)
 );
 
 CREATE TABLE IF NOT EXISTS trading_halts (
