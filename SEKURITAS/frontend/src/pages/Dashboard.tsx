@@ -12,6 +12,8 @@ export default function Dashboard() {
   const fetchPortfolio = useStore(state => state.fetchPortfolio);
   const fetchOrders = useStore(state => state.fetchOrders);
   const fetchMarketData = useStore(state => state.fetchMarketData);
+  const applyMarketEvent = useStore(state => state.applyMarketEvent);
+  const market = useStore(state => state.market);
   const error = useStore(state => state.error);
   const navigate = useNavigate();
 
@@ -25,6 +27,22 @@ export default function Dashboard() {
     }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const wsBase = import.meta.env.VITE_MATS_WS_URL;
+    if (!wsBase) return;
+    const token = import.meta.env.VITE_MATS_MARKET_TOKEN;
+    const url = token ? `${wsBase}${wsBase.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}` : wsBase;
+    const socket = new WebSocket(url);
+    socket.onmessage = (event) => {
+      try {
+        applyMarketEvent(JSON.parse(event.data));
+      } catch {
+        // Ignore malformed market data frames.
+      }
+    };
+    return () => socket.close();
+  }, [applyMarketEvent]);
 
   const handleLogout = () => {
     logout();
@@ -50,6 +68,14 @@ export default function Dashboard() {
         {error && (
           <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1rem', color: 'var(--warning)' }}>
             {error}
+          </div>
+        )}
+        {(market.sessionStatus || Object.keys(market.lastPrices).length > 0) && (
+          <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+            <span className="text-muted">Session: <strong style={{ color: 'var(--text-main)' }}>{market.sessionStatus || 'connected'}</strong></span>
+            {Object.entries(market.lastPrices).slice(0, 4).map(([symbol, price]) => (
+              <span key={symbol}>{symbol}: <strong>{new Intl.NumberFormat('id-ID').format(price)}</strong></span>
+            ))}
           </div>
         )}
         <div className="grid-2" style={{ gridTemplateColumns: '2fr 1fr', alignItems: 'start' }}>

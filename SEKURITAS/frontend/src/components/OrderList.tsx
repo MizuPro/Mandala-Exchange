@@ -1,9 +1,10 @@
 import { useStore } from '../store/useStore';
-import { ListFilter, XCircle } from 'lucide-react';
+import { ListFilter, Pencil, XCircle } from 'lucide-react';
 
 export default function OrderList() {
   const orders = useStore(state => state.orders);
   const cancelOrder = useStore(state => state.cancelOrder);
+  const amendOrder = useStore(state => state.amendOrder);
 
   const handleCancel = async (id: string) => {
     if (confirm("Are you sure you want to cancel this order?")) {
@@ -13,6 +14,25 @@ export default function OrderList() {
       } catch(e: any) {
         alert(e.message);
       }
+    }
+  };
+
+  const handleAmend = async (order: any) => {
+    const priceInput = prompt('New price', String(order.price));
+    if (priceInput === null) return;
+    const quantityInput = prompt('New total quantity', String(order.quantity));
+    if (quantityInput === null) return;
+    const price = Number(priceInput);
+    const quantity = Number(quantityInput);
+    if (!Number.isInteger(price) || !Number.isInteger(quantity) || price <= 0 || quantity <= 0) {
+      alert('Price and quantity must be positive integers.');
+      return;
+    }
+    try {
+      await amendOrder(order.id, { price, quantity });
+      alert('Amend request sent!');
+    } catch (e: any) {
+      alert(e.message);
     }
   };
 
@@ -50,7 +70,8 @@ export default function OrderList() {
             <tbody>
               {orders.map(o => {
                 const status = normalizeStatus(o.status);
-                const canCancel = ["pending", "accepted", "open", "amended", "partially_filled"].includes(status);
+                const canCancel = ["pending", "submit_unknown", "accepted", "open", "amended", "partially_filled"].includes(status);
+                const canAmend = ["accepted", "open", "amended", "partially_filled"].includes(status);
                 const sideColor = o.side === "BUY" ? "text-success" : "text-danger";
                 
                 return (
@@ -73,6 +94,15 @@ export default function OrderList() {
                       {o.reject_reason && <div className="text-danger" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>{o.reject_reason}</div>}
                     </td>
                     <td>
+                      {canAmend && (
+                        <button
+                          onClick={() => handleAmend(o)}
+                          style={{ padding: '0.25rem', background: 'transparent', color: 'var(--primary)', marginRight: '0.25rem' }}
+                          title="Amend Order"
+                        >
+                          <Pencil size={18} />
+                        </button>
+                      )}
                       {canCancel && (
                         <button 
                           onClick={() => handleCancel(o.id)}

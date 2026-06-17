@@ -47,6 +47,14 @@ export interface FeeSchedule {
   minimumFee?: string;
 }
 
+export interface MarketState {
+  connected: boolean;
+  sessionStatus: string;
+  lastPrices: Record<string, number>;
+  depth: Record<string, { bids: any[]; asks: any[] }>;
+  trades: any[];
+}
+
 interface AppState {
   user: User | null;
   token: string | null;
@@ -55,6 +63,7 @@ interface AppState {
   orders: Order[];
   securities: ListedSecurity[];
   feeSchedule: FeeSchedule | null;
+  market: MarketState;
   portfolioLoading: boolean;
   ordersLoading: boolean;
   orderActionLoading: boolean;
@@ -65,11 +74,14 @@ interface AppState {
   hydrateSession: () => Promise<void>;
   login: (token: string, user: User) => void;
   logout: () => void;
+  verifyEmail: (token: string) => Promise<void>;
   fetchPortfolio: () => Promise<void>;
   fetchOrders: () => Promise<void>;
   fetchMarketData: () => Promise<void>;
   placeOrder: (symbol: string, side: "BUY" | "SELL", price: number, quantity: number) => Promise<void>;
+  amendOrder: (id: string, payload: { price?: number; quantity?: number }) => Promise<void>;
   cancelOrder: (id: string) => Promise<void>;
+  applyMarketEvent: (event: any) => void;
 }
 
 function readStoredUser() {
@@ -87,6 +99,10 @@ function isUnauthorized(err: unknown) {
   return err instanceof ApiError && err.status === 401;
 }
 
+function isAccountForbidden(err: unknown) {
+  return err instanceof ApiError && err.status === 403;
+}
+
 export const useStore = create<AppState>((set, get) => ({
   user: readStoredUser(),
   token: localStorage.getItem('token'),
@@ -95,6 +111,7 @@ export const useStore = create<AppState>((set, get) => ({
   orders: [],
   securities: [],
   feeSchedule: null,
+  market: { connected: false, sessionStatus: "", lastPrices: {}, depth: {}, trades: [] },
   portfolioLoading: false,
   ordersLoading: false,
   orderActionLoading: false,
@@ -135,6 +152,20 @@ export const useStore = create<AppState>((set, get) => ({
     set({ token: null, user: null, portfolio: null, orders: [], authReady: true });
   },
 
+  verifyEmail: async (token) => {
+    const data = await fetchApi('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+    const current = get().user;
+    if (current) {
+      const verified = { ...current, is_verified: true, status: 'verified' };
+      localStorage.setItem('user', JSON.stringify(verified));
+      set({ user: verified, error: null });
+    }
+    return data;
+  },
+
   fetchPortfolio: async () => {
     if (get().portfolioLoading) return;
     try {
@@ -143,6 +174,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ portfolio: data, portfolioLoading: false, error: null });
     } catch (err: any) {
       if (isUnauthorized(err)) get().logout();
+      if (isAccountForbidden(err)) set({ error: 'Account verification is required before trading.' });
       set({ error: err.message, portfolioLoading: false });
     }
   },
@@ -155,6 +187,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ orders: data, ordersLoading: false, error: null });
     } catch (err: any) {
       if (isUnauthorized(err)) get().logout();
+      if (isAccountForbidden(err)) set({ error: 'Account verification is required before trading.' });
       set({ error: err.message, ordersLoading: false });
     }
   },
@@ -193,6 +226,22 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  amendOrder: async (id, payload) => {
+    try {
+      set({ orderActionLoading: true, isLoading: true, error: null });
+      await fetchApi(`/orders/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+      await Promise.all([get().fetchOrders(), get().fetchPortfolio()]);
+      set({ orderActionLoading: false, isLoading: false });
+    } catch (err: any) {
+      if (isUnauthorized(err)) get().logout();
+      set({ error: err.message, orderActionLoading: false, isLoading: false });
+      throw err;
+    }
+  },
+
   cancelOrder: async (id) => {
     try {
       set({ orderActionLoading: true, isLoading: true, error: null });
@@ -204,6 +253,25 @@ export const useStore = create<AppState>((set, get) => ({
       set({ error: err.message, orderActionLoading: false, isLoading: false });
       throw err;
     }
+  },
+
+  applyMarketEvent: (event) => {
+    if (!event || typeof event !== 'object') return;
+    set((state) => {
+      const market = { ...state.market, connected: true };
+      if (event.type === 'session_state') {
+        market.sessionStatus = event.payload?.status || event.payload?.session_status || '';
+      }
+      if (event.type === 'last_price' && event.symbol) {
+        market.lastPrices = { ...market.lastPrices, [event.symbol]: Number(event.payload?.last || event.payload?.price || 0) };
+      }
+      if (event.type === 'depth_snapshot' && event.symbol) {
+        market.depth = { ...market.depth, [event.symbol]: { bids: event.payload?.bids || [], asks: event.payload?.asks || [] } };
+      }
+      if (event.type === 'trade_tape') {
+        market.trades = [event.payload, ...market.trades].filter(Boolean).slice(0, 20);
+      }
+      return { market };
+    });
   }
 }));
-

@@ -30,7 +30,12 @@ export default function Login() {
       }
 
       login(res.token, res.user);
-      navigate('/');
+      if (!res.user.is_verified) {
+        if (res.verification_token) localStorage.setItem('verification_token', res.verification_token);
+        navigate('/verify-email');
+      } else {
+        navigate('/');
+      }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {
@@ -88,4 +93,3 @@ export default function Login() {
     </div>
   );
 }
-
