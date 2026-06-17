@@ -5,6 +5,7 @@ import { Send, TrendingUp, TrendingDown } from 'lucide-react';
 export default function OrderEntry() {
   const [symbol, setSymbol] = useState('');
   const [side, setSide] = useState<"BUY"|"SELL">("BUY");
+  const [orderType, setOrderType] = useState<"LIMIT"|"MARKET">("LIMIT");
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
   
@@ -13,6 +14,7 @@ export default function OrderEntry() {
   const error = useStore(state => state.error);
   const securities = useStore(state => state.securities);
   const feeSchedule = useStore(state => state.feeSchedule);
+  const market = useStore(state => state.market);
   const fetchMarketData = useStore(state => state.fetchMarketData);
 
   useEffect(() => {
@@ -23,22 +25,24 @@ export default function OrderEntry() {
     e.preventDefault();
     const priceValue = Number(price);
     const quantityValue = Number(quantity);
-    if (!symbol || !Number.isInteger(priceValue) || !Number.isInteger(quantityValue) || priceValue <= 0 || quantityValue <= 0) {
-      alert('Symbol, price, and quantity must be valid positive values.');
+    const priceIsValid = orderType === 'MARKET' || (Number.isInteger(priceValue) && priceValue > 0);
+    if (!symbol || !priceIsValid || !Number.isInteger(quantityValue) || quantityValue <= 0) {
+      alert(orderType === 'MARKET' ? 'Symbol and quantity must be valid positive values.' : 'Symbol, price, and quantity must be valid positive values.');
       return;
     }
     try {
-      await placeOrder(symbol.toUpperCase(), side, priceValue, quantityValue);
+      await placeOrder(symbol.toUpperCase(), side, orderType === 'MARKET' ? undefined : priceValue, quantityValue, orderType);
       setSymbol('');
       setPrice('');
       setQuantity('');
-      alert(`Order ${side} ${symbol} placed successfully!`);
+      alert(`${orderType} ${side} ${symbol} order placed successfully!`);
     } catch (err: any) {
       alert(`Failed to place order: ${err.message}`);
     }
   };
 
-  const priceValue = Number(price);
+  const lastPrice = market.lastPrices[symbol.toUpperCase()] || 0;
+  const priceValue = orderType === 'MARKET' ? lastPrice : Number(price);
   const quantityValue = Number(quantity);
   const estValue = Number.isFinite(priceValue * quantityValue) ? priceValue * quantityValue : 0;
   const brokerRate = Number(side === 'BUY' ? feeSchedule?.brokerBuyRate : feeSchedule?.brokerSellRate) || 0.0015;
@@ -81,6 +85,15 @@ export default function OrderEntry() {
           </button>
         </div>
 
+        <div className="segmented-control" style={{ marginBottom: '1.25rem' }}>
+          <button type="button" className={orderType === 'LIMIT' ? 'active' : ''} onClick={() => setOrderType('LIMIT')}>
+            LIMIT
+          </button>
+          <button type="button" className={orderType === 'MARKET' ? 'active' : ''} onClick={() => setOrderType('MARKET')}>
+            MARKET
+          </button>
+        </div>
+
         <div className="form-group">
           <label>Symbol</label>
           <input 
@@ -107,9 +120,10 @@ export default function OrderEntry() {
               type="number" 
               value={price} 
               onChange={e => setPrice(e.target.value)} 
-              placeholder="0" 
+              placeholder={orderType === 'MARKET' ? (lastPrice ? `Last ${lastPrice}` : 'Market') : '0'} 
               min={1}
-              required 
+              required={orderType === 'LIMIT'}
+              disabled={orderType === 'MARKET'}
             />
           </div>
           <div>
@@ -126,7 +140,13 @@ export default function OrderEntry() {
           </div>
         </div>
 
-        {(Number(price) > 0 && Number(quantity) > 0) && (
+        {orderType === 'MARKET' && (
+          <div className="risk-note" style={{ marginBottom: '1rem' }}>
+            Market orders execute immediately against available opposite book. Unfilled remainder is cancelled.
+          </div>
+        )}
+
+        {((orderType === 'MARKET' || Number(price) > 0) && Number(quantity) > 0) && (
           <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <span className="text-muted">Est. Value</span>
@@ -145,7 +165,7 @@ export default function OrderEntry() {
         )}
 
         <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={isLoading}>
-          <Send size={16} /> Submit {side} Order
+          <Send size={16} /> Submit {orderType} {side}
         </button>
         {error && <p className="text-danger" style={{ marginTop: '1rem', fontSize: '0.875rem' }}>{error}</p>}
       </form>
