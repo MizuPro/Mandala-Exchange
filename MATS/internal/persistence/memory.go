@@ -13,18 +13,20 @@ var timeNow = func() time.Time {
 }
 
 type MemoryStore struct {
-	mu         sync.RWMutex
-	orders     map[string]*domain.Order
-	trades     map[string]*domain.Trade
-	events     []Event
-	deliveries map[string]DeliveryEvent
+	mu                 sync.RWMutex
+	orders             map[string]*domain.Order
+	trades             map[string]*domain.Trade
+	events             []Event
+	deliveries         map[string]DeliveryEvent
+	idempotencyRecords map[string]IdempotencyRecord
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		orders:     make(map[string]*domain.Order),
-		trades:     make(map[string]*domain.Trade),
-		deliveries: make(map[string]DeliveryEvent),
+		orders:             make(map[string]*domain.Order),
+		trades:             make(map[string]*domain.Trade),
+		deliveries:         make(map[string]DeliveryEvent),
+		idempotencyRecords: make(map[string]IdempotencyRecord),
 	}
 }
 
@@ -64,6 +66,28 @@ func (s *MemoryStore) FindOrderByIdempotency(_ context.Context, key string) (*do
 	return nil, ErrNotFound
 }
 
+func (s *MemoryStore) SaveIdempotencyRecord(_ context.Context, record IdempotencyRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = timeNow()
+	}
+	if _, exists := s.idempotencyRecords[record.Key]; !exists {
+		s.idempotencyRecords[record.Key] = record
+	}
+	return nil
+}
+
+func (s *MemoryStore) FindIdempotencyRecord(_ context.Context, key string) (*IdempotencyRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	record, ok := s.idempotencyRecords[key]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return &record, nil
+}
+
 func (s *MemoryStore) LoadOpenOrders(context.Context) ([]*domain.Order, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -82,6 +106,30 @@ func (s *MemoryStore) SaveTrade(_ context.Context, trade *domain.Trade) error {
 	clone := *trade
 	s.trades[trade.ID] = &clone
 	return nil
+}
+
+func (s *MemoryStore) CountSessionTrades(_ context.Context, sessionID string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	count := 0
+	for _, trade := range s.trades {
+		if trade.SessionID == sessionID {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *MemoryStore) FindTradesByOrderID(_ context.Context, orderID string) ([]domain.Trade, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	trades := make([]domain.Trade, 0)
+	for _, trade := range s.trades {
+		if trade.BuyOrderID == orderID || trade.SellOrderID == orderID {
+			trades = append(trades, *trade)
+		}
+	}
+	return trades, nil
 }
 
 func (s *MemoryStore) AppendEvent(_ context.Context, event Event) error {
@@ -171,4 +219,20 @@ func (s *MemoryStore) ListDeliveryEvents(_ context.Context, status string, limit
 		}
 	}
 	return events, nil
+}
+
+func (s *MemoryStore) RequeueDeadDeliveryEvent(_ context.Context, eventID string) (*DeliveryEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	event, ok := s.deliveries[eventID]
+	if !ok || event.Status != "dead" {
+		return nil, ErrNotFound
+	}
+	event.Status = "pending"
+	event.LastError = ""
+	event.NextAttemptAt = timeNow()
+	event.MaxAttempts += 3
+	event.UpdatedAt = timeNow()
+	s.deliveries[eventID] = event
+	return &event, nil
 }

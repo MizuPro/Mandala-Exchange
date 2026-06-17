@@ -302,6 +302,58 @@ func TestServiceExpiresOpenOrders(t *testing.T) {
 	}
 }
 
+func TestServiceCancelIdempotencyPersistsAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	store := persistence.NewMemoryStore()
+	service, _ := newTestServiceWithStore(store)
+
+	placed, err := service.Place(ctx, PlaceRequest{
+		ClientOrderID:  "BUY-CANCEL",
+		BrokerCode:     "MDLA",
+		AccountID:      "BUYER",
+		Symbol:         "MNDL",
+		Side:           domain.SideBuy,
+		OrderType:      domain.OrderTypeLimit,
+		Price:          90,
+		Quantity:       100,
+		IdempotencyKey: "buy-cancel",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cancelled, err := service.Cancel(ctx, CancelRequest{
+		OrderID:        placed.Order.ID,
+		IdempotencyKey: "cancel-once",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.Order.Status != domain.OrderStatusCancelled {
+		t.Fatalf("expected cancelled order, got %s", cancelled.Order.Status)
+	}
+
+	restarted, _ := newTestServiceWithStore(store)
+	replayed, err := restarted.Cancel(ctx, CancelRequest{
+		OrderID:        placed.Order.ID,
+		IdempotencyKey: "cancel-once",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.Order.ID != cancelled.Order.ID || replayed.Order.Status != domain.OrderStatusCancelled {
+		t.Fatalf("expected persisted cancel response, got %#v", replayed.Order)
+	}
+
+	_, err = restarted.Cancel(ctx, CancelRequest{
+		OrderID:        "different-order",
+		IdempotencyKey: "cancel-once",
+	})
+	if err == nil {
+		t.Fatal("expected idempotency payload conflict")
+	}
+}
+
 func TestServiceCollectsAuctionOrdersThenUncrosses(t *testing.T) {
 	ctx := context.Background()
 	service, cache := newTestService()
@@ -355,8 +407,11 @@ func TestServiceCollectsAuctionOrdersThenUncrosses(t *testing.T) {
 }
 
 func newTestService() (*Service, *rules.Cache) {
+	return newTestServiceWithStore(persistence.NewMemoryStore())
+}
+
+func newTestServiceWithStore(store persistence.Store) (*Service, *rules.Cache) {
 	seq := sequence.NewAtomic(0)
-	store := persistence.NewMemoryStore()
 	cache := rules.NewCache(nil)
 	cache.Replace(testSecurities(), []bei.RuleProfile{testRuleProfile(1)}, testSession())
 	engine := matching.NewEngine(seq, "SESSION-1", marketdata.NewSummaryStore())

@@ -72,8 +72,11 @@ func (d *Dispatcher) PublishOrderStatus(ctx context.Context, order *domain.Order
 		MATSOrderID:       order.ID,
 		Symbol:            order.Symbol,
 		Status:            order.Status,
+		Price:             order.Price,
+		OriginalQuantity:  order.OriginalQuantity,
 		FilledQuantity:    order.FilledQuantity,
 		RemainingQuantity: order.RemainingQuantity,
+		EventSequence:     order.SequenceNumber,
 		RejectReason:      order.RejectReason,
 		CorrelationID:     order.CorrelationID,
 		OccurredAt:        time.Now().UTC(),
@@ -310,8 +313,11 @@ type OrderStatusPayload struct {
 	MATSOrderID       string             `json:"mats_order_id"`
 	Symbol            string             `json:"symbol"`
 	Status            domain.OrderStatus `json:"status"`
+	Price             int64              `json:"price"`
+	OriginalQuantity  int64              `json:"original_quantity"`
 	FilledQuantity    int64              `json:"filled_quantity"`
 	RemainingQuantity int64              `json:"remaining_quantity"`
+	EventSequence     int64              `json:"event_sequence"`
 	RejectReason      string             `json:"reject_reason,omitempty"`
 	CorrelationID     string             `json:"correlation_id,omitempty"`
 	OccurredAt        time.Time          `json:"occurred_at"`

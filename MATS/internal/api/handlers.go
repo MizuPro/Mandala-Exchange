@@ -59,6 +59,7 @@ func (h *Handler) SyncBEI(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	h.engine.UpdateSessionID(h.rules.ActiveSessionID())
 	h.publishSpecialNotations()
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"synced": true,
@@ -143,6 +144,59 @@ func (h *Handler) DeliveryEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, http.StatusOK, events)
+}
+
+func (h *Handler) RequeueDeliveryEvent(w http.ResponseWriter, r *http.Request) {
+	eventID := chi.URLParam(r, "eventId")
+	if eventID == "" {
+		WriteError(w, http.StatusBadRequest, "event_id_required")
+		return
+	}
+	event, err := h.store.RequeueDeadDeliveryEvent(r.Context(), eventID)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, "dead_letter_event_not_found")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"requeued": true,
+		"event":    event,
+	})
+}
+
+func (h *Handler) RequeueAllDeadDeliveryEvents(w http.ResponseWriter, r *http.Request) {
+	deadEvents, err := h.store.ListDeliveryEvents(r.Context(), "dead", 500)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	targetFilter := strings.TrimSpace(r.URL.Query().Get("target"))
+	eventTypeFilter := strings.TrimSpace(r.URL.Query().Get("event_type"))
+	symbolFilter := strings.TrimSpace(r.URL.Query().Get("symbol"))
+
+	var requeued []string
+	var failed []string
+	for _, event := range deadEvents {
+		if targetFilter != "" && event.Target != targetFilter {
+			continue
+		}
+		if eventTypeFilter != "" && event.EventType != eventTypeFilter {
+			continue
+		}
+		if symbolFilter != "" && event.Symbol != symbolFilter {
+			continue
+		}
+		if _, reqErr := h.store.RequeueDeadDeliveryEvent(r.Context(), event.ID); reqErr != nil {
+			failed = append(failed, event.ID)
+		} else {
+			requeued = append(requeued, event.ID)
+		}
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"requeued_count": len(requeued),
+		"requeued_ids":   requeued,
+		"failed_count":   len(failed),
+		"failed_ids":     failed,
+	})
 }
 
 func (h *Handler) SetSessionStatus(w http.ResponseWriter, r *http.Request) {

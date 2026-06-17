@@ -2,6 +2,9 @@ package orders
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -207,14 +210,17 @@ func (s *Service) Amend(ctx context.Context, req AmendRequest) (Response, error)
 	if req.IdempotencyKey == "" {
 		return Response{}, fmt.Errorf("idempotency_key_required")
 	}
-	if response, ok := s.idempotentResponse(req.IdempotencyKey); ok {
+	requestHash := hashIdempotencyRequest("amend", map[string]any{
+		"order_id": req.OrderID,
+		"price":    req.Price,
+		"quantity": req.Quantity,
+	})
+	if response, found, err := s.persistedIdempotentResponse(ctx, req.IdempotencyKey, "amend", requestHash); err != nil {
+		return Response{}, err
+	} else if found {
 		return response, nil
 	}
-	// Fallback ke persistent store untuk ketahanan setelah restart
-	if existing, err := s.store.FindOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
-		trades, _ := s.store.FindTradesByOrderID(ctx, existing.ID)
-		response := Response{Order: existing.Clone(), Trades: trades}
-		s.remember(req.IdempotencyKey, response)
+	if response, ok := s.idempotentResponse(req.IdempotencyKey); ok {
 		return response, nil
 	}
 	existing, ok := s.engine.Get(req.OrderID)
@@ -229,7 +235,11 @@ func (s *Service) Amend(ctx context.Context, req AmendRequest) (Response, error)
 			existing.Status = domain.OrderStatusLockedNonCancellable
 			existing.RejectReason = "non_cancellation_period"
 			_ = s.store.UpdateOrder(ctx, existing)
-			return Response{Order: existing, Trades: nil}, nil
+			response := Response{Order: existing, Trades: nil}
+			if err := s.rememberPersistent(ctx, req.IdempotencyKey, "amend", existing.ID, requestHash, response); err != nil {
+				return Response{}, err
+			}
+			return response, nil
 		}
 		return Response{}, errors.New(rejectReason)
 	}
@@ -285,7 +295,9 @@ func (s *Service) Amend(ctx context.Context, req AmendRequest) (Response, error)
 	s.publishBookAndSummary(order.Symbol)
 
 	response := Response{Order: order, Trades: trades}
-	s.remember(req.IdempotencyKey, response)
+	if err := s.rememberPersistent(ctx, req.IdempotencyKey, "amend", order.ID, requestHash, response); err != nil {
+		return Response{}, err
+	}
 	return response, nil
 }
 
@@ -293,17 +305,16 @@ func (s *Service) Cancel(ctx context.Context, req CancelRequest) (Response, erro
 	if req.IdempotencyKey == "" {
 		return Response{}, fmt.Errorf("idempotency_key_required")
 	}
-	if response, ok := s.idempotentResponse(req.IdempotencyKey); ok {
+	requestHash := hashIdempotencyRequest("cancel", map[string]any{
+		"order_id": req.OrderID,
+	})
+	if response, found, err := s.persistedIdempotentResponse(ctx, req.IdempotencyKey, "cancel", requestHash); err != nil {
+		return Response{}, err
+	} else if found {
 		return response, nil
 	}
-	// Fallback ke persistent store untuk ketahanan setelah restart
-	if existing, err := s.store.FindOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
-		// Jika order sudah cancelled di store, kembalikan langsung
-		if existing.Status == domain.OrderStatusCancelled {
-			response := Response{Order: existing.Clone(), Trades: nil}
-			s.remember(req.IdempotencyKey, response)
-			return response, nil
-		}
+	if response, ok := s.idempotentResponse(req.IdempotencyKey); ok {
+		return response, nil
 	}
 	if rejectReason := s.rules.ValidateAmend(rules.AmendValidationRequest{OrderID: req.OrderID}); rejectReason != "" {
 		if rejectReason == string(domain.OrderStatusLockedNonCancellable) {
@@ -313,7 +324,11 @@ func (s *Service) Cancel(ctx context.Context, req CancelRequest) (Response, erro
 				order.RejectReason = "non_cancellation_period"
 				_ = s.store.UpdateOrder(ctx, order)
 			}
-			return Response{Order: order, Trades: nil}, nil
+			response := Response{Order: order, Trades: nil}
+			if err := s.rememberPersistent(ctx, req.IdempotencyKey, "cancel", req.OrderID, requestHash, response); err != nil {
+				return Response{}, err
+			}
+			return response, nil
 		}
 		return Response{}, errors.New(rejectReason)
 	}
@@ -329,7 +344,9 @@ func (s *Service) Cancel(ctx context.Context, req CancelRequest) (Response, erro
 	s.publishBookAndSummary(order.Symbol)
 
 	response := Response{Order: order, Trades: nil}
-	s.remember(req.IdempotencyKey, response)
+	if err := s.rememberPersistent(ctx, req.IdempotencyKey, "cancel", order.ID, requestHash, response); err != nil {
+		return Response{}, err
+	}
 	return response, nil
 }
 
@@ -351,6 +368,10 @@ func (s *Service) Recover(ctx context.Context) error {
 	}
 	s.engine.Recover(orders)
 	return nil
+}
+
+func (s *Service) CountSessionTrades(ctx context.Context, sessionID string) (int, error) {
+	return s.store.CountSessionTrades(ctx, sessionID)
 }
 
 func (s *Service) ExpireOpenOrders(ctx context.Context) ([]*domain.Order, error) {
@@ -505,6 +526,53 @@ func (s *Service) remember(key string, response Response) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.idempotency[key] = response
+}
+
+func (s *Service) persistedIdempotentResponse(ctx context.Context, key, operation, requestHash string) (Response, bool, error) {
+	record, err := s.store.FindIdempotencyRecord(ctx, key)
+	if errors.Is(err, persistence.ErrNotFound) {
+		return Response{}, false, nil
+	}
+	if err != nil {
+		return Response{}, false, err
+	}
+	if record.Operation != operation || record.RequestHash != requestHash {
+		return Response{}, false, fmt.Errorf("idempotency_key_payload_conflict")
+	}
+	var response Response
+	if err := json.Unmarshal(record.Response, &response); err != nil {
+		return Response{}, false, err
+	}
+	s.remember(key, response)
+	return response, true, nil
+}
+
+func (s *Service) rememberPersistent(ctx context.Context, key, operation, resourceID, requestHash string, response Response) error {
+	payload, err := json.Marshal(response)
+	if err != nil {
+		return err
+	}
+	if err := s.store.SaveIdempotencyRecord(ctx, persistence.IdempotencyRecord{
+		Key:         key,
+		Operation:   operation,
+		ResourceID:  resourceID,
+		RequestHash: requestHash,
+		Response:    payload,
+		CreatedAt:   time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
+	s.remember(key, response)
+	return nil
+}
+
+func hashIdempotencyRequest(operation string, value any) string {
+	payload, _ := json.Marshal(struct {
+		Operation string `json:"operation"`
+		Request   any    `json:"request"`
+	}{Operation: operation, Request: value})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 func newOrder(sequenceNumber int64, req PlaceRequest) *domain.Order {

@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS mats_idempotency_records (
   idempotency_key TEXT PRIMARY KEY,
   operation TEXT NOT NULL,
   resource_id TEXT NOT NULL,
+  request_hash TEXT NOT NULL DEFAULT '',
+  status_code INTEGER NOT NULL DEFAULT 200,
   response JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

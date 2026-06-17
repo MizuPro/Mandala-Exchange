@@ -54,6 +54,8 @@ func NewRouter(handler *api.Handler, authenticator *auth.Authenticator, hub *mar
 			r.Post("/admin/orders/expire", handler.ExpireOpenOrders)
 			r.Get("/admin/auction/{symbol}/indicative", handler.AuctionIndicative)
 			r.Post("/admin/auction/{symbol}/uncross", handler.UncrossAuction)
+			r.Post("/admin/delivery-events/{eventId}/requeue", handler.RequeueDeliveryEvent)
+			r.Post("/admin/delivery-events/requeue-all", handler.RequeueAllDeadDeliveryEvents)
 		})
 
 		r.Group(func(r chi.Router) {

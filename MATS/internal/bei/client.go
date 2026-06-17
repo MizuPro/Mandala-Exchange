@@ -138,14 +138,26 @@ func (c *Client) ActiveSession(ctx context.Context) (*SessionTemplate, error) {
 }
 
 type UpdateSessionStatusPayload struct {
-	SessionID string               `json:"sessionId"`
-	Status    domain.SessionStatus `json:"status"`
+	SessionID          string               `json:"sessionId"`
+	Status             domain.SessionStatus `json:"status"`
+	ExpectedTradeCount int                  `json:"expectedTradeCount,omitempty"`
+	FinalTradeSequence int64                `json:"finalTradeSequence,omitempty"`
 }
 
 func (c *Client) UpdateSessionStatus(ctx context.Context, sessionID string, status domain.SessionStatus) error {
 	payload := UpdateSessionStatusPayload{
 		SessionID: sessionID,
 		Status:    status,
+	}
+	return c.post(ctx, "/integration/mats/sessions/active/status", payload, nil)
+}
+
+func (c *Client) UpdateSessionStatusWithFinality(ctx context.Context, sessionID string, status domain.SessionStatus, expectedTradeCount int, finalTradeSequence int64) error {
+	payload := UpdateSessionStatusPayload{
+		SessionID:          sessionID,
+		Status:             status,
+		ExpectedTradeCount: expectedTradeCount,
+		FinalTradeSequence: finalTradeSequence,
 	}
 	return c.post(ctx, "/integration/mats/sessions/active/status", payload, nil)
 }

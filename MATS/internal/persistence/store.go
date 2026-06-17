@@ -44,20 +44,33 @@ type DeliveryEvent struct {
 	UpdatedAt      time.Time
 }
 
+type IdempotencyRecord struct {
+	Key         string
+	Operation   string
+	ResourceID  string
+	RequestHash string
+	Response    json.RawMessage
+	CreatedAt   time.Time
+}
+
 type Store interface {
 	Ping(context.Context) error
 	SaveOrder(context.Context, *domain.Order) error
 	UpdateOrder(context.Context, *domain.Order) error
 	FindOrderByID(context.Context, string) (*domain.Order, error)
 	FindOrderByIdempotency(context.Context, string) (*domain.Order, error)
+	SaveIdempotencyRecord(context.Context, IdempotencyRecord) error
+	FindIdempotencyRecord(context.Context, string) (*IdempotencyRecord, error)
 	LoadOpenOrders(context.Context) ([]*domain.Order, error)
 	SaveTrade(context.Context, *domain.Trade) error
+	CountSessionTrades(context.Context, string) (int, error)
 	FindTradesByOrderID(context.Context, string) ([]domain.Trade, error)
 	AppendEvent(context.Context, Event) error
 	SaveDeliveryEvent(context.Context, DeliveryEvent) error
 	UpdateDeliveryEvent(context.Context, DeliveryEvent) error
 	LoadDueDeliveryEvents(context.Context, int) ([]DeliveryEvent, error)
 	ListDeliveryEvents(context.Context, string, int) ([]DeliveryEvent, error)
+	RequeueDeadDeliveryEvent(context.Context, string) (*DeliveryEvent, error)
 }
 
 type PostgresStore struct {
@@ -133,6 +146,36 @@ func (s *PostgresStore) FindOrderByIdempotency(ctx context.Context, key string) 
 	return scanOrder(s.pool.QueryRow(ctx, orderSelectSQL()+" WHERE idempotency_key = $1", key))
 }
 
+func (s *PostgresStore) SaveIdempotencyRecord(ctx context.Context, record IdempotencyRecord) error {
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO mats_idempotency_records (
+			idempotency_key, operation, resource_id, request_hash, response, created_at
+		)
+		VALUES ($1,$2,$3,$4,$5,$6)
+		ON CONFLICT (idempotency_key) DO NOTHING
+	`, record.Key, record.Operation, record.ResourceID, record.RequestHash, record.Response, record.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) FindIdempotencyRecord(ctx context.Context, key string) (*IdempotencyRecord, error) {
+	var record IdempotencyRecord
+	err := s.pool.QueryRow(ctx, `
+		SELECT idempotency_key, operation, resource_id, COALESCE(request_hash, ''), response, created_at
+		FROM mats_idempotency_records
+		WHERE idempotency_key = $1
+	`, key).Scan(&record.Key, &record.Operation, &record.ResourceID, &record.RequestHash, &record.Response, &record.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
 func (s *PostgresStore) LoadOpenOrders(ctx context.Context) ([]*domain.Order, error) {
 	rows, err := s.pool.Query(ctx, orderSelectSQL()+`
 		WHERE status IN ('open', 'partially_filled', 'amended')
@@ -164,10 +207,15 @@ func (s *PostgresStore) SaveTrade(ctx context.Context, trade *domain.Trade) erro
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (id) DO NOTHING
 	`, trade.ID, trade.SequenceNumber, trade.SessionID, trade.Symbol, trade.Price, trade.Quantity,
-	`, trade.ID, trade.SequenceNumber, trade.SessionID, trade.Symbol, trade.Price, trade.Quantity,
 		trade.BuyOrderID, trade.SellOrderID, trade.BuyBrokerCode, trade.SellBrokerCode,
 		trade.BuyAccountID, trade.SellAccountID, trade.OccurredAt, trade.IdempotencyKey)
 	return err
+}
+
+func (s *PostgresStore) CountSessionTrades(ctx context.Context, sessionID string) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM mats_trades WHERE session_id = $1`, sessionID).Scan(&count)
+	return count, err
 }
 
 func (s *PostgresStore) FindTradesByOrderID(ctx context.Context, orderID string) ([]domain.Trade, error) {
@@ -324,6 +372,43 @@ func (s *PostgresStore) ListDeliveryEvents(ctx context.Context, status string, l
 	}
 	defer rows.Close()
 	return scanDeliveryEvents(rows)
+}
+
+func (s *PostgresStore) RequeueDeadDeliveryEvent(ctx context.Context, eventID string) (*DeliveryEvent, error) {
+	now := time.Now().UTC()
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE mats_delivery_events
+		SET status = 'pending',
+		    last_error = NULL,
+		    next_attempt_at = $2,
+		    max_attempts = max_attempts + 3,
+		    updated_at = $2
+		WHERE id = $1 AND status = 'dead'
+	`, eventID, now)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, sequence_number, target, event_type, COALESCE(correlation_id, ''), COALESCE(symbol, ''),
+		       payload, attempts, max_attempts, status, COALESCE(last_error, ''), next_attempt_at, created_at, updated_at
+		FROM mats_delivery_events
+		WHERE id = $1
+	`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events, err := scanDeliveryEvents(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(events) == 0 {
+		return nil, ErrNotFound
+	}
+	return &events[0], nil
 }
 
 type deliveryRows interface {

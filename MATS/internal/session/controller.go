@@ -35,6 +35,10 @@ func (c *Controller) SetStatus(ctx context.Context, status domain.SessionStatus)
 	})
 }
 
+func (c *Controller) CountSessionTrades(ctx context.Context, sessionID string) (int, error) {
+	return c.orders.CountSessionTrades(ctx, sessionID)
+}
+
 func (c *Controller) HaltMarket(ctx context.Context, reason string) {
 	_ = ctx
 	if reason == "" {
