@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, numeric, integer, uuid, serial, varchar, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, numeric, integer, uuid, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -53,7 +53,9 @@ export const cash_balances = pgTable("cash_balances", {
   reserved: numeric("reserved").notNull().default("0"),
   pending: numeric("pending").notNull().default("0"),
   updated_at: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  brokerAccountUq: uniqueIndex("cash_balances_broker_account_uq").on(table.broker_account_id),
+}));
 
 export const securities_positions = pgTable("securities_positions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -66,7 +68,9 @@ export const securities_positions = pgTable("securities_positions", {
   realized_pl: numeric("realized_pl").notNull().default("0"),
   unrealized_pl: numeric("unrealized_pl").notNull().default("0"),
   updated_at: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  brokerAccountSymbolUq: uniqueIndex("securities_positions_account_symbol_uq").on(table.broker_account_id, table.symbol),
+}));
 
 export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -79,11 +83,14 @@ export const orders = pgTable("orders", {
   quantity: integer("quantity").notNull(),
   filled_quantity: integer("filled_quantity").notNull().default(0),
   remaining_quantity: integer("remaining_quantity").notNull(),
-  status: text("status").notNull(), // PENDING, ACCEPTED, REJECTED, CANCELLED, FILLED, EXPIRED
+  reserved_amount: numeric("reserved_amount").notNull().default("0"),
+  status: text("status").notNull(), // pending, accepted, rejected, cancelled, filled, expired
   reject_reason: text("reject_reason"),
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  matsOrderUq: uniqueIndex("orders_mats_order_uq").on(table.mats_order_id),
+}));
 
 export const order_amendments = pgTable("order_amendments", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -92,7 +99,7 @@ export const order_amendments = pgTable("order_amendments", {
   old_quantity: integer("old_quantity").notNull(),
   new_price: numeric("new_price").notNull(),
   new_quantity: integer("new_quantity").notNull(),
-  status: text("status").notNull(), // PENDING, ACCEPTED, REJECTED
+  status: text("status").notNull(), // pending, accepted, rejected
   created_at: timestamp("created_at").defaultNow(),
 });
 
@@ -103,7 +110,9 @@ export const trade_fills = pgTable("trade_fills", {
   price: numeric("price").notNull(),
   quantity: integer("quantity").notNull(),
   timestamp: timestamp("timestamp").notNull(),
-});
+}, (table) => ({
+  tradeUq: uniqueIndex("trade_fills_trade_uq").on(table.trade_id),
+}));
 
 export const fee_ledgers = pgTable("fee_ledgers", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -137,3 +146,20 @@ export const leaderboard_snapshots = pgTable("leaderboard_snapshots", {
   snapshot_date: timestamp("snapshot_date").notNull(),
   created_at: timestamp("created_at").defaultNow(),
 });
+
+export const settlement_events = pgTable("settlement_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  idempotency_key: text("idempotency_key").notNull(),
+  order_id: uuid("order_id").references(() => orders.id).notNull(),
+  trade_id: text("trade_id"),
+  mats_order_id: text("mats_order_id").notNull(),
+  side: text("side").notNull(),
+  price: numeric("price").notNull(),
+  quantity: integer("quantity").notNull(),
+  gross_value: numeric("gross_value").notNull(),
+  total_fee: numeric("total_fee").notNull(),
+  payload_hash: text("payload_hash").notNull(),
+  created_at: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  idempotencyUq: uniqueIndex("settlement_events_idempotency_uq").on(table.idempotency_key),
+}));
