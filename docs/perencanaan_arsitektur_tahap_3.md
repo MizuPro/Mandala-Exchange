@@ -590,6 +590,16 @@ Status manual di luar repo:
 4. Secret/token placeholder harus diganti jika environment ini akan dipakai publik lebih lama.
 5. Backup hasil `pg_dump` perlu disalin ke external drive atau cloud pribadi.
 
+Validasi final 2026-06-19:
+
+1. Health check lokal Sekuritas, MATS, dan BEI berhasil.
+2. Health check publik `https://api-mandala-sekuritas.michaelk.fun/health` berhasil.
+3. Frontend publik `https://mandala-sekuritas.michaelk.fun` berhasil diakses melalui Cloudflare Tunnel.
+4. Flow register, verify, login, top up, submit buy/sell order, matching, fill, settlement notification, custody summary, reconciliation, fills, dan leaderboard berhasil diuji lewat endpoint publik.
+5. Backup Sekuritas, MATS, dan BEI berhasil dibuat.
+6. Restore test berhasil pada database disposable untuk Sekuritas, MATS, dan BEI.
+7. Catatan detail validasi tersedia di `docs/implementation-log/tahap-3-local-hybrid.md`.
+
 ---
 
 ## 13. Runbook Eksekusi
