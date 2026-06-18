@@ -30,5 +30,10 @@ export async function postSekuritasWebhook(target: WebhookTarget, payload: unkno
     throw new Error(`Sekuritas ${target} webhook failed: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`);
   }
 
-  return { skipped: false };
+  const data = await response.json().catch(() => null);
+  if (response.status === 202 || (data && data.success === false && data.status === "deferred")) {
+    return { skipped: false, deferred: true, reason: data?.message || "Deferred by Sekuritas" };
+  }
+
+  return { skipped: false, deferred: false };
 }

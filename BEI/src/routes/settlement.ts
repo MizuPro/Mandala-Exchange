@@ -13,6 +13,13 @@ import { badRequest, notFound } from "../lib/errors.js";
 import { settlementModes } from "../types/enums.js";
 import { ensureCustodyAccount } from "../services/custody.js";
 import { postSekuritasWebhook } from "../services/sekuritas-webhook.js";
+import { config } from "../config.js";
+
+function internalSettlementToken() {
+  return config.BEI_SERVICE_TOKENS.find((identity) =>
+    identity.scopes.includes("admin:*") || identity.scopes.includes("settlement:write")
+  )?.token;
+}
 
 const batchBody = z.object({
   sessionId: z.string().min(1),
@@ -58,9 +65,9 @@ async function notifySekuritasSettlement(sessionId: string, batchId: string) {
     }
   ]);
 
-  if (details.length === 0) return;
+  if (details.length === 0) return { skipped: true };
 
-  await postSekuritasWebhook("settlement", {
+  return await postSekuritasWebhook("settlement", {
     session_id: sessionId,
     batch_id: batchId,
     status: "COMPLETED",
@@ -225,14 +232,22 @@ export async function registerSettlementRoutes(app: FastifyInstance) {
       .where(eq(settlementBatches.id, params.id))
       .returning();
     try {
-      await notifySekuritasSettlement(batch.sessionId, batch.id);
+      const webhookResult = await notifySekuritasSettlement(batch.sessionId, batch.id);
+      
+      let newStatus = "sent";
+      let errorReason = null;
+      if (webhookResult && "deferred" in webhookResult && webhookResult.deferred) {
+        newStatus = "deferred";
+        errorReason = (webhookResult as any).reason;
+      }
+      
       const [notifiedBatch] = await db
         .update(settlementBatches)
         .set({
-          notificationStatus: "sent",
+          notificationStatus: newStatus,
           notificationAttempts: sql`${settlementBatches.notificationAttempts} + 1` as any,
-          lastNotificationError: null,
-          notifiedAt: new Date(),
+          lastNotificationError: errorReason,
+          notifiedAt: newStatus === "sent" ? new Date() : batch.notifiedAt,
           updatedAt: new Date()
         })
         .where(eq(settlementBatches.id, params.id))
@@ -344,4 +359,23 @@ export async function registerSettlementRoutes(app: FastifyInstance) {
       .orderBy(sql`${custodyLedgerEntries.createdAt} DESC`)
       .limit(query.limit);
   });
+
+  // Background retry job for deferred/failed settlements
+  setInterval(async () => {
+    try {
+      const deferredBatches = await pool.query(
+        `SELECT id FROM settlement_batches WHERE notification_status IN ('deferred', 'failed') AND updated_at < NOW() - INTERVAL '30 seconds' LIMIT 10`
+      );
+      const settlementToken = internalSettlementToken();
+      for (const row of deferredBatches.rows) {
+        await app.inject({
+          method: "POST",
+          url: `/v1/settlement/batches/${row.id}/process`,
+          headers: settlementToken ? { "x-service-token": settlementToken } : {}
+        });
+      }
+    } catch (err) {
+      console.error("Retry deferred settlement failed", err);
+    }
+  }, 30000);
 }
