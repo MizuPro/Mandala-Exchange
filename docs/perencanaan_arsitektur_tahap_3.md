@@ -6,10 +6,12 @@ Dokumen ini sudah disesuaikan dengan kondisi project saat ini:
 
 - Service utama: `BEI`, `MATS`, `SEKURITAS/backend`, dan `SEKURITAS/frontend`.
 - BEI dan MATS sudah punya Docker Compose database lokal.
-- Sekuritas akan ditambahkan Docker Compose database lokal.
-- Frontend React sudah memakai `VITE_API_URL`.
-- Frontend React masih punya opsi WebSocket langsung ke MATS lewat `VITE_MATS_WS_URL`, tetapi untuk Tahap 3 akses realtime akan diarahkan lewat proxy Sekuritas Backend agar MATS tetap privat.
-- `SEKURITAS/frontend/public/playground.html` masih hardcoded ke service lokal dan tidak aman untuk dipublikkan apa adanya.
+- Sekuritas sudah ditambahkan Docker Compose database lokal di `SEKURITAS/docker-compose.yml`.
+- Frontend React sudah memakai resolver endpoint untuk REST API dan WebSocket.
+- Frontend publik memakai WebSocket proxy Sekuritas Backend agar MATS tetap privat.
+- `playground.html` sudah dipindah ke `SEKURITAS/frontend/devtools/playground.html` agar tidak ikut disajikan sebagai UI publik.
+
+Status saat ini: **siap untuk dieksekusi dan divalidasi end-to-end**. Bagian yang masih manual adalah memastikan Docker Desktop aktif, menjalankan startup mode yang benar, memastikan Cloudflare Tunnel aktif, mengganti secret/token placeholder jika akan dipakai publik lebih lama, dan menjalankan checklist validasi.
 
 ---
 
@@ -31,7 +33,7 @@ Dokumen ini sudah disesuaikan dengan kondisi project saat ini:
 
 3. **Frontend publik yang disarankan**
    - Gunakan aplikasi React utama di `SEKURITAS/frontend`.
-   - Jangan gunakan `SEKURITAS/frontend/public/playground.html` sebagai UI publik sebelum direfaktor, karena file itu masih memanggil BEI/MATS langsung dan menyimpan JWT secret di browser.
+   - `playground.html` hanya boleh dipakai sebagai devtool lokal di `SEKURITAS/frontend/devtools/`, bukan UI publik.
 
 4. **Market realtime / WebSocket**
    - Keputusan: MATS tetap privat.
@@ -42,19 +44,19 @@ Dokumen ini sudah disesuaikan dengan kondisi project saat ini:
    - Keputusan: gunakan Docker Compose untuk database lokal agar setup mudah diulang.
    - BEI sudah memakai PostgreSQL lokal di Docker pada port host `5441`.
    - MATS sudah memakai PostgreSQL lokal di Docker pada port host `5434`.
-   - Sekuritas ditambahkan Docker Compose database lokal sendiri.
+   - Sekuritas sudah memakai Docker Compose database lokal sendiri pada port host `5432`.
 
 6. **Frontend publik**
    - Keputusan: gunakan React app utama di `SEKURITAS/frontend`.
-   - Frontend publik disajikan dari hasil `npm run build` lalu `npm run preview` di port `4173`.
+   - Frontend publik disajikan dari hasil `npm run build:tunnel` lalu `npm run preview` di port `4173`.
 
 7. **Binding service privat**
    - Keputusan: BEI dan MATS bind ke `127.0.0.1`.
    - Service privat tidak dibuka langsung ke LAN atau internet kecuali ada kebutuhan debugging sementara.
 
 8. **Startup dan backup**
-   - Keputusan awal: tetap gunakan `start-all.bat`, tetapi diperbaiki agar include DB/migration Sekuritas.
-   - Backup memakai script `pg_dump` harian dan hasilnya disalin ke external drive atau cloud pribadi.
+   - Keputusan: tetap gunakan `start-all.bat` untuk fase debugging, dengan mode `local` dan `tunnel`.
+   - Backup memakai `scripts/backup-local-dbs.ps1` dan hasilnya disalin ke external drive atau cloud pribadi.
 
 ---
 
@@ -146,14 +148,14 @@ Catatan:
 
 | Area | Kondisi Saat Ini | Implikasi Tahap 3 |
 | --- | --- | --- |
-| Frontend API | `SEKURITAS/frontend/src/api/client.ts` membaca `VITE_API_URL` | Cocok. Cukup set ke `https://api-mandala-sekuritas.michaelk.fun/api/v1` untuk akses luar rumah. |
-| Frontend WebSocket | `Dashboard.tsx` membaca `VITE_MATS_WS_URL` | Ubah target publik ke WebSocket proxy Sekuritas, bukan langsung ke MATS. |
-| Sekuritas CORS | `SEKURITAS/backend/src/app.ts` masih hardcoded origin | Perlu dibuat configurable via env. |
-| Playground HTML | `public/playground.html` hardcoded ke Sekuritas, BEI, MATS lokal dan JWT secret | Jangan dipublikkan sebelum refactor. |
+| Frontend API | `SEKURITAS/frontend/src/api/client.ts` memakai `resolveApiBase()` | Sudah cocok untuk lokal dan tunnel. Domain publik dipaksa ke `https://api-mandala-sekuritas.michaelk.fun/api/v1`. |
+| Frontend WebSocket | `Dashboard.tsx` memakai `resolveMarketWsUrl()` | Sudah mengarah ke WebSocket proxy Sekuritas saat host publik dipakai. |
+| Sekuritas CORS | `SEKURITAS/backend/src/app.ts` membaca `FRONTEND_ORIGINS` | Sudah configurable via env dengan default lokal + domain final. |
+| Playground HTML | `playground.html` dipindah ke `SEKURITAS/frontend/devtools/` | Tidak ikut build publik Vite. |
 | BEI DB | `BEI/docker-compose.yml` memakai Postgres host port `5441` | Sudah cocok untuk lokal. |
 | MATS DB | `MATS/docker-compose.yml` memakai Postgres host port `5434` | Sudah cocok untuk lokal. |
-| Sekuritas DB | `.env.example` menunjuk `localhost:5432/mandala_sekuritas`, tetapi belum ada compose khusus | Tambahkan Docker Compose database Sekuritas. |
-| Startup | `start-all.bat` menjalankan DB BEI/MATS dan migration BEI | Perlu ditambah migration/provisioning Sekuritas. |
+| Sekuritas DB | `SEKURITAS/docker-compose.yml` menjalankan Postgres `mandala_sekuritas` pada host port `5432` | Sudah siap untuk migration Sekuritas. |
+| Startup | `start-all.bat` menjalankan DB BEI/MATS/Sekuritas, migration BEI/Sekuritas, service, frontend preview, dan opsional tunnel | Gunakan `start-all.bat local` atau `start-all.bat tunnel`. |
 | Internal token | BEI/MATS/Sekuritas sudah memakai service token | Token harus diganti dari placeholder sebelum tunnel publik. |
 
 ---
@@ -197,18 +199,24 @@ Catatan:
 
 ### 6.1 Sekuritas Frontend
 
-File: `SEKURITAS/frontend/.env`
+File yang dipakai:
+
+- `SEKURITAS/frontend/.env.local` untuk mode lokal.
+- `SEKURITAS/frontend/.env.development` untuk Vite dev lokal.
+- `SEKURITAS/frontend/.env.tunnel` untuk build publik via Cloudflare Tunnel.
 
 Mode lokal:
 
 ```env
 VITE_API_URL=http://localhost:3002/api/v1
+VITE_MATS_WS_URL=ws://localhost:3002/api/v1/market/ws
 ```
 
 Mode akses luar rumah:
 
 ```env
 VITE_API_URL=https://api-mandala-sekuritas.michaelk.fun/api/v1
+VITE_MATS_WS_URL=wss://api-mandala-sekuritas.michaelk.fun/api/v1/market/ws
 ```
 
 Untuk WebSocket market data, gunakan proxy Sekuritas Backend.
@@ -236,6 +244,12 @@ Catatan beban:
 - Pola yang perlu dihindari adalah Sekuritas membuka 1 koneksi ke MATS untuk setiap browser jika user bertambah banyak. Lebih baik Sekuritas membuka 1 koneksi/subscription internal lalu broadcast ke semua client.
 - Jika nanti jumlah client naik, tambahkan filtering symbol, throttling update, heartbeat, reconnect policy, dan rate limit.
 
+Catatan implementasi:
+
+- Resolver endpoint frontend berada di `SEKURITAS/frontend/src/config/endpoints.ts`.
+- Saat halaman dibuka dari `mandala-sekuritas.michaelk.fun`, frontend selalu memakai endpoint publik Cloudflare meskipun build lokal tidak sengaja terserve.
+- `npm run build` dan `npm run build:tunnel` membersihkan folder `dist` terlebih dahulu agar asset lama tidak ikut terserve.
+
 ### 6.2 Sekuritas Backend
 
 File: `SEKURITAS/backend/.env`
@@ -259,9 +273,9 @@ BEI_TO_SEKURITAS_TOKEN=<token-bei-ke-sekuritas>
 FRONTEND_ORIGINS=http://localhost:5173,http://localhost:4173,https://mandala-sekuritas.michaelk.fun
 ```
 
-Catatan perubahan kode yang dibutuhkan:
+Catatan implementasi:
 
-- `SEKURITAS/backend/src/app.ts` perlu membaca CORS origin dari `FRONTEND_ORIGINS`.
+- `SEKURITAS/backend/src/app.ts` sudah membaca CORS origin dari `FRONTEND_ORIGINS`.
 - Jangan hardcode domain tunnel di kode.
 
 ### 6.3 MATS
@@ -338,21 +352,25 @@ Port host:
 
 Sekuritas membutuhkan database `mandala_sekuritas`.
 
-Keputusan untuk Tahap 3: **tambahkan Docker Compose untuk database Sekuritas** agar konsisten dengan BEI dan MATS.
+Keputusan untuk Tahap 3: **gunakan Docker Compose untuk database Sekuritas** agar konsisten dengan BEI dan MATS.
 
-Minimal target:
+Implementasi saat ini:
 
 - Database: `mandala_sekuritas`
-- User: `postgres` atau user khusus `mandala_sekuritas`
-- Port host: `5432` jika tidak bentrok, atau port lain seperti `5442`
-- Migration: jalankan semua file di `SEKURITAS/backend/src/db/migrations`
+- User: `postgres`
+- Password default lokal: `postgres`
+- Port host: `5432`
+- Compose file: `SEKURITAS/docker-compose.yml`
+- Migration runner: `SEKURITAS/backend/src/db/migrate.ts`
+- Migration SQL: `SEKURITAS/backend/src/db/migrations/0000_initial_schema.sql`
 
-`start-all.bat` perlu diperbarui agar:
+`start-all.bat` sudah diperbarui agar:
 
 1. Menyalakan DB BEI, DB MATS, Redis, dan DB Sekuritas.
 2. Menjalankan migration BEI.
 3. Menjalankan migration Sekuritas.
 4. Menjalankan service BEI, MATS, Sekuritas Backend, dan Sekuritas Frontend.
+5. Mendukung mode `local` dan `tunnel`.
 
 ---
 
@@ -389,7 +407,7 @@ Sebelum `api-mandala-sekuritas.michaelk.fun` dibuka:
 2. Gunakan `JWT_SECRET` kuat dan berbeda dari development.
 3. Batasi CORS Sekuritas hanya ke domain frontend yang valid.
 4. Jangan expose BEI dan MATS secara default.
-5. Jangan publish `public/playground.html` sebelum refactor.
+5. Jangan publish `SEKURITAS/frontend/devtools/playground.html` sebagai UI player.
 6. Pastikan admin endpoint Sekuritas memakai `ADMIN_TOKEN` kuat.
 7. Pastikan service token internal tidak pernah dimasukkan ke frontend.
 8. Jika MATS WebSocket ikut diexpose, gunakan token market khusus dengan scope minimal dan rate limiting.
@@ -411,9 +429,12 @@ Atur Windows agar laptop tidak sleep saat menjadi server:
 
 ### Startup Service
 
-Keputusan awal:
+Keputusan saat ini:
 
 - Tetap gunakan `start-all.bat` untuk fase debugging.
+- `start-all.bat` mendukung mode:
+  - `start-all.bat` atau `start-all.bat local`: build frontend lokal dan start service lokal.
+  - `start-all.bat tunnel`: build frontend mode tunnel, start service lokal, dan mencoba menjalankan `cloudflared tunnel run mandala-exchange`.
 - Setelah stabil, pisahkan script:
   - `start-infra.bat`
   - `migrate-all.bat`
@@ -503,7 +524,32 @@ Kesimpulan untuk tahap ini:
 
 Karena database pindah ke laptop, backup wajib masuk rencana.
 
-Minimal backup harian:
+Script yang tersedia:
+
+- Backup: `scripts/backup-local-dbs.ps1`
+- Restore: `scripts/restore-local-db.ps1`
+
+Backup manual:
+
+```powershell
+.\scripts\backup-local-dbs.ps1
+```
+
+Backup ke folder tertentu:
+
+```powershell
+.\scripts\backup-local-dbs.ps1 -OutputDir E:\MandalaBackups
+```
+
+Restore:
+
+```powershell
+.\scripts\restore-local-db.ps1 -Target sekuritas -BackupFile .\backups\mandala_sekuritas_YYYYMMDD_HHMMSS.sql
+.\scripts\restore-local-db.ps1 -Target mats -BackupFile .\backups\mandala_mats_YYYYMMDD_HHMMSS.sql
+.\scripts\restore-local-db.ps1 -Target bei -BackupFile .\backups\mandala_bei_YYYYMMDD_HHMMSS.sql
+```
+
+Command internal yang dipakai backup:
 
 ```powershell
 pg_dump -h localhost -p 5432 -U postgres mandala_sekuritas > backups/mandala_sekuritas_%DATE%.sql
@@ -517,72 +563,138 @@ Catatan:
 - Jangan simpan backup hanya di disk yang sama.
 - Minimal salin backup ke external drive atau cloud storage pribadi.
 - Buat juga prosedur restore dan tes restore sesekali.
+- Folder `backups/` dan file `*.backup.sql` sudah di-ignore oleh git.
 
 ---
 
-## 12. Rencana Implementasi
+## 12. Status Implementasi
 
-### Tahap 3.1 - Persiapan Local DB
+Status codebase saat ini:
 
-1. Pastikan Docker Desktop aktif.
-2. Jalankan database BEI dan MATS dari compose yang sudah ada.
-3. Tambahkan provisioning database Sekuritas.
-4. Jalankan migration BEI.
-5. Jalankan migration Sekuritas.
-6. Jalankan MATS dengan `MATS_DATABASE_URL` lokal.
-7. Uji health check semua service:
-   - Sekuritas Backend: `http://localhost:3002/health`
-   - MATS: `http://localhost:8082/health`
-   - BEI: `http://localhost:4100/health`
+1. DB Sekuritas lokal via Docker Compose sudah tersedia di `SEKURITAS/docker-compose.yml`.
+2. Migration Sekuritas sudah tersedia dan idempotent melalui `npm run db:migrate` dari `SEKURITAS/backend`.
+3. `start-all.bat` sudah menjalankan DB BEI, MATS, Sekuritas, migration BEI, migration Sekuritas, service backend, MATS, BEI, dan frontend preview.
+4. `start-all.bat tunnel` sudah menyiapkan build frontend tunnel dan mencoba menjalankan `cloudflared tunnel run mandala-exchange`.
+5. CORS Sekuritas sudah membaca `FRONTEND_ORIGINS`.
+6. WebSocket proxy publik sudah ada di `GET /api/v1/market/ws`.
+7. Frontend publik sudah memakai endpoint Cloudflare untuk REST dan WebSocket saat dibuka dari `mandala-sekuritas.michaelk.fun`.
+8. `playground.html` sudah dipindah ke folder devtools dan tidak lagi menjadi aset publik Vite.
+9. Script backup/restore lokal sudah tersedia di folder `scripts/`.
+10. Contoh config tunnel tersedia di `deploy/cloudflared/mandala-tunnel.example.yml`.
 
-### Tahap 3.2 - Rapikan Config Frontend dan CORS
+Status manual di luar repo:
 
-1. Pastikan frontend React memakai `VITE_API_URL`.
-2. Tambahkan env `FRONTEND_ORIGINS` di Sekuritas Backend.
-3. Ubah CORS backend agar membaca `FRONTEND_ORIGINS`.
-4. Implement WebSocket proxy market data di Sekuritas Backend.
-5. Set frontend publik ke `VITE_MATS_WS_URL=wss://api-mandala-sekuritas.michaelk.fun/api/v1/market/ws`.
-6. Pastikan token MATS `market:read` hanya disimpan di backend.
-
-### Tahap 3.3 - Cloudflare Tunnel
-
-1. Install `cloudflared`.
-2. Login Cloudflare.
-3. Buat tunnel.
-4. Daftarkan DNS:
-   - `mandala-sekuritas.michaelk.fun`
-   - `api-mandala-sekuritas.michaelk.fun`
-5. Arahkan ingress tunnel:
-   - `play` ke frontend.
-   - `api` ke Sekuritas Backend.
-6. Jalankan tunnel.
-7. Uji dari jaringan luar rumah.
-
-### Tahap 3.4 - Hardening Minimum
-
-1. Ganti semua secret/token.
-2. Matikan akses publik ke BEI/MATS.
-3. Audit `playground.html`.
-4. Tambahkan backup script.
-5. Tambahkan startup script yang lebih reliable.
-6. Jalankan flow trading end-to-end dari luar jaringan.
+1. Docker Desktop harus aktif sebelum startup.
+2. Cloudflare Tunnel credential tetap berada di mesin lokal dan tidak boleh masuk git.
+3. DNS Cloudflare untuk `mandala-sekuritas.michaelk.fun` dan `api-mandala-sekuritas.michaelk.fun` harus tetap diarahkan ke tunnel `mandala-exchange`.
+4. Secret/token placeholder harus diganti jika environment ini akan dipakai publik lebih lama.
+5. Backup hasil `pg_dump` perlu disalin ke external drive atau cloud pribadi.
 
 ---
 
-## 13. Hal yang Belum Dieksekusi Dalam Dokumen Ini
+## 13. Runbook Eksekusi
 
-Dokumen ini adalah rencana arsitektur, belum melakukan perubahan kode. Perubahan codebase yang masih perlu dikerjakan:
+### 13.1 Eksekusi Lokal Tanpa Tunnel
 
-1. Membuat CORS Sekuritas configurable via `FRONTEND_ORIGINS`.
-2. Menambahkan provisioning database Sekuritas.
-3. Memperbarui `start-all.bat` agar menjalankan provisioning/migration Sekuritas.
-4. Mengimplementasikan WebSocket proxy market data di Sekuritas Backend.
-5. Refactor atau nonaktifkan `public/playground.html` untuk penggunaan publik.
-6. Membuat script backup/restore.
+Gunakan ini untuk debugging dari laptop sendiri.
+
+```bat
+start-all.bat local
+```
+
+Atau:
+
+```bat
+start-all.bat
+```
+
+Endpoint yang dipakai:
+
+- Frontend preview: `http://localhost:4173`
+- Sekuritas Backend: `http://localhost:3002`
+- MATS: `http://localhost:8082`
+- BEI: `http://localhost:4100`
+
+### 13.2 Eksekusi Dengan Cloudflare Tunnel
+
+Gunakan ini saat ingin dites dari HP atau jaringan luar rumah.
+
+```bat
+start-all.bat tunnel
+```
+
+Endpoint publik:
+
+- Frontend: `https://mandala-sekuritas.michaelk.fun`
+- API dan WebSocket: `https://api-mandala-sekuritas.michaelk.fun`
+- WebSocket market: `wss://api-mandala-sekuritas.michaelk.fun/api/v1/market/ws`
+
+Jika `cloudflared` tidak ditemukan oleh script, jalankan manual dari terminal lain:
+
+```powershell
+cloudflared tunnel run mandala-exchange
+```
+
+### 13.3 Health Check Setelah Startup
+
+Jalankan setelah semua window service terbuka:
+
+```powershell
+Invoke-RestMethod http://localhost:3002/health
+Invoke-RestMethod http://localhost:8082/health
+Invoke-RestMethod http://localhost:4100/health
+Invoke-RestMethod https://api-mandala-sekuritas.michaelk.fun/health
+```
+
+Catatan: health check publik hanya berhasil jika `start-all.bat tunnel` atau `cloudflared tunnel run mandala-exchange` sedang aktif.
+
+### 13.4 Validasi Player Flow
+
+Checklist minimum sebelum dianggap selesai:
+
+1. Buka `https://mandala-sekuritas.michaelk.fun` dari laptop.
+2. Buka domain yang sama dari HP memakai jaringan seluler atau Wi-Fi berbeda.
+3. Register user baru.
+4. Login.
+5. Verify email/token sesuai flow aplikasi.
+6. Pastikan dashboard memuat portfolio, market, order, settlement, notification, dan leaderboard tanpa `Failed to fetch`.
+7. Pastikan browser tidak meminta izin akses jaringan lokal.
+8. Pastikan market WebSocket tidak mengarah ke `localhost` dari browser publik.
+9. Submit order kecil untuk flow beli/jual simulasi.
+10. Cek order history, trade/fill, settlement, custody, dan reconciliation.
+
+### 13.5 Validasi Backup
+
+Jalankan:
+
+```powershell
+.\scripts\backup-local-dbs.ps1
+```
+
+Pastikan folder `backups/` berisi file:
+
+- `mandala_sekuritas_<timestamp>.sql`
+- `mandala_mats_<timestamp>.sql`
+- `mandala_bei_<timestamp>.sql`
+
+Tes restore sebaiknya dilakukan pada database disposable atau setelah backup tambahan dibuat.
 
 ---
 
-## 14. Ringkasan Keputusan Final
+## 14. Sisa Hardening Setelah Flow Stabil
+
+Item ini tidak wajib untuk eksekusi pertama, tetapi perlu sebelum dipakai lebih serius:
+
+1. Ganti semua secret/token development.
+2. Pertimbangkan menjalankan `cloudflared` sebagai Windows Service.
+3. Tambahkan scheduled task untuk backup harian.
+4. Tambahkan firewall rule eksplisit agar port BEI/MATS/Postgres/Redis tidak menerima inbound dari jaringan luar.
+5. Tambahkan observability sederhana untuk log error backend, reconnect WebSocket, dan status tunnel.
+6. Pertimbangkan root Docker Compose untuk semua service setelah debugging lokal stabil.
+
+---
+
+## 15. Ringkasan Keputusan Final
 
 Keputusan Tahap 3 yang dipakai:
 
@@ -602,10 +714,10 @@ Keputusan Tahap 3 yang dipakai:
 
 6. Jangan pakai `playground.html` untuk player publik.
 
-7. Startup awal tetap memakai `start-all.bat`, tetapi script perlu diperbarui agar include DB/migration Sekuritas.
+7. Startup awal tetap memakai `start-all.bat`, dan script sudah include DB/migration Sekuritas.
 
 8. Root Docker Compose untuk semua service dicatat sebagai opsi hardening/deployment setelah setup lokal stabil.
 
-9. Backup memakai script `pg_dump` harian dan hasilnya disalin ke external drive atau cloud pribadi.
+9. Backup memakai script `scripts/backup-local-dbs.ps1` dan hasilnya disalin ke external drive atau cloud pribadi.
 
 Dengan pilihan ini, tahap 3 bisa dilakukan tanpa membuka internal engine ke internet dan tanpa memindahkan logika trading utama.
