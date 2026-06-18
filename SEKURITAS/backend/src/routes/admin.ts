@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { db } from "../db/db.js";
 import { cash_balances, ledger_movements, broker_accounts, users } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAdminToken, signUserToken } from "../lib/auth.js";
 import { hashPassword } from "../lib/password.js";
@@ -101,6 +101,87 @@ export default async function adminRoutes(app: FastifyInstance) {
       return reply.send(result);
     } catch (error: any) {
       return reply.status(500).send({ error: error.message });
+    }
+  });
+
+  // Reset database for E2E testing
+  app.post("/reset-testing", async (request, reply) => {
+    const TRADER_A_ACC = 'bfea518a-5715-4c72-9555-fe18e679fe7b';
+    const TRADER_B_ACC = '70db5353-863f-4c5c-9718-b120e28df211';
+
+    try {
+      await db.transaction(async (tx) => {
+        // 1. Delete notifications
+        await tx.execute(sql`DELETE FROM notifications WHERE broker_account_id IN (${TRADER_A_ACC}, ${TRADER_B_ACC})`);
+        
+        // 2. Delete settlement_inbox
+        await tx.execute(sql`
+          DELETE FROM settlement_inbox 
+          WHERE mats_order_id IN (
+            SELECT mats_order_id FROM orders 
+            WHERE broker_account_id IN (${TRADER_A_ACC}, ${TRADER_B_ACC})
+          ) OR idempotency_key LIKE 'settlement:%'
+        `);
+        
+        // 3. Delete settlement_events
+        await tx.execute(sql`
+          DELETE FROM settlement_events 
+          WHERE order_id IN (
+            SELECT id FROM orders 
+            WHERE broker_account_id IN (${TRADER_A_ACC}, ${TRADER_B_ACC})
+          )
+        `);
+        
+        // 4. Delete fee_ledgers
+        await tx.execute(sql`DELETE FROM fee_ledgers WHERE broker_account_id IN (${TRADER_A_ACC}, ${TRADER_B_ACC})`);
+        
+        // 5. Delete trade_fills
+        await tx.execute(sql`
+          DELETE FROM trade_fills 
+          WHERE order_id IN (
+            SELECT id FROM orders 
+            WHERE broker_account_id IN (${TRADER_A_ACC}, ${TRADER_B_ACC})
+          )
+        `);
+        
+        // 6. Delete ledger_movements
+        await tx.execute(sql`DELETE FROM ledger_movements WHERE broker_account_id IN (${TRADER_A_ACC}, ${TRADER_B_ACC})`);
+        
+        // 7. Delete orders
+        await tx.execute(sql`DELETE FROM orders WHERE broker_account_id IN (${TRADER_A_ACC}, ${TRADER_B_ACC})`);
+
+        // 8. Reset Cash Balances
+        await tx.execute(sql`
+          UPDATE cash_balances 
+          SET available = '999900000.000000', reserved = '0.000000', pending = '0.000000', updated_at = NOW()
+          WHERE broker_account_id = ${TRADER_A_ACC}
+        `);
+        await tx.execute(sql`
+          UPDATE cash_balances 
+          SET available = '10000000.000000', reserved = '0.000000', pending = '0.000000', updated_at = NOW()
+          WHERE broker_account_id = ${TRADER_B_ACC}
+        `);
+
+        // 9. Reset Securities Positions
+        await tx.execute(sql`
+          DELETE FROM securities_positions 
+          WHERE broker_account_id = ${TRADER_A_ACC} AND symbol = 'MNDL'
+        `);
+        await tx.execute(sql`
+          UPDATE securities_positions 
+          SET available = 800, reserved = 0, pending = 0, average_price = '0.000000', updated_at = NOW()
+          WHERE broker_account_id = ${TRADER_B_ACC} AND symbol = 'MNDL'
+        `);
+        await tx.execute(sql`
+          UPDATE securities_positions 
+          SET available = 1000, reserved = 0, pending = 0, average_price = '0.000000', updated_at = NOW()
+          WHERE broker_account_id = ${TRADER_B_ACC} AND symbol = 'NUSA'
+        `);
+      });
+
+      return { message: "Database Sekuritas reset successful" };
+    } catch (error: any) {
+      return reply.status(500).send({ error: error.message || "Failed to reset database" });
     }
   });
 }
