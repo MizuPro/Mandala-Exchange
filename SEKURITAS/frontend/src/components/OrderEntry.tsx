@@ -23,10 +23,12 @@ export default function OrderEntry() {
     fetchMarketData();
   }, [fetchMarketData]);
 
+  const lastPrice = market.lastPrices[symbol.toUpperCase()] || 0;
+  const priceValue = orderType === 'market' ? lastPrice : Number(price);
+  const quantityValue = Number(quantity);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const priceValue = Number(price);
-    const quantityValue = Number(quantity);
     const priceIsValid = orderType === 'market' || (Number.isInteger(priceValue) && priceValue > 0);
     if (!symbol || !priceIsValid || !Number.isInteger(quantityValue) || quantityValue <= 0 || quantityValue % LOT_SIZE !== 0) {
       alert(orderType === 'market'
@@ -36,19 +38,20 @@ export default function OrderEntry() {
       return;
     }
     try {
-      await placeOrder(symbol.toUpperCase(), side, orderType === 'market' ? undefined : priceValue, quantityValue, orderType);
+      const res = await placeOrder(symbol.toUpperCase(), side, orderType === 'market' ? undefined : priceValue, quantityValue, orderType);
       setSymbol('');
       setPrice('');
       setQuantity('');
-      alert(`${orderType.toUpperCase()} ${side.toUpperCase()} ${symbol} order placed successfully!`);
+      if (res?.deferred) {
+        alert(`${orderType.toUpperCase()} ${side.toUpperCase()} ${symbol} order submitted, but status is unknown (deferred). It will be auto-reconciled shortly.`);
+      } else {
+        alert(`${orderType.toUpperCase()} ${side.toUpperCase()} ${symbol} order placed successfully!`);
+      }
     } catch (err: any) {
       alert(`Failed to place order: ${err.message}`);
     }
   };
 
-  const lastPrice = market.lastPrices[symbol.toUpperCase()] || 0;
-  const priceValue = orderType === 'market' ? lastPrice : Number(price);
-  const quantityValue = Number(quantity);
   const estValue = Number.isFinite(priceValue * quantityValue) ? priceValue * quantityValue : 0;
   const brokerRate = Number(side === 'buy' ? feeSchedule?.brokerBuyRate : feeSchedule?.brokerSellRate) || 0.0015;
   const marketRate = (Number(feeSchedule?.exchangeFeeRate) || 0) +

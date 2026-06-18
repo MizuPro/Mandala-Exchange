@@ -4,7 +4,7 @@ import { db } from "../db/db.js";
 import { broker_accounts, cash_balances, order_amendments, orders, securities_positions, trade_fills } from "../db/schema.js";
 import { isFillOrderStatus, isTerminalOrderStatus, normalizeOrderStatus } from "../lib/order-status.js";
 import { estimateFee } from "./fee-service.js";
-import { matsClient } from "./mats-client.js";
+import { MatsClientError, matsClient } from "./mats-client.js";
 import { createNotificationTx } from "./notification-service.js";
 import { processPendingSettlementsForOrder } from "./settlement-service.js";
 
@@ -311,6 +311,7 @@ export async function placeOrder(
           updated_at: new Date(),
         }).where(eq(orders.id, orderRecord.id));
       });
+      throw new Error(`Failed to place order to MATS: ${errorMessage}`);
     } else {
       // Transport timeout / unknown — MATS may or may not have received the order.
       // Keep reservation locked, mark as submit_unknown for reconciliation.
@@ -320,8 +321,10 @@ export async function placeOrder(
         last_submission_error: errorMessage,
         updated_at: new Date(),
       }).where(eq(orders.id, orderRecord.id));
+      
+      const [unknownOrder] = await db.select().from(orders).where(eq(orders.id, orderRecord.id)).limit(1);
+      return Object.assign(unknownOrder || orderRecord, { deferred: true });
     }
-    throw new Error(`Failed to place order to MATS: ${errorMessage}`);
   }
 
   const [updatedOrder] = await db.select().from(orders).where(eq(orders.id, orderRecord.id)).limit(1);
@@ -700,6 +703,13 @@ export async function cancelOrder(userId: string, orderId: string) {
 
 const SUBMIT_UNKNOWN_GRACE_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
 
+function isDefinitiveMatsReconcileFailure(error: unknown) {
+  if (!(error instanceof MatsClientError)) return false;
+  if (error.status === 404 || error.status === 409) return true;
+  if (error.status >= 500 || error.status === 401 || error.status === 403 || error.status === 408 || error.status === 429) return false;
+  return /not_found|idempotency_key_payload_conflict|invalid|required|validation|rejected/i.test(error.message);
+}
+
 export async function reconcileSubmitUnknownOrders() {
   const unknownOrders = await db
     .select()
@@ -739,8 +749,8 @@ export async function reconcileSubmitUnknownOrders() {
         });
       }
     } catch (err: any) {
-      if (ageMs > SUBMIT_UNKNOWN_GRACE_PERIOD_MS) {
-        // Grace period exceeded — MATS doesn't have this order, release reservation
+      if (ageMs > SUBMIT_UNKNOWN_GRACE_PERIOD_MS && isDefinitiveMatsReconcileFailure(err)) {
+        // Grace period exceeded and MATS definitively rejected or does not know this order.
         await db.transaction(async (tx) => {
           if (order.side === "buy") {
             const reservedAmount = Number(order.reserved_amount || 0);
@@ -792,7 +802,9 @@ export async function reconcileSubmitUnknownOrders() {
         results.push({
           orderId: order.id,
           action: "waiting",
-          detail: `Still within grace period (${Math.round(ageMs / 1000)}s / ${SUBMIT_UNKNOWN_GRACE_PERIOD_MS / 1000}s)`,
+          detail: ageMs > SUBMIT_UNKNOWN_GRACE_PERIOD_MS
+            ? `Waiting for definitive MATS reconciliation response: ${err.message}`
+            : `Still within grace period (${Math.round(ageMs / 1000)}s / ${SUBMIT_UNKNOWN_GRACE_PERIOD_MS / 1000}s)`,
         });
       }
     }

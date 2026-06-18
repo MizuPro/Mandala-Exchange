@@ -1,5 +1,15 @@
 import fetch from "node-fetch";
 
+export class MatsClientError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly statusText: string
+  ) {
+    super(message);
+  }
+}
+
 export class MatsClient {
   private baseUrl: string;
   private serviceToken: string;
@@ -19,7 +29,11 @@ export class MatsClient {
 
   private async parseError(res: any, action: string) {
     const data = await res.json().catch(() => null);
-    throw new Error(data?.error || data?.message || `MATS ${action} failed: ${res.status} ${res.statusText}`);
+    throw new MatsClientError(
+      data?.error || data?.message || `MATS ${action} failed: ${res.status} ${res.statusText}`,
+      res.status,
+      res.statusText
+    );
   }
 
   async placeOrder(orderPayload: any) {

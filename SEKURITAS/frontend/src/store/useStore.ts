@@ -115,7 +115,7 @@ interface AppState {
   fetchLeaderboard: () => Promise<void>;
   fetchNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
-  placeOrder: (symbol: string, side: "buy" | "sell", price: number | undefined, quantity: number, orderType?: "limit" | "market") => Promise<void>;
+  placeOrder: (symbol: string, side: "buy" | "sell", price: number | undefined, quantity: number, orderType?: "limit" | "market") => Promise<any>;
   amendOrder: (id: string, payload: { price?: number; quantity?: number }) => Promise<void>;
   cancelOrder: (id: string) => Promise<void>;
   applyMarketEvent: (event: any) => void;
@@ -386,7 +386,7 @@ export const useStore = create<AppState>((set, get) => ({
   placeOrder: async (symbol, side, price, quantity, orderType = "limit") => {
     try {
       set({ orderActionLoading: true, isLoading: true, error: null });
-      await fetchApi('/orders', {
+      const res = await fetchApi('/orders', {
         method: 'POST',
         body: JSON.stringify({
           symbol,
@@ -398,6 +398,7 @@ export const useStore = create<AppState>((set, get) => ({
       });
       await Promise.all([get().fetchOrders(), get().fetchPortfolio(), get().fetchNotifications()]);
       set({ orderActionLoading: false, isLoading: false });
+      return res;
     } catch (err: any) {
       if (isUnauthorized(err)) get().logout();
       set({ error: err.message, orderActionLoading: false, isLoading: false });
