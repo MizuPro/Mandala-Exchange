@@ -442,6 +442,125 @@ CREATE TABLE IF NOT EXISTS surveillance_alerts (
 );
 `;
 
+const compatibilitySql = `
+WITH duplicate_profiles AS (
+  SELECT id, row_number() OVER (PARTITION BY board, market_segment ORDER BY created_at, id) AS rn
+  FROM trading_rule_profiles
+)
+DELETE FROM lot_size_rules r USING duplicate_profiles d
+WHERE r.profile_id = d.id AND d.rn > 1;
+
+WITH duplicate_profiles AS (
+  SELECT id, row_number() OVER (PARTITION BY board, market_segment ORDER BY created_at, id) AS rn
+  FROM trading_rule_profiles
+)
+DELETE FROM tick_size_rules r USING duplicate_profiles d
+WHERE r.profile_id = d.id AND d.rn > 1;
+
+WITH duplicate_profiles AS (
+  SELECT id, row_number() OVER (PARTITION BY board, market_segment ORDER BY created_at, id) AS rn
+  FROM trading_rule_profiles
+)
+DELETE FROM price_band_rules r USING duplicate_profiles d
+WHERE r.profile_id = d.id AND d.rn > 1;
+
+WITH duplicate_profiles AS (
+  SELECT id, row_number() OVER (PARTITION BY board, market_segment ORDER BY created_at, id) AS rn
+  FROM trading_rule_profiles
+)
+DELETE FROM auto_rejection_rules r USING duplicate_profiles d
+WHERE r.profile_id = d.id AND d.rn > 1;
+
+WITH duplicate_profiles AS (
+  SELECT id, row_number() OVER (PARTITION BY board, market_segment ORDER BY created_at, id) AS rn
+  FROM trading_rule_profiles
+)
+DELETE FROM trading_rule_profiles p USING duplicate_profiles d
+WHERE p.id = d.id AND d.rn > 1;
+
+WITH duplicate_lot_rules AS (
+  SELECT id, row_number() OVER (PARTITION BY profile_id, instrument_type, effective_date ORDER BY updated_at DESC, created_at, id) AS rn
+  FROM lot_size_rules
+)
+DELETE FROM lot_size_rules r USING duplicate_lot_rules d
+WHERE r.id = d.id AND d.rn > 1;
+
+WITH duplicate_tick_rules AS (
+  SELECT id, row_number() OVER (PARTITION BY profile_id, min_price, max_price ORDER BY updated_at DESC, created_at, id) AS rn
+  FROM tick_size_rules
+)
+DELETE FROM tick_size_rules r USING duplicate_tick_rules d
+WHERE r.id = d.id AND d.rn > 1;
+
+WITH duplicate_price_band_rules AS (
+  SELECT id, row_number() OVER (PARTITION BY profile_id, min_reference_price, max_reference_price ORDER BY updated_at DESC, created_at, id) AS rn
+  FROM price_band_rules
+)
+DELETE FROM price_band_rules r USING duplicate_price_band_rules d
+WHERE r.id = d.id AND d.rn > 1;
+
+WITH duplicate_auto_rejection_rules AS (
+  SELECT id, row_number() OVER (PARTITION BY profile_id ORDER BY updated_at DESC, created_at, id) AS rn
+  FROM auto_rejection_rules
+)
+DELETE FROM auto_rejection_rules r USING duplicate_auto_rejection_rules d
+WHERE r.id = d.id AND d.rn > 1;
+
+WITH duplicate_sessions AS (
+  SELECT id, row_number() OVER (PARTITION BY name ORDER BY created_at, id) AS rn
+  FROM session_templates
+)
+DELETE FROM session_segments s USING duplicate_sessions d
+WHERE s.template_id = d.id AND d.rn > 1;
+
+WITH duplicate_sessions AS (
+  SELECT id, row_number() OVER (PARTITION BY name ORDER BY created_at, id) AS rn
+  FROM session_templates
+)
+DELETE FROM session_templates s USING duplicate_sessions d
+WHERE s.id = d.id AND d.rn > 1;
+
+WITH duplicate_session_segments AS (
+  SELECT id, row_number() OVER (PARTITION BY template_id, sequence ORDER BY updated_at DESC, created_at, id) AS rn
+  FROM session_segments
+)
+DELETE FROM session_segments s USING duplicate_session_segments d
+WHERE s.id = d.id AND d.rn > 1;
+
+WITH duplicate_fees AS (
+  SELECT id, row_number() OVER (PARTITION BY name ORDER BY created_at, id) AS rn
+  FROM fee_schedules
+)
+DELETE FROM fee_schedules f USING duplicate_fees d
+WHERE f.id = d.id AND d.rn > 1;
+
+WITH duplicate_indices AS (
+  SELECT id, row_number() OVER (PARTITION BY code ORDER BY created_at, id) AS rn
+  FROM market_indices
+)
+DELETE FROM market_indices m USING duplicate_indices d
+WHERE m.id = d.id AND d.rn > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS trading_rule_profiles_board_segment_uq
+  ON trading_rule_profiles(board, market_segment);
+CREATE UNIQUE INDEX IF NOT EXISTS lot_size_rules_profile_instrument_date_uq
+  ON lot_size_rules(profile_id, instrument_type, effective_date);
+CREATE UNIQUE INDEX IF NOT EXISTS tick_size_rules_profile_min_max_uq
+  ON tick_size_rules(profile_id, min_price, max_price) NULLS NOT DISTINCT;
+CREATE UNIQUE INDEX IF NOT EXISTS price_band_rules_profile_min_max_uq
+  ON price_band_rules(profile_id, min_reference_price, max_reference_price) NULLS NOT DISTINCT;
+CREATE UNIQUE INDEX IF NOT EXISTS auto_rejection_rules_profile_uq
+  ON auto_rejection_rules(profile_id);
+CREATE UNIQUE INDEX IF NOT EXISTS session_templates_name_uq
+  ON session_templates(name);
+CREATE UNIQUE INDEX IF NOT EXISTS session_segments_template_sequence_uq
+  ON session_segments(template_id, sequence);
+CREATE UNIQUE INDEX IF NOT EXISTS fee_schedules_name_uq
+  ON fee_schedules(name);
+CREATE UNIQUE INDEX IF NOT EXISTS market_indices_code_uq
+  ON market_indices(code);
+`;
+
 async function createEnums(pool: pg.Pool) {
   for (const statement of enumStatements) {
     const enumName = statement.match(/CREATE TYPE ([a-z_]+)/)?.[1];
@@ -464,6 +583,7 @@ async function main() {
     await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
     await createEnums(pool);
     await pool.query(tableSql);
+    await pool.query(compatibilitySql);
     console.log("BEI database migration completed");
   } finally {
     await pool.end();
