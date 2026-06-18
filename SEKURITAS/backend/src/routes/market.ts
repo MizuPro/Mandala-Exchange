@@ -1,7 +1,12 @@
 import { FastifyInstance } from "fastify";
 import { beiClient } from "../services/bei-client.js";
+import { handleMarketWsClient } from "../services/market-ws-proxy.js";
 
 export default async function marketRoutes(app: FastifyInstance) {
+  app.get("/ws", { websocket: true }, (socket, request) => {
+    handleMarketWsClient(socket, request.log);
+  });
+
   // Proxy Listed Securities
   app.get("/securities", async (request, reply) => {
     try {
