@@ -18,8 +18,11 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function payloadHash(payload: unknown) {
-  return crypto.createHash("sha256").update(JSON.stringify(payload || {})).digest("hex");
+function payloadHash(payload: any) {
+  const sanitized = { ...payload };
+  delete sanitized.settled_at;
+  delete sanitized.batch_id;
+  return crypto.createHash("sha256").update(JSON.stringify(sanitized)).digest("hex");
 }
 
 function settlementKey(matsOrderId: string, tradeDetails: any, fallbackOrderId: string) {
