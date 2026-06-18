@@ -11,7 +11,7 @@ import {
 } from "../db/schema.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { settlementModes } from "../types/enums.js";
-import { ensureCustodyAccount } from "../services/custody.js";
+import { ensureCustodyAccount, findBrokerByCode } from "../services/custody.js";
 import { postSekuritasWebhook } from "../services/sekuritas-webhook.js";
 import { config } from "../config.js";
 
@@ -299,8 +299,27 @@ export async function registerSettlementRoutes(app: FastifyInstance) {
       `,
       [params.brokerCode, params.investorId]
     );
-    const account = accountResult.rows[0];
-    if (!account) throw notFound("Custody account not found");
+    let account = accountResult.rows[0];
+    if (!account) {
+      const broker = await findBrokerByCode(params.brokerCode);
+      if (!broker) throw notFound("Broker member not found");
+      const createdAccount = await ensureCustodyAccount({
+        brokerId: broker.id,
+        brokerCode: broker.code,
+        investorId: params.investorId
+      });
+      account = {
+        id: createdAccount.id,
+        broker_id: createdAccount.brokerId,
+        investor_id: createdAccount.investorId,
+        sid: createdAccount.sid,
+        sre: createdAccount.sre,
+        rdn: createdAccount.rdn,
+        status: createdAccount.status,
+        created_at: createdAccount.createdAt,
+        updated_at: createdAccount.updatedAt
+      };
+    }
 
     const positions = await pool.query(
       `
