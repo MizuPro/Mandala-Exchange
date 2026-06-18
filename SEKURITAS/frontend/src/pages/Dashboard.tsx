@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import Portfolio from '../components/Portfolio';
@@ -11,6 +11,7 @@ import SettlementPanel from '../components/SettlementPanel';
 import Leaderboard from '../components/Leaderboard';
 import Notifications from '../components/Notifications';
 import { LogOut, Activity } from 'lucide-react';
+import { resolveMarketWsUrl } from '../config/endpoints';
 
 export default function Dashboard() {
   const user = useStore(state => state.user);
@@ -34,20 +35,53 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  const socketRef = useRef<WebSocket | null>(null);
+  const mountedRef = useRef(true);
+
   useEffect(() => {
-    const wsBase = import.meta.env.VITE_MATS_WS_URL;
-    if (!wsBase) return;
-    const token = import.meta.env.VITE_MATS_MARKET_TOKEN;
-    const url = token ? `${wsBase}${wsBase.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}` : wsBase;
-    const socket = new WebSocket(url);
-    socket.onmessage = (event) => {
-      try {
-        applyMarketEvent(JSON.parse(event.data));
-      } catch {
-        // Ignore malformed market data frames.
-      }
+    mountedRef.current = true;
+    let delay = 1000;
+    const MAX_DELAY = 30000;
+
+    function connect() {
+      if (!mountedRef.current) return;
+      const wsBase = resolveMarketWsUrl();
+      const socket = new WebSocket(wsBase);
+      socketRef.current = socket;
+
+      socket.onmessage = (event) => {
+        try {
+          applyMarketEvent(JSON.parse(event.data));
+        } catch {
+          // Ignore malformed market data frames.
+        }
+      };
+
+      socket.onopen = () => {
+        // Reset backoff delay on successful connection.
+        delay = 1000;
+      };
+
+      socket.onerror = (err) => {
+        console.error('[WS] WebSocket error', err);
+        socket.close();
+      };
+
+      socket.onclose = () => {
+        if (!mountedRef.current) return;
+        setTimeout(() => {
+          delay = Math.min(delay * 2, MAX_DELAY);
+          connect();
+        }, delay);
+      };
+    }
+
+    connect();
+
+    return () => {
+      mountedRef.current = false;
+      socketRef.current?.close();
     };
-    return () => socket.close();
   }, [applyMarketEvent]);
 
   const handleLogout = () => {

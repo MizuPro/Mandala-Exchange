@@ -1,4 +1,6 @@
-export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3002/api/v1";
+import { resolveApiBase } from "../config/endpoints";
+
+export const API_BASE = resolveApiBase();
 
 export class ApiError extends Error {
   status: number;

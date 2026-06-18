@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mandala Exchange - Interactive E2E Trading Tutorial</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #090d16 0%, #0f1026 50%, #08071a 100%);
+      --card-bg: rgba(18, 20, 38, 0.65);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      
+      /* Accent Colors */
+      --color-primary: #6366f1; /* Indigo */
+      --color-primary-glow: rgba(99, 102, 241, 0.35);
+      --color-buyer: #10b981; /* Emerald */
+      --color-buyer-glow: rgba(16, 185, 129, 0.25);
+      --color-seller: #f43f5e; /* Rose */
+      --color-seller-glow: rgba(244, 63, 94, 0.25);
+      --color-system: #06b6d4; /* Cyan */
+      --color-system-glow: rgba(6, 182, 212, 0.25);
+      --color-warning: #f59e0b; /* Amber */
+      
+      --glow-shadow: 0 0 25px var(--color-primary-glow);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 1.5rem 2.5rem;
+      border-bottom: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      background: rgba(9, 13, 22, 0.5);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 800;
+      font-size: 1.35rem;
+      background: linear-gradient(to right, #818cf8, #a78bfa, #f472b6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.05em;
+    }
+
+    .server-status-container {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444; /* Default offline */
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+      transition: all 0.3s ease;
+    }
+
+    .status-dot.online {
+      background: #10b981;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
+    }
+
+    .layout-container {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      flex: 1;
+      min-height: calc(100vh - 73px);
+    }
+
+    /* Sidebar Progress Map */
+    .sidebar {
+      border-right: 1px solid var(--card-border);
+      background: rgba(9, 13, 22, 0.35);
+      padding: 2rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .sidebar-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .step-map-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .step-map-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .step-map-item.locked {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .step-map-item.active {
+      background: rgba(99, 102, 241, 0.08);
+      border-color: rgba(99, 102, 241, 0.25);
+      box-shadow: inset 0 0 10px rgba(99, 102, 241, 0.05);
+    }
+
+    .step-map-item.completed {
+      background: rgba(16, 185, 129, 0.05);
+      border-color: rgba(16, 185, 129, 0.2);
+    }
+
+    .step-number-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+
+    .step-map-item.active .step-number-circle {
+      background: var(--color-primary);
+      color: #fff;
+      border-color: var(--color-primary);
+      box-shadow: 0 0 10px var(--color-primary-glow);
+    }
+
+    .step-map-item.completed .step-number-circle {
+      background: var(--color-buyer);
+      color: #fff;
+      border-color: var(--color-buyer);
+      box-shadow: 0 0 10px var(--color-buyer-glow);
+    }
+
+    .step-map-label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .step-map-item.active .step-map-label,
+    .step-map-item.completed .step-map-label {
+      color: var(--text-main);
+    }
+
+    /* Main Tutorial Stage */
+    main.stage {
+      padding: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Tutorial Panel Card */
+    .tutorial-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 2.5rem;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tutorial-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(to right, var(--color-primary), var(--color-system));
+    }
+
+    .step-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      margin-bottom: 1.25rem;
+      background: var(--color-primary-glow);
+      color: #c7d2fe;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+
+    .step-title {
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .step-desc {
+      font-size: 1.05rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+    }
+
+    .instruction-box {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 2rem;
+      border-left: 4px solid var(--color-warning);
+    }
+
+    .instruction-box h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--color-warning);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .instruction-box p {
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: var(--text-main);
+    }
+
+    /* Actions Panel */
+    .actions-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 0.85rem 1.75rem;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .btn-primary {
+      background: var(--color-primary);
+      color: #fff;
+      box-shadow: 0 4px 15px var(--color-primary-glow);
+    }
+
+    .btn-primary:hover {
+      background: #4f46e5;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+    }
+
+    .btn-buyer {
+      background: var(--color-buyer);
+      color: #fff;
+      box-shadow: 0 4px 15px var(--color-buyer-glow);
+    }
+
+    .btn-buyer:hover {
+      background: #059669;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-seller {
+      background: var(--color-seller);
+      color: #fff;
+      box-shadow: 0 4px 15px var(--color-seller-glow);
+    }
+
+    .btn-seller:hover {
+      background: #e11d48;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(244, 63, 94, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border: 1px solid var(--card-border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Output Console Log Panel */
+    .console-panel {
+      background: #070913;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .console-header {
+      padding: 0.75rem 1.25rem;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .console-body {
+      padding: 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      max-height: 350px;
+      overflow-y: auto;
+      background: #04050b;
+      white-space: pre-wrap;
+      color: #38bdf8; /* Light blue monospace text */
+    }
+
+    .console-body.error {
+      color: #f87171;
+    }
+
+    .console-body.success {
+      color: #34d399;
+    }
+
+    /* Table styles inside output */
+    .output-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.75rem;
+      font-family: inherit;
+      font-size: 0.8rem;
+    }
+
+    .output-table th, .output-table td {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+
+    .output-table th {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    .output-table td {
+      color: var(--text-muted);
+    }
+
+    .output-table tr.buyer-row td {
+      color: #a7f3d0;
+    }
+    .output-table tr.seller-row td {
+      color: #fecdd3;
+    }
+
+    /* Navigation flow buttons */
+    .flow-navigation {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+      border-top: 1px solid var(--card-border);
+      padding-top: 1.5rem;
+    }
+
+    .step-indicator {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Toast Notifications */
+    .toast-container {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      z-index: 1000;
+    }
+
+    .toast {
+      background: rgba(18, 20, 38, 0.9);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 1rem 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      backdrop-filter: blur(10px);
+      transform: translateX(120%);
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+
+    .toast.show {
+      transform: translateX(0);
+    }
+
+    .toast.success {
+      border-left: 4px solid var(--color-buyer);
+    }
+
+    .toast.error {
+      border-left: 4px solid var(--color-seller);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand-logo">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke: url(#gradient); filter: drop-shadow(0 0 3px rgba(167, 139, 250, 0.4))">
+        <defs>
+          <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#818cf8" />
+            <stop offset="100%" stop-color="#f472b6" />
+          </linearGradient>
+        </defs>
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      MANDALA EXCHANGE PLAYGROUND
+    </div>
+    
+    <div style="display: flex; gap: 1.5rem; align-items: center;">
+      <div class="server-status-container">
+        <div class="status-badge">
+          <div class="status-dot" id="dot-sekuritas"></div>
+          Sekuritas (3002)
+        </div>
+        <div class="status-badge">
+          <div class="status-dot" id="dot-mats"></div>
+          MATS (8082)
+        </div>
+        <div class="status-badge">
+          <div class="status-dot" id="dot-bei"></div>
+          BEI (4100)
+        </div>
+      </div>
+      <button onclick="resetPlaygroundState()" class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; border-color: rgba(244, 63, 94, 0.4); color: #f43f5e; background: rgba(244, 63, 94, 0.05); font-weight: 600; cursor: pointer; border-radius: 6px; border: 1px solid; display: flex; align-items: center; gap: 0.25rem; transition: background 0.2s;" onmouseover="this.style.background='rgba(244, 63, 94, 0.15)'" onmouseout="this.style.background='rgba(244, 63, 94, 0.05)'">
+        🔄 Reset State
+      </button>
+    </div>
+  </header>
+
+  <div class="layout-container">
+    <!-- Sidebar map step -->
+    <aside class="sidebar">
+      <div class="sidebar-title">Tahapan Tutorial</div>
+      <div class="step-map-list" id="step-map">
+        <!-- Will be dynamically populated -->
+      </div>
+    </aside>
+
+    <!-- Main stage -->
+    <main class="stage">
+      <div class="tutorial-card">
+        <div class="step-badge" id="card-step-badge">Step 1</div>
+        <h2 class="step-title" id="card-step-title">Memuat Skenario...</h2>
+        
+        <div class="step-desc" id="card-step-desc">
+          Harap tunggu sementara kami menyiapkan tutorial untuk Anda.
+        </div>
+
+        <div class="instruction-box">
+          <h4 id="instruction-title">🎯 MISI & INSTRUKSI</h4>
+          <p id="instruction-desc">Mengisi detail instruksi...</p>
+        </div>
+
+        <!-- Action Button Panel -->
+        <div class="actions-panel" id="card-actions-panel">
+          <!-- Action Buttons will be injected here -->
+        </div>
+
+        <!-- Output Console -->
+        <div class="console-panel">
+          <div class="console-header">
+            <span>💻 OUTPUT CONSOLE LOG</span>
+            <span id="output-status">READY</span>
+          </div>
+          <div class="console-body" id="console-output">
+            Menunggu tindakan dari Anda...
+          </div>
+        </div>
+
+        <!-- Bottom Flow navigation -->
+        <div class="flow-navigation">
+          <button class="btn btn-secondary" id="btn-prev" disabled>Back</button>
+          <span class="step-indicator" id="step-indicator">Step 1 dari 8</span>
+          <button class="btn btn-primary" id="btn-next" disabled>
+            Next Step
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toasts -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Script Logic -->
+  <script>
+    // Constants
+    const SEKURITAS_URL = "http://localhost:3002";
+    const BEI_URL = "http://localhost:4100/v1";
+    const MATS_URL = "http://localhost:8082/v1";
+    
+    const JWT_SECRET = "mandala_sekuritas_production_secret_2026";
+    const ADMIN_TOKEN = "ALKg2RiV16Wafj9NL42Xwb5RTfHNFUuWdENl2LJ3rAg";
+    const MATS_ADMIN_TOKEN = "ALKg2RiV16Wafj9NL42Xwb5RTfHNFUuWdENl2LJ3rAg";
+
+    const TRADER_A_ID = "3b0519f4-a435-4172-88b6-f4d87076d2e3"; // Buyer
+    const TRADER_B_ID = "2f765cc8-93aa-42f2-b2d6-96a63f8980bd"; // Seller
+
+    let tokenA = "";
+    let tokenB = "";
+    let generatedOrders = {
+      bara: null,
+      mndlA: null,
+      mndlB: null
+    };
+    let activeSessionId = "";
+    let currentBatchId = "";
+
+    // App state
+    let currentStepIdx = 0;
+    let maxCompletedStepIdx = -1;
+
+    function saveState() {
+      const state = {
+        tokenA,
+        tokenB,
+        generatedOrders,
+        activeSessionId,
+        currentBatchId,
+        currentStepIdx,
+        maxCompletedStepIdx
+      };
+      localStorage.setItem("mandala_playground_state", JSON.stringify(state));
+    }
+
+    function loadState() {
+      try {
+        const saved = localStorage.getItem("mandala_playground_state");
+        if (saved) {
+          const state = JSON.parse(saved);
+          tokenA = state.tokenA || "";
+          tokenB = state.tokenB || "";
+          generatedOrders = state.generatedOrders || { bara: null, mndlA: null, mndlB: null };
+          activeSessionId = state.activeSessionId || "";
+          currentBatchId = state.currentBatchId || "";
+          currentStepIdx = state.currentStepIdx || 0;
+          maxCompletedStepIdx = state.maxCompletedStepIdx !== undefined ? state.maxCompletedStepIdx : -1;
+        }
+      } catch (err) {
+        console.error("Error loading state:", err);
+      }
+    }
+
+    function resetPlaygroundState() {
+      if (confirm("Apakah Anda yakin ingin me-reset state tutorial/playground? Ini akan membersihkan token dan order history di browser Anda.")) {
+        localStorage.removeItem("mandala_playground_state");
+        tokenA = "";
+        tokenB = "";
+        generatedOrders = { bara: null, mndlA: null, mndlB: null };
+        activeSessionId = "";
+        currentBatchId = "";
+        currentStepIdx = 0;
+        maxCompletedStepIdx = -1;
+        initSidebar();
+        updateStepUI();
+        showToast("State playground berhasil di-reset!", "info");
+      }
+    }
+
+    // Helper Web Crypto API for signing JWT token natively in browser
+    async function generateJWT(payload, secret) {
+      const header = { alg: "HS256", typ: "JWT" };
+      const base64UrlHeader = btoa(JSON.stringify(header)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+      const base64UrlPayload = btoa(JSON.stringify(payload)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+      
+      const tokenInput = `${base64UrlHeader}.${base64UrlPayload}`;
+      
+      const enc = new TextEncoder();
+      const key = await window.crypto.subtle.importKey(
+        "raw",
+        enc.encode(secret),
+        { name: "HMAC", hash: { name: "SHA-256" } },
+        false,
+        ["sign"]
+      );
+      
+      const signature = await window.crypto.subtle.sign(
+        "HMAC",
+        key,
+        enc.encode(tokenInput)
+      );
+      
+      const base64UrlSignature = btoa(String.fromCharCode(...new Uint8Array(signature)))
+        .replace(/=/g, "")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_");
+        
+      return `${tokenInput}.${base64UrlSignature}`;
+    }
+
+    // Health checker
+    async function checkHealth() {
+      // Check Sekuritas
+      try {
+        const res = await fetch(`${SEKURITAS_URL}/health`);
+        document.getElementById("dot-sekuritas").className = res.ok ? "status-dot online" : "status-dot";
+      } catch {
+        document.getElementById("dot-sekuritas").className = "status-dot";
+      }
+
+      // Check MATS
+      try {
+        const res = await fetch(`${MATS_URL.replace('/v1', '')}/health`);
+        document.getElementById("dot-mats").className = res.ok ? "status-dot online" : "status-dot";
+      } catch {
+        document.getElementById("dot-mats").className = "status-dot";
+      }
+
+      // Check BEI
+      try {
+        const res = await fetch(`${BEI_URL.replace('/v1', '')}/health`);
+        document.getElementById("dot-bei").className = res.ok ? "status-dot online" : "status-dot";
+      } catch {
+        document.getElementById("dot-bei").className = "status-dot";
+      }
+    }
+
+    // Toast Manager
+    function showToast(message, type = "success") {
+      const container = document.getElementById("toast-container");
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          ${type === "success" 
+            ? '<polyline points="20 6 9 17 4 12"></polyline>' 
+            : '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>'}
+        </svg>
+        <span>${message}</span>
+      `;
+      container.appendChild(toast);
+      
+      setTimeout(() => toast.classList.add("show"), 10);
+      setTimeout(() => {
+        toast.classList.remove("show");
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Steps definition
+    const steps = [
+      {
+        id: 1,
+        title: "Inisialisasi & Reset Database",
+        desc: "Langkah awal sebelum memulai simulasi E2E trading adalah membersihkan database Sekuritas dari transaksi lama. Kami akan mereset saldo cash & portfolio Trader A dan Trader B ke kondisi awal agar kita dapat memverifikasi kalkulasi keuangan secara akurat di akhir.",
+        missionTitle: "🎯 TUGAS: RESET DATABASE SEKURITAS",
+        missionDesc: "Klik tombol <strong>'Reset Database'</strong> di bawah ini. Tindakan ini akan menghapus semua riwayat order, trade fills, dan logs settlement di backend Sekuritas serta mengembalikan saldo awal Trader A (Rp 999.9jt) dan Trader B (Rp 10jt, 800 MNDL, 1000 NUSA).",
+        actions: [
+          {
+            label: "Reset Database Sekuritas",
+            style: "btn-secondary",
+            handler: async (logger) => {
+              logger.log("Menghubungi Sekuritas Admin API untuk mereset database...");
+              try {
+                const res = await fetch(`${SEKURITAS_URL}/api/v1/admin/reset-testing`, {
+                  method: 'POST',
+                  headers: {
+                    'x-admin-token': ADMIN_TOKEN
+                  }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  // Reset local state variables
+                  tokenA = "";
+                  tokenB = "";
+                  generatedOrders = { bara: null, mndlA: null, mndlB: null };
+                  activeSessionId = "";
+                  currentBatchId = "";
+                  maxCompletedStepIdx = 0; // Lock steps beyond current step index (0)
+                  saveState();
+
+                  logger.success(`SUKSES: ${data.message || "Database berhasil direset!"}`);
+                  logger.log("\nKondisi awal di-set:");
+                  logger.log("- Trader A (Buyer): Rp 999,900,000.00 | MNDL: 0 lembar");
+                  logger.log("- Trader B (Seller): Rp 10,000,000.00 | MNDL: 800 lembar | NUSA: 1000 lembar");
+                  enableNextBtn();
+                  showToast("Database Sekuritas sukses direset!");
+                } else {
+                  logger.error(`GAGAL: ${data.error || "Gagal mereset database"}`);
+                }
+              } catch (err) {
+                logger.error(`Error Jaringan: ${err.message}`);
+                logger.log("Pastikan server Sekuritas Backend berjalan di port 3002.");
+              }
+            }
+          }
+        ]
+      },
+      {
+        id: 2,
+        title: "Sinkronisasi Aturan Bursa ke MATS",
+        desc: "MATS (Matching Engine) bertindak secara independen dan membutuhkan salinan aturan perdagangan terbaru dari BEI (Bursa Efek Indonesia). Kita akan memaksa sinkronisasi profile ARA/ARB, batas fraksi harga (tick size), dan lot size dari BEI ke MATS.",
+        missionTitle: "🎯 TUGAS: SYNC RULES DARI BEI KE MATS",
+        missionDesc: "Klik tombol <strong>'Force Sync Rules'</strong> untuk memicu sinkronisasi aturan perdagangan. Kami akan memverifikasi bahwa MATS berhasil mengambil aturan bursa secara lengkap.",
+        actions: [
+          {
+            label: "Force Sync Rules",
+            style: "btn-primary",
+            handler: async (logger) => {
+              logger.log("Memanggil endpoint sinkronisasi MATS admin...");
+              try {
+                const res = await fetch(`${MATS_URL}/admin/sync/bei`, {
+                  method: 'POST',
+                  headers: {
+                    'x-service-token': MATS_ADMIN_TOKEN
+                  }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  logger.success("SUKSES: Aturan BEI berhasil disinkronisasikan ke MATS!");
+                  logger.log(JSON.stringify(data, null, 2));
+                  enableNextBtn();
+                  showToast("Sync aturan bursa ke MATS sukses!");
+                } else {
+                  logger.error(`GAGAL: ${data.error || JSON.stringify(data)}`);
+                }
+              } catch (err) {
+                logger.error(`Error Jaringan: ${err.message}`);
+                logger.log("Pastikan server MATS berjalan di port 8082.");
+                logger.log("CATATAN: Jika Anda mendapatkan CORS error, pastikan Anda telah merestart server MATS setelah menambahkan CORS middleware!");
+              }
+            }
+          }
+        ]
+      },
+      {
+        id: 3,
+        title: "Pasang Buy Order BARA @ 190 (Trader A)",
+        desc: "Kita akan menguji batasan aturan ARA/ARB yang disinkronkan. BARA memiliki harga referensi Rp 200, dengan batas ARB sebesar 35%. Artinya harga Rp 190 (penurunan 5%) adalah valid di dalam batas ARB. Order ini akan dikirim oleh Trader A.",
+        missionTitle: "🎯 TUGAS: PASANG ORDER BELI BARA @ 190",
+        missionDesc: "Klik tombol <strong>'Kirim Order BARA'</strong>. Order ini akan dikirim oleh Trader A (Buyer). Karena belum ada penawaran jual (sell order) untuk BARA, status order ini harus masuk ke dalam antrean/book dengan status <strong>'open'</strong> di MATS dan jaminan dana (`reserved`) Trader A didebet sebesar nominal transaksi + fee.",
+        actions: [
+          {
+            label: "Kirim Order BARA",
+            style: "btn-buyer",
+            handler: async (logger) => {
+              logger.log("Menyiapkan JWT Token Trader A...");
+              tokenA = await generateJWT({ user_id: TRADER_A_ID }, JWT_SECRET);
+              saveState();
+              logger.log(`JWT Token Trader A berhasil digenerate.`);
+              logger.log("Mengirim request place order BARA ke Sekuritas...");
+              try {
+                const res = await fetch(`${SEKURITAS_URL}/api/v1/orders`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${tokenA}`
+                  },
+                  body: JSON.stringify({
+                    symbol: 'BARA',
+                    side: 'buy',
+                    order_type: 'limit',
+                    price: 190,
+                    quantity: 100
+                  })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  generatedOrders.bara = data;
+                  saveState();
+                  logger.success("SUKSES: Order BARA diterima oleh MATS!");
+                  logger.log(JSON.stringify(data, null, 2));
+                  logger.log("\nAnalisis Status Saldo:");
+                  logger.log(`- reserved_amount order: Rp ${data.reserved_amount}`);
+                  logger.log("- Status Order: OPEN (Menunggu penjual)");
+                  enableNextBtn();
+                  showToast("Order BARA sukses dipasang!");
+                } else {
+                  logger.error(`GAGAL: ${data.error || JSON.stringify(data)}`);
+                }
+              } catch (err) {
+                logger.error(`Error Jaringan: ${err.message}`);
+              }
+            }
+          }
+        ]
+      },
+      {
+        id: 4,
+        title: "Pasang Buy Order MNDL @ 320 (Trader A)",
+        desc: "Sekarang kita akan memulai skenario utama matching (pertemuan transaksi). Skenario pertama adalah Trader A memasang order beli (Buy Order) untuk saham MNDL sebanyak 100 lembar (1 lot) pada harga limit Rp 320.",
+        missionTitle: "🎯 TUGAS: PASANG BUY ORDER MNDL @ 320",
+        missionDesc: "Klik tombol <strong>'Kirim Buy Order MNDL'</strong>. Order ini akan dikirim oleh Trader A. Sama seperti BARA, order ini akan masuk antrean karena belum ada seller di harga tersebut.",
+        actions: [
+          {
+            label: "Kirim Buy Order MNDL",
+            style: "btn-buyer",
+            handler: async (logger) => {
+              if (!tokenA) {
+                tokenA = await generateJWT({ user_id: TRADER_A_ID }, JWT_SECRET);
+                saveState();
+              }
+              logger.log("Mengirim request place buy order MNDL ke Sekuritas...");
+              try {
+                const res = await fetch(`${SEKURITAS_URL}/api/v1/orders`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${tokenA}`
+                  },
+                  body: JSON.stringify({
+                    symbol: 'MNDL',
+                    side: 'buy',
+                    order_type: 'limit',
+                    price: 320,
+                    quantity: 100
+                  })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  generatedOrders.mndlA = data;
+                  saveState();
+                  logger.success("SUKSES: Buy Order MNDL berhasil dipasang!");
+                  logger.log(JSON.stringify(data, null, 2));
+                  enableNextBtn();
+                  showToast("Buy Order MNDL sukses dipasang!");
+                } else {
+                  logger.error(`GAGAL: ${data.error || JSON.stringify(data)}`);
+                }
+              } catch (err) {
+                logger.error(`Error Jaringan: ${err.message}`);
+              }
+            }
+          }
+        ]
+      },
+      {
+        id: 5,
+        title: "Pasang Sell Order & Verifikasi Webhook",
+        desc: "Untuk mencocokkan transaksi MNDL tadi, kita perlu memicu penjualan. Trader B (Seller) yang memiliki saldo portfolio MNDL (800 lembar) akan memasang order jual (Sell Order) sebanyak 100 lembar pada harga limit Rp 320. Setelah berhasil dikirim, sistem akan secara otomatis menunggu 3 detik lalu menarik data order terbaru dari database Sekuritas untuk memvalidasi status.",
+        missionTitle: "🎯 TUGAS: PASANG SELL ORDER & TUNGGU VERIFIKASI MATCHING",
+        missionDesc: "Klik tombol <strong>'Kirim Sell Order & Cek Status'</strong>. Order jual Trader B ini akan langsung dicocokkan (matched) oleh MATS secara instan. Sistem akan menunggu 3 detik lalu menarik data order terbaru dari database Sekuritas untuk memvalidasi status.",
+        actions: [
+          {
+            label: "Kirim Sell Order & Cek Status",
+            style: "btn-seller",
+            handler: async (logger) => {
+              logger.log("Menyiapkan JWT Token Trader B...");
+              tokenB = await generateJWT({ user_id: TRADER_B_ID }, JWT_SECRET);
+              saveState();
+              logger.log("Mengirim request place sell order MNDL ke Sekuritas...");
+              try {
+                const res = await fetch(`${SEKURITAS_URL}/api/v1/orders`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${tokenB}`
+                  },
+                  body: JSON.stringify({
+                    symbol: 'MNDL',
+                    side: 'sell',
+                    order_type: 'limit',
+                    price: 320,
+                    quantity: 100
+                  })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                  logger.error(`GAGAL: ${data.error || JSON.stringify(data)}`);
+                  return;
+                }
+                
+                generatedOrders.mndlB = data;
+                saveState();
+                logger.success("SUKSES: Sell Order MNDL berhasil dipasang!");
+                logger.log(JSON.stringify(data, null, 2));
+                
+                logger.log("\nMATS mendeteksi kecocokan harga! Memulai pencocokan transaksi...");
+                logger.log("Memulai auto-polling status order di Sekuritas...");
+                
+                let maxAttempts = 10;
+                let attempt = 0;
+                let success = false;
+                
+                while (attempt < maxAttempts) {
+                  attempt++;
+                  logger.log(`Mengecek status order terbaru (Percobaan ${attempt}/${maxAttempts})...`);
+                  
+                  try {
+                    // Pastikan tokenA dan tokenB tidak kosong sebelum fetch status
+                    if (!tokenA) {
+                      tokenA = await generateJWT({ user_id: TRADER_A_ID }, JWT_SECRET);
+                      saveState();
+                    }
+                    
+                    const resA = await fetch(`${SEKURITAS_URL}/api/v1/orders`, {
+                      headers: { 'Authorization': `Bearer ${tokenA}` }
+                    });
+                    const resB = await fetch(`${SEKURITAS_URL}/api/v1/orders`, {
+                      headers: { 'Authorization': `Bearer ${tokenB}` }
+                    });
+                    
+                    if (resA.ok && resB.ok) {
+                      const dataA = await resA.json();
+                      const dataB = await resB.json();
+                      
+                      const orderA = Array.isArray(dataA) ? dataA.find(o => o.mats_order_id === generatedOrders.mndlA?.mats_order_id || o.client_order_id === generatedOrders.mndlA?.client_order_id) : null;
+                      const orderB = Array.isArray(dataB) ? dataB.find(o => o.mats_order_id === generatedOrders.mndlB?.mats_order_id || o.client_order_id === generatedOrders.mndlB?.client_order_id) : null;
+                      
+                      if (orderA && orderB) {
+                        logger.log(`- Order Beli Trader A: ${orderA.status.toUpperCase()} (Filled: ${orderA.filled_quantity}/${orderA.original_quantity})`);
+                        logger.log(`- Order Jual Trader B: ${orderB.status.toUpperCase()} (Filled: ${orderB.filled_quantity}/${orderB.original_quantity})`);
+                        
+                        if (orderA.status === 'filled' && orderB.status === 'filled') {
+                          logger.success("\nVERIFIKASI WEBHOOK SUKSES: Kedua order telah berstatus 'filled'!");
+                          enableNextBtn();
+                          showToast("Order matching & webhook sukses!");
+                          success = true;
+                          break;
+                        }
+                      } else {
+                        logger.log("- Info: Data order belum terdaftar lengkap di database Sekuritas.");
+                      }
+                    } else {
+                      logger.log(`- Gagal fetch status order: A=${resA.status}, B=${resB.status}`);
+                    }
+                  } catch (err) {
+                    logger.log(`- Error saat polling: ${err.message}`);
+                  }
+                  
+                  // Tunggu 1.2 detik sebelum percobaan berikutnya
+                  await new Promise(resolve => setTimeout(resolve, 1200));
+                }
+                
+                if (!success) {
+                  logger.error("\nPERINGATAN: Salah satu atau kedua order belum berstatus 'filled' setelah auto-polling. Silakan klik tombol sekali lagi untuk me-recheck.");
+                }
+              } catch (err) {
+                logger.error(`Error: ${err.message}`);
+              }
+            }
+          }
+        ]
+      },
+      {
+        id: 6,
+        title: "Proses Settlement di BEI",
+        desc: "Setelah transaksi terjadi di Bursa (Captured), dana dan saham belum resmi berpindah tangan (Settled) hingga proses Kliring & Settlement dijalankan oleh KPEI & KSEI di BEI. Kita akan memicu pembuatan batch settlement dan memprosesnya secara manual.",
+        missionTitle: "🎯 TUGAS: TRIGGER SETTLEMENT BATCH DI BEI",
+        missionDesc: "Lakukan settlement dengan urutan:<br>1. Klik <strong>'Cari Session Aktif'</strong> untuk mendeteksi ID sesi bursa saat ini.<br>2. Klik <strong>'Buat Batch Settlement'</strong> untuk mengelompokkan transaksi sesi tersebut.<br>3. Klik <strong>'Proses Settlement'</strong> untuk memicu settlement di BEI dan mengirim notifikasi transfer dana/saham ke Sekuritas.",
+        actions: [
+          {
+            label: "1. Cari Session Aktif",
+            style: "btn-secondary",
+            handler: async (logger) => {
+              logger.log("Menghubungi BEI untuk mencari session aktif...");
+              try {
+                const res = await fetch(`${BEI_URL}/integration/mats/sessions/active`, {
+                  headers: { 'x-service-token': ADMIN_TOKEN }
+                });
+                const data = await res.json();
+                if (res.ok && data) {
+                  activeSessionId = data.id;
+                  saveState();
+                  logger.success(`SUKSES: Ditemukan Session ID aktif: ${activeSessionId}`);
+                  logger.log(`Nama Session: ${data.name} | Status: ${data.status}`);
+                  document.getElementById("btn-action-6-2").disabled = false;
+                } else {
+                  logger.error("Gagal mendapatkan session aktif. Pastikan BEI berjalan.");
+                }
+              } catch (err) {
+                logger.error(`Error: ${err.message}`);
+              }
+            }
+          },
+          {
+            id: "btn-action-6-2",
+            label: "2. Buat Batch Settlement",
+            style: "btn-secondary",
+            disabled: true,
+            handler: async (logger) => {
+              if (!activeSessionId) {
+                logger.error("Session ID aktif belum dicari.");
+                return;
+              }
+              logger.log(`Membuat Settlement Batch untuk Session: ${activeSessionId}...`);
+              try {
+                const res = await fetch(`${BEI_URL}/settlement/batches`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-service-token': ADMIN_TOKEN
+                  },
+                  body: JSON.stringify({ sessionId: activeSessionId })
+                });
+                const data = await res.json();
+                if (res.ok && data.batch) {
+                  currentBatchId = data.batch.id;
+                  saveState();
+                  logger.success(`SUKSES: Batch Settlement berhasil dibuat dengan ID: ${currentBatchId}`);
+                  logger.log(`Jumlah Transaksi Terdeteksi: ${data.tradeCount}`);
+                  document.getElementById("btn-action-6-3").disabled = false;
+                } else {
+                  logger.error(`Gagal membuat batch: ${JSON.stringify(data)}`);
+                }
+              } catch (err) {
+                logger.error(`Error: ${err.message}`);
+              }
+            }
+          },
+          {
+            id: "btn-action-6-3",
+            label: "3. Proses Settlement",
+            style: "btn-primary",
+            disabled: true,
+            handler: async (logger) => {
+              if (!currentBatchId) {
+                logger.error("Batch ID belum dibuat.");
+                return;
+              }
+              logger.log(`Memproses Batch Settlement ID: ${currentBatchId} di BEI...`);
+              try {
+                const res = await fetch(`${BEI_URL}/settlement/batches/${currentBatchId}/process`, {
+                  method: 'POST',
+                  headers: {
+                    'x-service-token': ADMIN_TOKEN
+                  }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  logger.success("SUKSES: Proses settlement di BEI selesai dengan sukses!");
+                  logger.log(JSON.stringify(data, null, 2));
+                  logger.log("\nBEI berhasil mengirim callback webhook settlement ke Sekuritas.");
+                  enableNextBtn();
+                  showToast("Proses settlement sukses!");
+                } else {
+                  logger.error(`Gagal memproses batch: ${JSON.stringify(data)}`);
+                }
+              } catch (err) {
+                logger.error(`Error: ${err.message}`);
+              }
+            }
+          }
+        ]
+      },
+      {
+        id: 7,
+        title: "Verifikasi Saldo Akhir & Portfolio",
+        desc: "Langkah terakhir adalah memvalidasi hasil akhir saldo cash dan portfolio di database Sekuritas. Seluruh proses settlement harus disinkronkan secara akurat sesuai perhitungan transaksi (dikurangi biaya fee transaksi).",
+        missionTitle: "🎯 TUGAS: VALIDASI SALDO CASH & PORTFOLIO",
+        missionDesc: "Klik tombol <strong>'Ambil Saldo Terkini'</strong>. Kami akan menampilkan tabel saldo cash dan portfolio saham untuk Trader A dan Trader B untuk membuktikan kebenaran matematis dari sistem Mandala Exchange.",
+        actions: [
+          {
+            label: "Ambil Saldo Terkini",
+            style: "btn-buyer",
+            handler: async (logger) => {
+              logger.log("Mengambil ringkasan saldo cash & portfolio...");
+              try {
+                // We will query cash and portfolio details using Admin Token directly
+                const connectionString = "postgresql://neondb_owner:npg_Aerxc3DZ2Bwt@ep-fragrant-feather-ais6sjny-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
+                
+                // Let's call Sekuritas portfolio endpoint for Trader A and Trader B
+                const resA = await fetch(`${SEKURITAS_URL}/api/v1/portfolio/detail`, {
+                  headers: { 'Authorization': `Bearer ${tokenA}` }
+                });
+                const resB = await fetch(`${SEKURITAS_URL}/api/v1/portfolio/detail`, {
+                  headers: { 'Authorization': `Bearer ${tokenB}` }
+                });
+
+                const dataA = await resA.json();
+                const dataB = await resB.json();
+
+                logger.success("SUKSES: Saldo berhasil ditarik!");
+                
+                // Construct visually beautiful console output
+                logger.log("\n=== SALDO CASH TERKINI ===");
+                logger.log(`Trader A (Buyer):`);
+                logger.log(`  - Tersedia (Available): Rp ${Number(dataA.summary.cash.available).toLocaleString('id-ID')}`);
+                logger.log(`  - Ditahan (Reserved) : Rp ${Number(dataA.summary.cash.reserved).toLocaleString('id-ID')} (Jaminan BARA)`);
+                logger.log(`  - Tertunda (Pending) : Rp ${Number(dataA.summary.cash.pending).toLocaleString('id-ID')}`);
+                
+                logger.log(`Trader B (Seller):`);
+                logger.log(`  - Tersedia (Available): Rp ${Number(dataB.summary.cash.available).toLocaleString('id-ID')}`);
+                logger.log(`  - Ditahan (Reserved) : Rp ${Number(dataB.summary.cash.reserved).toLocaleString('id-ID')}`);
+                logger.log(`  - Tertunda (Pending) : Rp ${Number(dataB.summary.cash.pending).toLocaleString('id-ID')}`);
+
+                logger.log("\n=== POSISI PORTFOLIO SAHAM ===");
+                logger.log(`Trader A (Buyer):`);
+                const posA = dataA.summary.positions.find(p => p.symbol === 'MNDL');
+                logger.log(`  - Saham MNDL: ${posA ? posA.available : 0} lembar | Avg Price: Rp ${posA ? Number(posA.average_price) : 0}`);
+                
+                logger.log(`Trader B (Seller):`);
+                const posB_MNDL = dataB.summary.positions.find(p => p.symbol === 'MNDL');
+                const posB_NUSA = dataB.summary.positions.find(p => p.symbol === 'NUSA');
+                logger.log(`  - Saham MNDL: ${posB_MNDL ? posB_MNDL.available : 0} lembar`);
+                logger.log(`  - Saham NUSA: ${posB_NUSA ? posB_NUSA.available : 0} lembar`);
+
+                // Check correctness
+                const correctCashA = Math.abs(Number(dataA.summary.cash.available) - 999848899.275) < 1.0;
+                const correctCashB = Math.abs(Number(dataB.summary.cash.available) - 10031869.28) < 1.0;
+                const correctReservedA = Math.abs(Number(dataA.summary.cash.reserved) - 19037.525) < 1.0;
+
+                if (correctCashA && correctCashB && correctReservedA) {
+                  logger.log("\n✨ CONGRATULATIONS! ✨");
+                  logger.log("Seluruh alur perdagangan Mandala Exchange (Place Order, Matching, Webhook, Settlement) berjalan dengan SUKSES 100% dan terbukti akurat secara matematis!");
+                  showToast("E2E Trading Flow sukses 100%!");
+                } else {
+                  logger.log("\nAnalisis Kepatuhan Saldo:");
+                  logger.log(`- Saldo Trader A Benar: ${correctCashA ? 'YA' : 'TIDAK (Harusnya Rp 999.848.899,275)'}`);
+                  logger.log(`- Saldo Trader B Benar: ${correctCashB ? 'YA' : 'TIDAK (Harusnya Rp 10.031.869,280)'}`);
+                  logger.log(`- Reserved Trader A Benar: ${correctReservedA ? 'YA' : 'TIDAK (Harusnya Rp 19.037,525)'}`);
+                }
+              } catch (err) {
+                logger.error(`Error: ${err.message}`);
+              }
+            }
+          }
+        ]
+      }
+    ];
+
+    // Logger UI Helper
+    class StepLogger {
+      constructor(consoleEl) {
+        this.el = consoleEl;
+        this.clear();
+      }
+      clear() {
+        this.el.innerHTML = "";
+        this.el.className = "console-body";
+      }
+      log(msg) {
+        this.el.innerHTML += msg + "\n";
+        this.el.scrollTop = this.el.scrollHeight;
+      }
+      success(msg) {
+        this.el.className = "console-body success";
+        this.el.innerHTML += `\n✅ ${msg}\n`;
+        this.el.scrollTop = this.el.scrollHeight;
+      }
+      error(msg) {
+        this.el.className = "console-body error";
+        this.el.innerHTML += `\n❌ ${msg}\n`;
+        this.el.scrollTop = this.el.scrollHeight;
+      }
+    }
+
+    // UI Updates
+    function updateStepUI() {
+      const step = steps[currentStepIdx];
+      
+      // Update sidebar step state
+      const mapItems = document.querySelectorAll(".step-map-item");
+      mapItems.forEach((item, idx) => {
+        item.className = "step-map-item";
+        if (idx === currentStepIdx) {
+          item.classList.add("active");
+        } else if (idx <= maxCompletedStepIdx) {
+          item.classList.add("completed");
+        } else {
+          item.classList.add("locked");
+        }
+      });
+
+      // Update Card
+      document.getElementById("card-step-badge").textContent = `Step ${step.id} dari ${steps.length}`;
+      document.getElementById("card-step-title").textContent = step.title;
+      document.getElementById("card-step-desc").textContent = step.desc;
+      document.getElementById("instruction-title").innerHTML = "🎯 MISI &amp; INSTRUKSI";
+      document.getElementById("instruction-desc").innerHTML = step.missionDesc;
+      document.getElementById("step-indicator").textContent = `Step ${step.id} dari ${steps.length}`;
+
+      // Navigation Buttons
+      document.getElementById("btn-prev").disabled = currentStepIdx === 0;
+      
+      // Next button remains disabled until action succeeds (except if we already completed it before)
+      document.getElementById("btn-next").disabled = currentStepIdx > maxCompletedStepIdx;
+
+      // Action Buttons
+      const actionsPanel = document.getElementById("card-actions-panel");
+      actionsPanel.innerHTML = "";
+      
+      const logger = new StepLogger(document.getElementById("console-output"));
+      logger.log(`--- Memulai Step ${step.id}: ${step.title} ---`);
+      logger.log(`Sistem siap. Silakan jalankan aksi di atas.\n`);
+
+      step.actions.forEach(act => {
+        const btn = document.createElement("button");
+        btn.id = act.id || `btn-action-${step.id}`;
+        btn.className = `btn ${act.style || 'btn-primary'}`;
+        btn.innerHTML = act.label;
+        
+        let disabled = act.disabled;
+        if (act.id === "btn-action-6-2" && activeSessionId) {
+          disabled = false;
+        }
+        if (act.id === "btn-action-6-3" && currentBatchId) {
+          disabled = false;
+        }
+        
+        if (disabled) btn.disabled = true;
+        btn.onclick = () => act.handler(logger);
+        actionsPanel.appendChild(btn);
+      });
+    }
+
+    function enableNextBtn() {
+      if (currentStepIdx > maxCompletedStepIdx) {
+        maxCompletedStepIdx = currentStepIdx;
+      }
+      saveState();
+      document.getElementById("btn-next").disabled = false;
+      
+      // Update sidebar instantly
+      const activeMapItem = document.querySelector(`.step-map-item[data-idx="${currentStepIdx}"]`);
+      if (activeMapItem) {
+        activeMapItem.className = "step-map-item completed";
+      }
+    }
+
+    // Sidebar Initialization
+    function initSidebar() {
+      const stepMap = document.getElementById("step-map");
+      stepMap.innerHTML = "";
+      steps.forEach((step, idx) => {
+        const item = document.createElement("div");
+        item.className = "step-map-item locked";
+        item.setAttribute("data-idx", idx);
+        item.innerHTML = `
+          <div class="step-number-circle">${step.id}</div>
+          <div class="step-map-label">${step.title}</div>
+        `;
+        item.onclick = () => {
+          if (idx <= maxCompletedStepIdx + 1) {
+            currentStepIdx = idx;
+            updateStepUI();
+          }
+        };
+        stepMap.appendChild(item);
+      });
+    }
+
+    // App Initialization
+    window.onload = async () => {
+      loadState();
+      initSidebar();
+      updateStepUI();
+      
+      // Initial Server Health check
+      await checkHealth();
+      
+      // Loop Health Check every 3 seconds
+      setInterval(checkHealth, 3000);
+    };
+
+    // Next / Prev flow
+    document.getElementById("btn-next").onclick = () => {
+      if (currentStepIdx < steps.length - 1) {
+        currentStepIdx++;
+        saveState();
+        updateStepUI();
+      }
+    };
+
+    document.getElementById("btn-prev").onclick = () => {
+      if (currentStepIdx > 0) {
+        currentStepIdx--;
+        saveState();
+        updateStepUI();
+      }
+    };
+
+  </script>
+</body>
+</html>
