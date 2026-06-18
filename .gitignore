@@ -42,6 +42,8 @@ pnpm-debug.log*
 # Docker/local data
 *.dump
 *.sql.gz
+*.backup.sql
+backups/
 docker-data/
 postgres-data/
 
@@ -56,6 +58,14 @@ postgres-data/
 Thumbs.db
 desktop.ini
 
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
 # Local agent/runtime scratch files
 .agent/
 
@@ -65,4 +75,3 @@ SEKURITAS/backend/e2e_test_v2.js
 SEKURITAS/backend/src/check_users.ts
 SEKURITAS/backend/src/debug_env.ts
 SEKURITAS/frontend/public/playground.html
-
