@@ -36,7 +36,10 @@ export default async function orderRoutes(app: FastifyInstance) {
     const { symbol, side, price, quantity, order_type } = parsed.data;
 
     try {
-      const order = await placeOrder(user_id, symbol, side, price, quantity, order_type);
+      const order: any = await placeOrder(user_id, symbol, side, price, quantity, order_type);
+      if (order.deferred) {
+        return reply.status(202).send(order);
+      }
       return reply.status(201).send(order);
     } catch (error: any) {
       return reply.status(400).send({ error: error.message });

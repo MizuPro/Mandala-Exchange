@@ -10,7 +10,7 @@ import marketRoutes from "./routes/market.js";
 import matsWebhookRoutes from "./routes/mats-webhooks.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
 import notificationRoutes from "./routes/notifications.js";
-
+import { reconcileSubmitUnknownOrders } from "./services/order-service.js";
 
 export async function createApp() {
   const app = Fastify({
@@ -37,6 +37,22 @@ export async function createApp() {
   await app.register(marketRoutes, { prefix: "/api/v1/market" });
   await app.register(leaderboardRoutes, { prefix: "/api/v1/leaderboard" });
   await app.register(notificationRoutes, { prefix: "/api/v1/notifications" });
+
+  let reconcileInProgress = false;
+  const reconcileInterval = setInterval(async () => {
+    if (reconcileInProgress) return;
+    reconcileInProgress = true;
+    try {
+      await reconcileSubmitUnknownOrders();
+    } catch (err) {
+      console.error("Auto-reconcile submit_unknown orders failed", err);
+    } finally {
+      reconcileInProgress = false;
+    }
+  }, 30000);
+  app.addHook("onClose", async () => {
+    clearInterval(reconcileInterval);
+  });
 
   return app;
 }
