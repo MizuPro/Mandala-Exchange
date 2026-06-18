@@ -398,8 +398,8 @@ func validPriceBand(price, referencePrice int64, rules []bei.PriceBandRule) bool
 		if maxRef > 0 && referencePrice > maxRef {
 			continue
 		}
-		upper := int64(math.Floor(float64(referencePrice) * (1 + float64(rule.ARAPercent)/100)))
-		lower := int64(math.Ceil(float64(referencePrice) * (1 - float64(rule.ARBPercent)/100)))
+		upper := int64(math.Floor(float64(referencePrice) * (1 + float64(rule.ARAPercent))))
+		lower := int64(math.Ceil(float64(referencePrice) * (1 - float64(rule.ARBPercent))))
 		if minPrice := int64(rule.MinPrice); minPrice > 0 && lower < minPrice {
 			lower = minPrice
 		}
