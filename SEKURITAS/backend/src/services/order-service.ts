@@ -348,8 +348,8 @@ export async function handleWebhookUpdate(payload: any) {
 
   await db.transaction(async (tx) => {
     const [order] = clientOrderId
-      ? await tx.select().from(orders).where(eq(orders.client_order_id, clientOrderId)).limit(1)
-      : await tx.select().from(orders).where(eq(orders.mats_order_id, matsOrderId)).limit(1);
+      ? await tx.select().from(orders).where(eq(orders.client_order_id, clientOrderId)).for('update').limit(1)
+      : await tx.select().from(orders).where(eq(orders.mats_order_id, matsOrderId)).for('update').limit(1);
     if (!order) return;
 
     if (rawStatus === "locked_non_cancellable") {
@@ -509,7 +509,7 @@ export async function handleWebhookUpdate(payload: any) {
         await tx.update(cash_balances)
           .set({
             available: sql`${cash_balances.available} + ${sqlNumeric(releaseExcess)}` as any,
-            reserved: sql`${cash_balances.reserved} - ${sqlNumeric(releaseExcess)}` as any,
+            reserved: sql`GREATEST(0, ${cash_balances.reserved} - ${sqlNumeric(releaseExcess)})` as any,
             updated_at: new Date(),
           })
           .where(eq(cash_balances.broker_account_id, order.broker_account_id));
