@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -96,9 +95,7 @@ func (d *Daemon) Start(ctx context.Context) {
 					segmentStartedAt = time.Now()
 					d.controller.SetStatus(ctx, nextSegment.Status)
 					if nextSegment.Status == domain.SessionClosed {
-						if err := d.syncSessionToBEIWithRetry(ctx, template.ID, nextSegment.Status); err != nil {
-							d.logger.Error("CRITICAL: failed to sync session closed to BEI after retries — settlement NOT triggered", "error", err)
-						}
+						go d.syncSessionClosedWithRetry(ctx, template.ID)
 					} else if err := d.controller.rules.Client().UpdateSessionStatus(ctx, template.ID, nextSegment.Status); err != nil {
 						d.logger.Error("failed to sync session segment to BEI", "error", err)
 					}
@@ -116,9 +113,7 @@ func (d *Daemon) Start(ctx context.Context) {
 					// All segments done, move to closed if not already
 					if currentSegment.Status != domain.SessionClosed {
 						d.controller.SetStatus(ctx, domain.SessionClosed)
-						if err := d.syncSessionToBEIWithRetry(ctx, template.ID, domain.SessionClosed); err != nil {
-							d.logger.Error("CRITICAL: failed to sync session closed to BEI after retries — settlement NOT triggered", "error", err)
-						}
+						go d.syncSessionClosedWithRetry(ctx, template.ID)
 						expired, err := d.controller.ExpireOpenOrders(ctx)
 						if err != nil {
 							d.logger.Error("auto-expire orders failed", "error", err)
@@ -132,38 +127,16 @@ func (d *Daemon) Start(ctx context.Context) {
 	}
 }
 
-const maxBEISyncRetries = 3
-
-func (d *Daemon) syncSessionToBEIWithRetry(ctx context.Context, sessionID string, status domain.SessionStatus) error {
-	var lastErr error
-	for attempt := 0; attempt < maxBEISyncRetries; attempt++ {
-		var err error
-		if status == domain.SessionClosed {
-			// For closed transitions, include expected trade count so BEI can validate
-			// that all trades are captured before triggering settlement.
-			tradeCount, countErr := d.controller.CountSessionTrades(ctx, sessionID)
-			if countErr != nil {
-				d.logger.Warn("failed to count session trades, sending close without finality barrier", "error", countErr)
-				err = d.controller.rules.Client().UpdateSessionStatus(ctx, sessionID, status)
-			} else {
-				err = d.controller.rules.Client().UpdateSessionStatusWithFinality(ctx, sessionID, status, tradeCount, 0)
-			}
-		} else {
-			err = d.controller.rules.Client().UpdateSessionStatus(ctx, sessionID, status)
-		}
-
+func (d *Daemon) syncSessionClosedWithRetry(ctx context.Context, sessionID string) {
+	for {
+		tradeCount, err := d.controller.CountSessionTrades(ctx, sessionID)
 		if err != nil {
-			lastErr = err
-			d.logger.Warn("BEI session sync failed, retrying",
-				"attempt", attempt+1,
-				"max", maxBEISyncRetries,
-				"status", status,
-				"error", err,
-			)
-			time.Sleep(time.Duration(attempt+1) * time.Second)
+			d.logger.Warn("failed to count session trades, retrying before finality trigger", "error", err)
+			time.Sleep(2 * time.Second)
 			continue
 		}
-		return nil
+		d.controller.PublishSessionClosedFinality(ctx, sessionID, tradeCount)
+		d.logger.Info("dispatched session_closed_finality event", "session_id", sessionID, "expected_trade_count", tradeCount)
+		return
 	}
-	return fmt.Errorf("BEI session sync exhausted %d retries for status %s: %w", maxBEISyncRetries, status, lastErr)
 }

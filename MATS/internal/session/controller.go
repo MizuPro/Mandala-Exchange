@@ -167,3 +167,9 @@ func (c *Controller) Publish(symbol, eventType string, payload any) {
 		c.dispatcher.PublishMarketData(symbol, eventType, payload)
 	}
 }
+
+func (c *Controller) PublishSessionClosedFinality(ctx context.Context, sessionID string, expectedTradeCount int) {
+	if c.dispatcher != nil {
+		c.dispatcher.PublishSessionClosedFinality(ctx, sessionID, expectedTradeCount)
+	}
+}

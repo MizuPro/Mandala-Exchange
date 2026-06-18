@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -105,6 +106,31 @@ func (s *MemoryStore) SaveTrade(_ context.Context, trade *domain.Trade) error {
 	defer s.mu.Unlock()
 	clone := *trade
 	s.trades[trade.ID] = &clone
+	return nil
+}
+
+func (s *MemoryStore) WakeUpPendingSessionClosedFinality(_ context.Context, sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := timeNow()
+	for id, event := range s.deliveries {
+		var payload struct {
+			SessionID string `json:"session_id"`
+		}
+		data, err := json.Marshal(event.Payload)
+		if err != nil {
+			continue
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			continue
+		}
+		if event.EventType == "session_closed_finality" && (event.Status == "pending" || event.Status == "dead") && payload.SessionID == sessionID {
+			event.Status = "pending"
+			event.NextAttemptAt = now
+			event.UpdatedAt = now
+			s.deliveries[id] = event
+		}
+	}
 	return nil
 }
 

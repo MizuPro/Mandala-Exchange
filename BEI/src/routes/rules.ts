@@ -222,7 +222,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
 
     if (!updated) throw badRequest("Active session not found");
 
-    // Auto-Settlement Trigger
+      // Auto-Settlement Trigger
     if (body.status === "closed") {
       // Trade capture finality barrier: if MATS provides an expected trade count,
       // verify that BEI has captured all trades before proceeding with settlement.
@@ -232,11 +232,30 @@ export async function registerRuleRoutes(app: FastifyInstance) {
           [body.sessionId]
         );
         const capturedCount = Number(capturedResult.rows[0]?.trade_count || 0);
+        
+        let meta = typeof updated.metadata === "object" && updated.metadata !== null ? updated.metadata : {};
+        
         if (capturedCount < body.expectedTradeCount) {
+          const newMetadata = {
+            ...meta,
+            settlementBlockedReason: `expected ${body.expectedTradeCount} trades but only ${capturedCount} captured`,
+            settlementBlockedAt: new Date().toISOString()
+          };
+          await db.update(sessionTemplates)
+            .set({ metadata: newMetadata })
+            .where(eq(sessionTemplates.id, body.sessionId));
+
           throw badRequest(
             `Settlement blocked: expected ${body.expectedTradeCount} trades but only ${capturedCount} captured. ` +
             `Waiting for trade delivery to complete before settlement.`
           );
+        } else {
+          const newMetadata = { ...meta };
+          delete (newMetadata as any).settlementBlockedReason;
+          delete (newMetadata as any).settlementBlockedAt;
+          await db.update(sessionTemplates)
+            .set({ metadata: newMetadata })
+            .where(eq(sessionTemplates.id, body.sessionId));
         }
       }
 

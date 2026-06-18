@@ -71,6 +71,7 @@ type Store interface {
 	LoadDueDeliveryEvents(context.Context, int) ([]DeliveryEvent, error)
 	ListDeliveryEvents(context.Context, string, int) ([]DeliveryEvent, error)
 	RequeueDeadDeliveryEvent(context.Context, string) (*DeliveryEvent, error)
+	WakeUpPendingSessionClosedFinality(context.Context, string) error
 }
 
 type PostgresStore struct {
@@ -409,6 +410,21 @@ func (s *PostgresStore) RequeueDeadDeliveryEvent(ctx context.Context, eventID st
 		return nil, ErrNotFound
 	}
 	return &events[0], nil
+}
+
+func (s *PostgresStore) WakeUpPendingSessionClosedFinality(ctx context.Context, sessionID string) error {
+	now := time.Now().UTC()
+	// Update next_attempt_at to now for any pending session_closed_finality events
+	_, err := s.pool.Exec(ctx, `
+		UPDATE mats_delivery_events
+		SET status = 'pending',
+		    next_attempt_at = $1,
+		    updated_at = $1
+		WHERE event_type = 'session_closed_finality'
+		  AND status IN ('pending', 'dead')
+		  AND payload->>'session_id' = $2
+	`, now, sessionID)
+	return err
 }
 
 type deliveryRows interface {

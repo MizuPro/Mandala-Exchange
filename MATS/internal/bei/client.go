@@ -117,6 +117,10 @@ type TradeCapturePayload struct {
 	SellOrderID    string    `json:"sellOrderId"`
 	OccurredAt     time.Time `json:"occurredAt"`
 	IdempotencyKey string    `json:"idempotencyKey"`
+	SessionState   string    `json:"sessionState"`
+	SecurityStatus string    `json:"securityStatus"`
+	BuyBrokerState string    `json:"buyBrokerState"`
+	SellBrokerState string   `json:"sellBrokerState"`
 }
 
 func (c *Client) Securities(ctx context.Context) ([]Security, error) {

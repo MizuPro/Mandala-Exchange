@@ -20,9 +20,10 @@ const (
 	TargetSekuritas = "sekuritas"
 	TargetBEI       = "bei"
 
-	TypeOrderStatus = "order_status"
-	TypeTradeFill   = "trade_fill"
-	TypeTradeFinal  = "trade_final"
+	TypeOrderStatus           = "order_status"
+	TypeTradeFill             = "trade_fill"
+	TypeTradeFinal            = "trade_final"
+	TypeSessionClosedFinality = "session_closed_finality"
 )
 
 type Dispatcher struct {
@@ -149,7 +150,10 @@ func (d *Dispatcher) Drain(ctx context.Context, limit int) {
 		if err := d.deliver(ctx, event); err != nil {
 			event.Attempts++
 			event.LastError = err.Error()
-			if event.Attempts >= event.MaxAttempts {
+			if event.EventType == TypeSessionClosedFinality {
+				event.Status = "pending"
+				event.NextAttemptAt = time.Now().UTC().Add(backoff(event.Attempts))
+			} else if event.Attempts >= event.MaxAttempts {
 				event.Status = "dead"
 			} else {
 				event.Status = "pending"
@@ -197,7 +201,10 @@ func (d *Dispatcher) publish(ctx context.Context, target, eventType, symbol, cor
 	if err := d.deliver(ctx, event); err != nil {
 		event.Attempts = 1
 		event.LastError = err.Error()
-		if event.Attempts >= event.MaxAttempts {
+		if event.EventType == TypeSessionClosedFinality {
+			event.Status = "pending"
+			event.NextAttemptAt = time.Now().UTC().Add(backoff(event.Attempts))
+		} else if event.Attempts >= event.MaxAttempts {
 			event.Status = "dead"
 		} else {
 			event.Status = "pending"
@@ -214,6 +221,9 @@ func (d *Dispatcher) publish(ctx context.Context, target, eventType, symbol, cor
 func (d *Dispatcher) deliver(ctx context.Context, event persistence.DeliveryEvent) error {
 	switch event.Target {
 	case TargetBEI:
+		if event.EventType == TypeSessionClosedFinality {
+			return d.deliverSessionClosedFinalityToBEI(ctx, event)
+		}
 		return d.deliverTradeToBEI(ctx, event)
 	case TargetSekuritas:
 		return d.deliverOrderStatusToSekuritas(ctx, event)
@@ -228,22 +238,51 @@ func (d *Dispatcher) deliverTradeToBEI(ctx context.Context, event persistence.De
 		return err
 	}
 	trade := payload.Trade
-	return d.beiClient.CaptureTrade(ctx, bei.TradeCapturePayload{
-		MATSTradeID:    trade.ID,
-		SequenceNumber: trade.SequenceNumber,
-		SessionID:      trade.SessionID,
-		Symbol:         trade.Symbol,
-		Price:          trade.Price,
-		Quantity:       trade.Quantity,
-		BuyBrokerCode:  trade.BuyBrokerCode,
-		SellBrokerCode: trade.SellBrokerCode,
-		BuyInvestorID:  trade.BuyAccountID,
-		SellInvestorID: trade.SellAccountID,
-		BuyOrderID:     trade.BuyOrderID,
-		SellOrderID:    trade.SellOrderID,
-		OccurredAt:     trade.OccurredAt,
-		IdempotencyKey: trade.IdempotencyKey,
+	err = d.beiClient.CaptureTrade(ctx, bei.TradeCapturePayload{
+		MATSTradeID:     trade.ID,
+		SequenceNumber:  trade.SequenceNumber,
+		SessionID:       trade.SessionID,
+		Symbol:          trade.Symbol,
+		Price:           trade.Price,
+		Quantity:        trade.Quantity,
+		BuyBrokerCode:   trade.BuyBrokerCode,
+		SellBrokerCode:  trade.SellBrokerCode,
+		BuyInvestorID:   trade.BuyAccountID,
+		SellInvestorID:  trade.SellAccountID,
+		BuyOrderID:      trade.BuyOrderID,
+		SellOrderID:     trade.SellOrderID,
+		OccurredAt:      trade.OccurredAt,
+		IdempotencyKey:  trade.IdempotencyKey,
+		SessionState:    "active",
+		SecurityStatus:  "listed",
+		BuyBrokerState:  "active",
+		SellBrokerState: "active",
 	})
+	if err != nil {
+		return err
+	}
+	// Wake up pending session_closed_finality if any, since we just delivered a trade
+	if err := d.store.WakeUpPendingSessionClosedFinality(ctx, trade.SessionID); err != nil {
+		d.logger.Warn("failed to wake up pending session_closed_finality", "session_id", trade.SessionID, "error", err)
+	}
+	return nil
+}
+
+func (d *Dispatcher) PublishSessionClosedFinality(ctx context.Context, sessionID string, expectedTradeCount int) {
+	payload := SessionClosedFinalityPayload{
+		SessionID:          sessionID,
+		Status:             domain.SessionClosed,
+		ExpectedTradeCount: expectedTradeCount,
+	}
+	d.publish(ctx, TargetBEI, TypeSessionClosedFinality, "", "", payload)
+}
+
+func (d *Dispatcher) deliverSessionClosedFinalityToBEI(ctx context.Context, event persistence.DeliveryEvent) error {
+	payload, err := decodePayload[SessionClosedFinalityPayload](event.Payload)
+	if err != nil {
+		return err
+	}
+	return d.beiClient.UpdateSessionStatusWithFinality(ctx, payload.SessionID, payload.Status, payload.ExpectedTradeCount, 0)
 }
 
 func (d *Dispatcher) deliverOrderStatusToSekuritas(ctx context.Context, event persistence.DeliveryEvent) error {
@@ -338,4 +377,10 @@ type TradeFillPayload struct {
 	OccurredAt     time.Time   `json:"occurred_at"`
 	IdempotencyKey string      `json:"idempotency_key"`
 	CorrelationID  string      `json:"correlation_id,omitempty"`
+}
+
+type SessionClosedFinalityPayload struct {
+	SessionID          string               `json:"session_id"`
+	Status             domain.SessionStatus `json:"status"`
+	ExpectedTradeCount int                  `json:"expected_trade_count"`
 }
