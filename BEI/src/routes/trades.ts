@@ -19,7 +19,11 @@ const tradeCaptureBody = z.object({
   buyOrderId: z.string().min(1),
   sellOrderId: z.string().min(1),
   occurredAt: z.coerce.date(),
-  idempotencyKey: z.string().min(8)
+  idempotencyKey: z.string().min(8),
+  sessionState: z.string().optional(),
+  securityStatus: z.string().optional(),
+  buyBrokerState: z.string().optional(),
+  sellBrokerState: z.string().optional()
 });
 
 export async function registerTradeRoutes(app: FastifyInstance) {
@@ -31,16 +35,18 @@ export async function registerTradeRoutes(app: FastifyInstance) {
     // Validasi sessionId terhadap session_templates yang terdaftar di BEI
     const [session] = await db.select().from(sessionTemplates).where(eq(sessionTemplates.id, body.sessionId));
     if (!session) throw badRequest("Session not found: sessionId does not match any known session template", { sessionId: body.sessionId });
-    if (!session.isActive) throw badRequest("Session is not active", { sessionId: body.sessionId, sessionName: session.name });
+    if (body.sessionState && body.sessionState !== "active") throw badRequest("Session was not active at match time");
 
     const [security] = await db.select().from(listedSecurities).where(eq(listedSecurities.symbol, body.symbol));
     if (!security) throw notFound("Security not found");
-    if (security.status !== "listed") throw badRequest("Security is not listed", { status: security.status });
+    if (body.securityStatus && body.securityStatus !== "listed") throw badRequest("Security was not listed at match time");
 
     const [buyBroker] = await db.select().from(brokerMembers).where(eq(brokerMembers.code, body.buyBrokerCode));
     const [sellBroker] = await db.select().from(brokerMembers).where(eq(brokerMembers.code, body.sellBrokerCode));
-    if (!buyBroker || buyBroker.status !== "active") throw badRequest("Buy broker is not active");
-    if (!sellBroker || sellBroker.status !== "active") throw badRequest("Sell broker is not active");
+    if (!buyBroker) throw badRequest("Buy broker not found");
+    if (!sellBroker) throw badRequest("Sell broker not found");
+    if (body.buyBrokerState && body.buyBrokerState !== "active") throw badRequest("Buy broker was not active at match time");
+    if (body.sellBrokerState && body.sellBrokerState !== "active") throw badRequest("Sell broker was not active at match time");
 
     const duplicate = await db
       .select()
