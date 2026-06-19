@@ -1,0 +1,860 @@
+/* Scoped CSS for Mandala Sekuritas Landing Page */
+
+.landing-page-root {
+  background-color: #0D1117;
+  color: #FFFFFF;
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.landing-page-root * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Typography & Base styles */
+.landing-page-root h1 {
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  margin-bottom: 1.5rem;
+}
+
+.landing-page-root h1 span.highlight-red {
+  color: #E62225;
+  position: relative;
+  display: inline-block;
+}
+
+.landing-page-root h1 span.highlight-red::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background-color: rgba(230, 34, 37, 0.3);
+  filter: blur(2px);
+}
+
+.landing-page-root p.hero-desc {
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: #8B949E;
+  margin-bottom: 2rem;
+  max-width: 520px;
+}
+
+/* Ambient glows */
+.landing-glow-top-left {
+  position: absolute;
+  top: -150px;
+  left: -150px;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(230, 34, 37, 0.08) 0%, rgba(230, 34, 37, 0) 70%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.landing-glow-bottom-right {
+  position: absolute;
+  bottom: -150px;
+  right: -150px;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, rgba(16, 185, 129, 0) 70%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Navigation bar */
+.landing-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  background-color: rgba(13, 17, 23, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid #21262D;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.landing-nav-container {
+  width: 100%;
+  max-width: 1280px;
+  padding: 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.landing-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.landing-logo-img {
+  height: 40px;
+  width: auto;
+}
+
+.landing-logo-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.landing-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+@media (max-width: 768px) {
+  .landing-nav-links {
+    display: none;
+  }
+}
+
+.landing-nav-link {
+  color: #8B949E;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.landing-nav-link:hover, .landing-nav-link.active {
+  color: #FFFFFF;
+}
+
+.landing-nav-link.active {
+  border-bottom: 2px solid #E62225;
+  padding-bottom: 4px;
+}
+
+.landing-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Buttons */
+.landing-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.landing-btn-outline {
+  background: transparent;
+  color: #FFFFFF;
+  border: 1px solid #21262D;
+  padding: 8px 16px;
+}
+
+.landing-btn-outline:hover {
+  background-color: #161B22;
+  border-color: #8B949E;
+}
+
+.landing-btn-primary {
+  background-color: #E62225;
+  color: #FFFFFF;
+  border: none;
+  padding: 8px 20px;
+  box-shadow: 0 0 15px rgba(230, 34, 37, 0.3);
+}
+
+.landing-btn-primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 20px rgba(230, 34, 37, 0.5);
+  transform: translateY(-1px);
+}
+
+.landing-btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Hero Section */
+.landing-hero {
+  min-height: 100vh;
+  padding-top: 120px;
+  padding-bottom: 60px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  z-index: 10;
+}
+
+.landing-hero-container {
+  width: 100%;
+  max-width: 1280px;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: center;
+}
+
+@media (max-width: 1024px) {
+  .landing-hero-container {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .landing-hero-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .landing-hero-right {
+    display: none; /* Hide 3D cards on tablets/mobile to ensure performance and clean presentation */
+  }
+}
+
+.landing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(22, 27, 34, 0.8);
+  border: 1px solid #21262D;
+  border-radius: 9999px;
+  padding: 6px 16px;
+  margin-bottom: 24px;
+}
+
+.landing-badge-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #10B981;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.6; }
+}
+
+.landing-badge-text {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #10B981;
+}
+
+.landing-hero-actions {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 48px;
+}
+
+.landing-btn-large {
+  font-size: 1rem;
+  padding: 14px 28px;
+  border-radius: 12px;
+  gap: 8px;
+}
+
+.landing-hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.landing-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.landing-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.landing-stat-label {
+  font-size: 0.85rem;
+  color: #8B949E;
+}
+
+.landing-stat-divider {
+  width: 1px;
+  height: 40px;
+  background-color: #21262D;
+}
+
+/* 3D Isometric Cards Container */
+.landing-hero-right {
+  position: relative;
+  height: 550px;
+  width: 100%;
+}
+
+.landing-cube {
+  position: absolute;
+  border: 1px solid rgba(33, 38, 45, 0.5);
+  background-color: rgba(22, 27, 34, 0.3);
+  z-index: 1;
+}
+
+.landing-cube-1 { top: 20px; right: 80px; width: 48px; height: 48px; transform: rotate(15deg); }
+.landing-cube-2 { bottom: 80px; left: 20px; width: 36px; height: 36px; transform: rotate(-12deg); }
+.landing-cube-3 { top: 50%; right: 10px; width: 40px; height: 40px; transform: rotate(45deg); border-color: rgba(230, 34, 37, 0.2); }
+
+/* Floating wrapper */
+.landing-floating-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  animation: landing-float 5s ease-in-out infinite;
+}
+
+@keyframes landing-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-15px); }
+}
+
+/* Isometric Card template */
+.landing-isometric-card {
+  position: absolute;
+  background: rgba(22, 27, 34, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #21262D;
+  border-radius: 16px;
+  transform: perspective(1000px) rotateX(15deg) rotateY(-20deg) rotateZ(5deg);
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.landing-isometric-card:hover {
+  transform: perspective(1000px) rotateX(18deg) rotateY(-18deg) rotateZ(5deg) translate3d(0, -10px, 15px);
+  border-color: #E62225;
+  box-shadow: 0 0 25px rgba(230, 34, 37, 0.15), 0 30px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* Isometric Card 1: Chart Card */
+.landing-card-chart {
+  top: 0;
+  left: 20px;
+  width: 400px;
+  padding: 24px;
+  z-index: 10;
+}
+
+.landing-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.landing-chart-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.landing-chart-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #E62225;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.landing-chart-name h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.landing-chart-name p {
+  font-size: 0.75rem;
+  color: #8B949E;
+}
+
+.landing-chart-values {
+  text-align: right;
+}
+
+.landing-chart-price {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #10B981;
+}
+
+.landing-chart-vol {
+  font-size: 0.75rem;
+  color: #8B949E;
+}
+
+.landing-chart-graph {
+  width: 100%;
+  height: 150px;
+  background-color: rgba(13, 17, 23, 0.5);
+  border: 1px solid rgba(33, 38, 45, 0.5);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.landing-chart-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 1px;
+  opacity: 0.1;
+}
+
+.landing-chart-grid-line {
+  border-right: 1px dashed #FFFFFF;
+}
+
+.landing-chart-candlesticks {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  height: 70%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.landing-candle {
+  width: 6px;
+  border-radius: 2px;
+}
+
+.landing-candle.up { background-color: #10B981; }
+.landing-candle.down { background-color: #EF4444; }
+
+.landing-chart-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.landing-chart-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background-color: #161B22;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.landing-chart-badge.rsi { color: #E62225; border-color: rgba(230, 34, 37, 0.2); }
+.landing-candle.ema { color: #8FCDFF; }
+
+/* Isometric Card 2: Portfolio Snapshot */
+.landing-card-portfolio {
+  top: 180px;
+  right: 10px;
+  width: 280px;
+  padding: 16px;
+  z-index: 20;
+}
+
+.landing-portfolio-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 12px;
+}
+
+.landing-portfolio-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.landing-portfolio-chart {
+  position: relative;
+  width: 72px;
+  height: 72px;
+}
+
+.landing-portfolio-svg {
+  transform: rotate(-90deg);
+  width: 100%;
+  height: 100%;
+}
+
+.landing-portfolio-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.landing-portfolio-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.landing-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: #8B949E;
+}
+
+.landing-legend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.landing-legend-dot.equities { background-color: #E62225; }
+.landing-legend-dot.cash { background-color: #8FCDFF; }
+
+.landing-portfolio-profit {
+  margin-top: 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #10B981;
+  background-color: rgba(16, 185, 129, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* Isometric Card 3: Order Book */
+.landing-card-orderbook {
+  bottom: -40px;
+  left: 100px;
+  width: 320px;
+  padding: 16px;
+  z-index: 30;
+}
+
+.landing-orderbook-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 12px;
+}
+
+.landing-orderbook-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  font-family: monospace;
+  font-size: 0.65rem;
+  margin-bottom: 12px;
+}
+
+.landing-orderbook-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.landing-orderbook-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.landing-orderbook-col.bids { color: #10B981; }
+.landing-orderbook-col.asks { color: #EF4444; text-align: right; }
+.landing-orderbook-col.asks .landing-orderbook-row { flex-direction: row-reverse; }
+
+.landing-orderbook-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.landing-ob-btn {
+  flex: 1;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 8px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.landing-ob-btn.buy {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.landing-ob-btn.buy:hover {
+  background-color: #10B981;
+  color: #FFFFFF;
+}
+
+.landing-ob-btn.sell {
+  background-color: rgba(230, 34, 37, 0.2);
+  color: #E62225;
+  border: 1px solid rgba(230, 34, 37, 0.3);
+}
+
+.landing-ob-btn.sell:hover {
+  background-color: #E62225;
+  color: #FFFFFF;
+}
+
+/* Scrolling Partners Ticker */
+.landing-ticker {
+  border-top: 1px solid #21262D;
+  border-bottom: 1px solid #21262D;
+  padding: 24px 0;
+  background-color: #0D1117;
+  overflow: hidden;
+  width: 100%;
+}
+
+.landing-ticker-wrapper {
+  display: flex;
+  white-space: nowrap;
+  animation: landing-scroll-ticker 20s linear infinite;
+  gap: 48px;
+  width: max-content;
+}
+
+@keyframes landing-scroll-ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.landing-ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #8B949E;
+  opacity: 0.5;
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.landing-ticker-item:hover {
+  opacity: 1;
+  color: #FFFFFF;
+}
+
+/* Disclaimer Section */
+.landing-disclaimer {
+  padding: 64px 24px;
+  background-color: #161B22;
+  border-bottom: 1px solid #21262D;
+  text-align: center;
+  position: relative;
+  z-index: 10;
+}
+
+.landing-disclaimer-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.landing-disclaimer-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.landing-disclaimer-text {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #8B949E;
+}
+
+/* Footer Section */
+.landing-footer {
+  background-color: #0D1117;
+  padding: 48px 24px;
+  position: relative;
+  z-index: 10;
+}
+
+.landing-footer-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.landing-footer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+@media (max-width: 768px) {
+  .landing-footer-top {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+}
+
+.landing-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.landing-footer-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #E62225;
+}
+
+.landing-footer-desc {
+  font-size: 0.85rem;
+  color: #8B949E;
+  max-width: 320px;
+}
+
+.landing-footer-links {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.landing-footer-link {
+  font-size: 0.85rem;
+  color: #8B949E;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.landing-footer-link:hover {
+  color: #E62225;
+}
+
+.landing-footer-socials {
+  display: flex;
+  gap: 12px;
+}
+
+.landing-social-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #21262D;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8B949E;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.landing-social-btn:hover {
+  border-color: #E62225;
+  color: #E62225;
+}
+
+.landing-footer-bottom {
+  border-top: 1px solid #21262D;
+  padding-top: 24px;
+  text-align: center;
+}
+
+.landing-footer-copy {
+  font-size: 0.85rem;
+  color: #8B949E;
+}
+
+/* Additional Mobile Responsive Adjustments */
+@media (max-width: 1024px) {
+  .landing-nav-actions .landing-btn-outline {
+    display: none; /* Hide Download App button on tablet/mobile */
+  }
+}
+
+@media (max-width: 640px) {
+  .landing-hero-stats {
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+  }
+  .landing-stat-divider {
+    display: none; /* Hide vertical dividers on mobile */
+  }
+  .landing-ticker-item {
+    font-size: 0.95rem;
+    gap: 8px;
+  }
+  .landing-disclaimer {
+    padding: 40px 16px;
+  }
+  .landing-disclaimer-title h2 {
+    font-size: 1.25rem;
+  }
+  .landing-disclaimer-text {
+    font-size: 0.85rem;
+  }
+  .landing-footer-links {
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .landing-hero-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 12px;
+  }
+  .landing-hero-actions .landing-btn {
+    width: 100%;
+  }
+}

@@ -17,7 +17,7 @@ export default function VerifyEmail() {
     try {
       await verifyEmail(token);
       localStorage.removeItem('verification_token');
-      navigate('/');
+      navigate('/dashboard');
     } catch (error: any) {
       setMessage(error.message || 'Verification failed');
     } finally {

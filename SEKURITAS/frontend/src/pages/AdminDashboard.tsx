@@ -10,7 +10,7 @@ export default function AdminDashboard() {
     <>
       <nav className="navbar">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button onClick={() => navigate('/')} style={{ background: 'transparent', color: 'var(--primary)', border: 'none', cursor: 'pointer' }}>
+          <button onClick={() => navigate('/dashboard')} style={{ background: 'transparent', color: 'var(--primary)', border: 'none', cursor: 'pointer' }}>
             <ArrowLeft size={24} />
           </button>
           <span className="navbar-brand">Admin Dashboard</span>
