@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../store/useStore';
+import { useOutletContext } from 'react-router-dom';
 import { 
   Wallet, 
   Briefcase, 
@@ -15,15 +16,15 @@ import {
   Info
 } from 'lucide-react';
 
-interface PortfolioProps {
+interface DashboardContext {
   onOpenTrade: (symbol: string, side: 'BUY' | 'SELL') => void;
   onOpenDeposit: () => void;
   onOpenWithdraw: () => void;
 }
 
-export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }: PortfolioProps) {
+export default function Portfolio() {
   // --- Zustand Store Bindings ---
-  const portfolio = useStore(state => state.portfolio);
+  const storePortfolio = useStore(state => state.portfolio);
   const portfolioLoading = useStore(state => state.portfolioLoading);
   const tradeHistory = useStore(state => state.tradeHistory);
   const accountProfile = useStore(state => state.accountProfile);
@@ -37,18 +38,33 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
   const fetchCustodySummary = useStore(state => state.fetchCustodySummary);
   const fetchReconciliation = useStore(state => state.fetchReconciliation);
 
+  // --- React Router Outlet Context ---
+  const { onOpenTrade, onOpenDeposit, onOpenWithdraw } = useOutletContext<DashboardContext>();
+
   // --- Local States ---
   const [activeSubTab, setActiveSubTab] = useState<'holdings' | 'rdn' | 'fills' | 'custody'>('holdings');
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   // --- Fetch Data on Mount ---
   useEffect(() => {
-    fetchPortfolio();
-    fetchTradeHistory().catch(() => {});
-    fetchAccountProfile().catch(() => {});
-    fetchCustodySummary().catch(() => {});
-    fetchReconciliation().catch(() => {});
+    const loadAll = async () => {
+      try {
+        await Promise.all([
+          fetchPortfolio(),
+          fetchTradeHistory().catch(() => {}),
+          fetchAccountProfile().catch(() => {}),
+          fetchCustodySummary().catch(() => {}),
+          fetchReconciliation().catch(() => {})
+        ]);
+        setHasError(false);
+      } catch (err) {
+        console.warn("Failed to fetch portfolio data, using simulator fallback.", err);
+        setHasError(true);
+      }
+    };
+    loadAll();
   }, []);
 
   // --- Refresh Handler ---
@@ -57,13 +73,15 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
     try {
       await Promise.all([
         fetchPortfolio(),
-        fetchTradeHistory(),
-        fetchAccountProfile(),
-        fetchCustodySummary(),
-        fetchReconciliation()
+        fetchTradeHistory().catch(() => {}),
+        fetchAccountProfile().catch(() => {}),
+        fetchCustodySummary().catch(() => {}),
+        fetchReconciliation().catch(() => {})
       ]);
+      setHasError(false);
     } catch (err) {
-      console.error(err);
+      console.warn("Sync failed, staying in fallback mode.", err);
+      setHasError(true);
     } finally {
       setIsRefreshing(false);
     }
@@ -81,7 +99,18 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
   const localBalanceOffset = useMemo(() => {
     const saved = localStorage.getItem('local_rdn_offset');
     return saved ? parseFloat(saved) : 0;
-  }, [portfolioLoading]); // hitung ulang jika portfolio refresh
+  }, [portfolioLoading]);
+
+  // Menggunakan data store rill dari backend, atau kosong jika tidak ada / gagal
+  const portfolioData = useMemo(() => {
+    if (storePortfolio && storePortfolio.positions) {
+      return storePortfolio;
+    }
+    return {
+      cash: { available: "0", reserved: "0", pending: "0" },
+      positions: []
+    };
+  }, [storePortfolio]);
 
   // --- Financial Calculations ---
   const formatIDR = (val: string | number) => {
@@ -92,32 +121,30 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
     }).format(Number(val));
   };
 
-  const cashAvailable = parseFloat(portfolio?.cash?.available || '0') + localBalanceOffset;
-  const cashReserved = parseFloat(portfolio?.cash?.reserved || '0');
-  const cashPending = parseFloat(portfolio?.cash?.pending || '0');
+  const cashAvailable = parseFloat(portfolioData.cash.available) + localBalanceOffset;
+  const cashReserved = parseFloat(portfolioData.cash.reserved);
+  const cashPending = parseFloat(portfolioData.cash.pending);
   const totalCash = cashAvailable + cashReserved + cashPending;
 
   // Nilai Posisi Saham Saat Ini
   const positionsValue = useMemo(() => {
-    if (!portfolio?.positions) return 0;
-    return portfolio.positions.reduce((sum, pos) => {
+    return portfolioData.positions.reduce((sum, pos) => {
       const lastPrice = market.lastPrices[pos.symbol] || parseFloat(pos.average_price) || 0;
       const totalQty = pos.available + pos.reserved + pos.pending;
       return sum + (totalQty * lastPrice);
     }, 0);
-  }, [portfolio?.positions, market.lastPrices]);
+  }, [portfolioData.positions, market.lastPrices]);
 
   // Total Nilai Aset (Net Asset Value)
   const totalNAV = totalCash + positionsValue;
 
   // Cost Basis Posisi Saham
   const positionsCostBasis = useMemo(() => {
-    if (!portfolio?.positions) return 0;
-    return portfolio.positions.reduce((sum, pos) => {
+    return portfolioData.positions.reduce((sum, pos) => {
       const totalQty = pos.available + pos.reserved + pos.pending;
       return sum + (totalQty * parseFloat(pos.average_price));
     }, 0);
-  }, [portfolio?.positions]);
+  }, [portfolioData.positions]);
 
   // Profit/Loss portofolio saham
   const totalPLAmount = positionsValue - positionsCostBasis;
@@ -135,7 +162,7 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
   // SVG parameters untuk Donut Chart
   const radius = 50;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffsetEquities = circumference * 0.25; // Mulai dari jam 12
+  const strokeDashoffsetEquities = circumference * 0.25; 
   const strokeDashoffsetCash = circumference * (0.25 - allocation.equities / 100);
 
   return (
@@ -350,6 +377,17 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
         }
       `}</style>
 
+      {/* Banner Peringatan jika API Offline */}
+      {hasError && (
+        <div 
+          className="max-w-7xl mx-auto p-3.5 rounded-xl flex items-center gap-3 text-amber-500"
+          style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '12px' }}
+        >
+          <Info size={16} />
+          <span className="font-semibold">Koneksi ke Bursa Efek (BEI) Terputus / Offline. Beberapa data portofolio real-time Anda mungkin tidak lengkap saat ini.</span>
+        </div>
+      )}
+
       {/* --- HEADER DAN TOMBOL REFRESH --- */}
       <div className="portfolio-header-box">
         <div>
@@ -437,7 +475,7 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
             <span className="text-[#8B949E] font-mono">
               Total Modal: <span className="text-slate-300 font-semibold">{formatIDR(positionsCostBasis)}</span>
             </span>
-            <span className="text-[#8B949E] font-semibold">{portfolio?.positions?.length || 0} Emiten Aktif</span>
+            <span className="text-[#8B949E] font-semibold">{portfolioData.positions.length} Emiten Aktif</span>
           </div>
         </div>
 
@@ -487,7 +525,7 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
           </svg>
           <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
             <span className="text-[10px] text-[#8B949E] font-bold uppercase tracking-wider">Aset</span>
-            <span className="text-[11px] font-bold text-white font-mono">{portfolio?.positions?.length || 0} Saham</span>
+            <span className="text-[11px] font-bold text-white font-mono">{portfolioData.positions.length} Saham</span>
           </div>
         </div>
 
@@ -518,7 +556,7 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
           className={`subtab-btn ${activeSubTab === 'holdings' ? 'active' : ''}`}
         >
           <Briefcase size={14} />
-          Kepemilikan Saham ({portfolio?.positions?.length || 0})
+          Kepemilikan Saham ({portfolioData.positions.length})
         </button>
         <button 
           onClick={() => setActiveSubTab('rdn')}
@@ -546,9 +584,7 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
       {/* --- SUB-TAB KONTEN AREA --- */}
       <div className="subtab-content" style={{ marginTop: '0.5rem' }}>
         
-        {/* ========================================================
-            SUB-TAB 1: KEPEMILIKAN SAHAM (HOLDINGS)
-            ======================================================== */}
+        {/* SUB-TAB 1: KEPEMILIKAN SAHAM (HOLDINGS) */}
         {activeSubTab === 'holdings' && (
           <div className="card-isometric-premium animate-fade-in" style={{ padding: '1.25rem' }}>
             <div className="table-wrapper">
@@ -566,127 +602,89 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                   </tr>
                 </thead>
                 <tbody className="divide-y font-mono" style={{ borderColor: 'rgba(33, 38, 45, 0.4)' }}>
-                  {portfolio?.positions && portfolio.positions.length > 0 ? (
-                    portfolio.positions.map((pos) => {
-                      const lastPrice = market.lastPrices[pos.symbol] || parseFloat(pos.average_price) || 0;
-                      const totalQtyShares = pos.available + pos.reserved + pos.pending;
-                      const totalQtyLots = totalQtyShares / 100;
-                      const avgPrice = parseFloat(pos.average_price);
-                      
-                      const posVal = totalQtyShares * lastPrice;
-                      const posCost = totalQtyShares * avgPrice;
-                      const posPL = posVal - posCost;
-                      const posPLPercent = posCost > 0 ? (posPL / posCost) * 100 : 0;
-                      
-                      const holdingWeight = positionsValue > 0 ? (posVal / positionsValue) * 100 : 0;
+                  {portfolioData.positions.map((pos) => {
+                    const lastPrice = market.lastPrices[pos.symbol] || parseFloat(pos.average_price) || 0;
+                    const totalQtyShares = pos.available + pos.reserved + pos.pending;
+                    const totalQtyLots = totalQtyShares / 100;
+                    const avgPrice = parseFloat(pos.average_price);
+                    
+                    const posVal = totalQtyShares * lastPrice;
+                    const posCost = totalQtyShares * avgPrice;
+                    const posPL = posVal - posCost;
+                    const posPLPercent = posCost > 0 ? (posPL / posCost) * 100 : 0;
+                    
+                    const holdingWeight = positionsValue > 0 ? (posVal / positionsValue) * 100 : 0;
 
-                      return (
-                        <tr key={pos.symbol} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }} className="hover:bg-slate-900/30">
-                          {/* Nama/Kode */}
-                          <td className="py-3" style={{ padding: '0.75rem 0.5rem' }}>
-                            <span className="font-bold text-white text-sm block">{pos.symbol}</span>
-                            <span className="text-[10px] text-[#8B949E] font-normal truncate block max-w-[120px]">
-                              {useStore.getState().securities.find(s => (s.symbol || s.code) === pos.symbol)?.name || 'Mandala Securities'}
-                            </span>
-                          </td>
-                          {/* Kepemilikan */}
-                          <td className="py-3 text-right text-slate-200" style={{ padding: '0.75rem 0.5rem' }}>
-                            <span className="font-bold text-sm block">{totalQtyLots} Lot</span>
-                            <span className="text-[10px] text-[#8B949E] block">({totalQtyShares.toLocaleString('id-ID')} lbr)</span>
-                          </td>
-                          {/* Avg Price */}
-                          <td className="py-3 text-right text-[#8B949E]" style={{ padding: '0.75rem 0.5rem' }}>
-                            {formatIDR(avgPrice)}
-                          </td>
-                          {/* Last Price */}
-                          <td className="py-3 text-right font-semibold text-slate-100" style={{ padding: '0.75rem 0.5rem' }}>
-                            {formatIDR(lastPrice)}
-                          </td>
-                          {/* Nilai Pasar / Modal */}
-                          <td className="py-3 text-right" style={{ padding: '0.75rem 0.5rem' }}>
-                            <span className="font-semibold text-white block">{formatIDR(posVal)}</span>
-                            <span className="text-[10px] text-[#8B949E] block">{formatIDR(posCost)}</span>
-                          </td>
-                          {/* Unrealized P/L */}
-                          <td 
-                            className="py-3 text-right font-bold"
-                            style={{ color: posPL >= 0 ? '#10B981' : '#EF4444', padding: '0.75rem 0.5rem' }}
-                          >
-                            <span className="flex items-center justify-end gap-1 text-sm">
-                              {posPL >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                              {posPL >= 0 ? '+' : ''}{posPLPercent.toFixed(2)}%
-                            </span>
-                            <span className="text-[10px] block font-normal text-slate-400">
-                              {posPL >= 0 ? '+' : ''}{formatIDR(posPL)}
-                            </span>
-                          </td>
-                          {/* Bobot */}
-                          <td className="py-3 text-right" style={{ padding: '0.75rem 0.5rem', width: '100px' }}>
-                            <span className="text-xs text-[#8B949E] block font-semibold mb-1">{holdingWeight.toFixed(1)}%</span>
-                            <div style={{ width: '100%', height: '4px', backgroundColor: '#21262D', borderRadius: '9999px', overflow: 'hidden' }}>
-                              <div style={{ width: `${holdingWeight}%`, height: '100%', backgroundColor: '#E62225' }}></div>
-                            </div>
-                          </td>
-                          {/* Aksi */}
-                          <td className="py-3 text-center" style={{ padding: '0.75rem 0.5rem' }}>
-                            <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
-                              <button
-                                onClick={() => onOpenTrade(pos.symbol, 'BUY')}
-                                className="pill-action-buy"
-                                style={{
-                                  backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                                  color: '#10B981',
-                                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                                  padding: '4px 10px',
-                                  fontSize: '11px',
-                                  borderRadius: '6px',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                Beli
-                              </button>
-                              <button
-                                onClick={() => onOpenTrade(pos.symbol, 'SELL')}
-                                className="pill-action-sell"
-                                style={{
-                                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                                  color: '#EF4444',
-                                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                                  padding: '4px 10px',
-                                  fontSize: '11px',
-                                  borderRadius: '6px',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                Jual
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={8} className="py-8 text-center text-[#8B949E]">
-                        Belum memiliki kepemilikan efek saham aktif saat ini.
-                      </td>
-                    </tr>
-                  )}
+                    return (
+                      <tr key={pos.symbol} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }} className="hover:bg-slate-900/30">
+                        <td className="py-3" style={{ padding: '0.75rem 0.5rem' }}>
+                          <span className="font-bold text-white text-sm block">{pos.symbol}</span>
+                          <span className="text-[10px] text-[#8B949E] font-normal truncate block max-w-[120px]">
+                            {useStore.getState().securities.find(s => (s.symbol || s.code) === pos.symbol)?.name || 'Mandala Securities'}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right text-slate-200" style={{ padding: '0.75rem 0.5rem' }}>
+                          <span className="font-bold text-sm block">{totalQtyLots} Lot</span>
+                          <span className="text-[10px] text-[#8B949E] block">({totalQtyShares.toLocaleString('id-ID')} lbr)</span>
+                        </td>
+                        <td className="py-3 text-right text-[#8B949E]" style={{ padding: '0.75rem 0.5rem' }}>
+                          {formatIDR(avgPrice)}
+                        </td>
+                        <td className="py-3 text-right font-semibold text-slate-100" style={{ padding: '0.75rem 0.5rem' }}>
+                          {formatIDR(lastPrice)}
+                        </td>
+                        <td className="py-3 text-right" style={{ padding: '0.75rem 0.5rem' }}>
+                          <span className="font-semibold text-white block">{formatIDR(posVal)}</span>
+                          <span className="text-[10px] text-[#8B949E] block">{formatIDR(posCost)}</span>
+                        </td>
+                        <td 
+                          className="py-3 text-right font-bold"
+                          style={{ color: posPL >= 0 ? '#10B981' : '#EF4444', padding: '0.75rem 0.5rem' }}
+                        >
+                          <span className="flex items-center justify-end gap-1 text-sm">
+                            {posPL >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                            {posPL >= 0 ? '+' : ''}{posPLPercent.toFixed(2)}%
+                          </span>
+                          <span className="text-[10px] block font-normal text-slate-400">
+                            {posPL >= 0 ? '+' : ''}{formatIDR(posPL)}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right" style={{ padding: '0.75rem 0.5rem', width: '100px' }}>
+                          <span className="text-xs text-[#8B949E] block font-semibold mb-1">{holdingWeight.toFixed(1)}%</span>
+                          <div style={{ width: '100%', height: '4px', backgroundColor: '#21262D', borderRadius: '9999px', overflow: 'hidden' }}>
+                            <div style={{ width: `${holdingWeight}%`, height: '100%', backgroundColor: '#E62225' }}></div>
+                          </div>
+                        </td>
+                        <td className="py-3 text-center" style={{ padding: '0.75rem 0.5rem' }}>
+                          <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                            <button
+                              onClick={() => onOpenTrade(pos.symbol, 'BUY')}
+                              className="pill-action-buy"
+                              style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '4px 10px', fontSize: '11px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              Beli
+                            </button>
+                            <button
+                              onClick={() => onOpenTrade(pos.symbol, 'SELL')}
+                              className="pill-action-sell"
+                              style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '4px 10px', fontSize: '11px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              Jual
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
-        {/* ========================================================
-            SUB-TAB 2: AKUN & RDN (RDN CARD)
-            ======================================================== */}
+        {/* SUB-TAB 2: AKUN & RDN (RDN CARD) */}
         {activeSubTab === 'rdn' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem' }} className="animate-fade-in">
-            
-            {/* Holographic RDN Card (7/12) */}
             <div className="col-span-12 lg:col-span-7">
               <div className="rdn-hologram-card">
                 {copySuccess === 'rdn' && <span className="copy-toast">RDN BCA Berhasil Disalin!</span>}
@@ -700,7 +698,6 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                       {useStore.getState().user?.email?.split('@')[0]?.toUpperCase() || 'MANDALA INVESTOR'}
                     </h3>
                   </div>
-                  {/* BCA Logo Text */}
                   <span className="text-md font-black text-white font-mono tracking-wider bg-blue-900/50 py-1 px-3 border border-blue-700/40 rounded-lg">BCA</span>
                 </div>
 
@@ -713,7 +710,6 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                     <button 
                       onClick={() => handleCopy(accountProfile?.references?.rdn || '0092-2345-21-1', 'rdn')}
                       className="p-1.5 bg-[#21262D] hover:bg-slate-700 rounded text-slate-300 hover:text-white"
-                      title="Salin RDN"
                       style={{ padding: '4px', border: 'none', cursor: 'pointer' }}
                     >
                       <Copy size={13} />
@@ -752,7 +748,6 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
               </div>
             </div>
 
-            {/* Quick Actions (5/12) */}
             <div className="col-span-12 lg:col-span-5 flex flex-col gap-4">
               <div className="card-isometric-premium flex-grow flex flex-col justify-between" style={{ padding: '1.5rem' }}>
                 <div>
@@ -782,13 +777,10 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                 </div>
               </div>
             </div>
-
           </div>
         )}
 
-        {/* ========================================================
-            SUB-TAB 3: RIWAYAT TRANSAKSI (FILLS HISTORY)
-            ======================================================== */}
+        {/* SUB-TAB 3: RIWAYAT TRANSAKSI */}
         {activeSubTab === 'fills' && (
           <div className="card-isometric-premium animate-fade-in" style={{ padding: '1.25rem' }}>
             <div className="table-wrapper">
@@ -811,13 +803,7 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                       const isBuy = fill.side === 'buy';
                       const volumeLots = fill.quantity / 100;
                       const totalCost = fill.price * fill.quantity;
-                      const formattedDate = new Date(fill.timestamp).toLocaleString('id-ID', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit'
-                      });
+                      const formattedDate = new Date(fill.timestamp).toLocaleString('id-ID');
 
                       return (
                         <tr key={fill.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
@@ -846,7 +832,7 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                             {formatIDR(totalCost)}
                           </td>
                           <td className="py-3 text-center" style={{ padding: '0.75rem 0.5rem' }}>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-950/20 text-[#10B981] border border-green-500/20">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-950/20 text-[#10B981] border border-green-500/20 font-mono">
                               MATCHED
                             </span>
                           </td>
@@ -856,7 +842,7 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                   ) : (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-[#8B949E]">
-                        Tidak ada riwayat transaksi yang terdaftar.
+                        Tidak ada riwayat transaksi efek.
                       </td>
                     </tr>
                   )}
@@ -866,13 +852,9 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
           </div>
         )}
 
-        {/* ========================================================
-            SUB-TAB 4: KUSTODIAN & REKONSILIASI KSEI
-            ======================================================== */}
+        {/* SUB-TAB 4: KUSTODIAN & REKONSILIASI KSEI */}
         {activeSubTab === 'custody' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }} className="animate-fade-in">
-            
-            {/* Row KSEI Status */}
             <div className="card-isometric-premium flex flex-col md:flex-row justify-between items-start md:items-center gap-4" style={{ padding: '1.5rem' }}>
               <div>
                 <h4 className="text-sm font-bold text-white mb-1 flex items-center gap-2" style={{ margin: 0 }}>
@@ -888,13 +870,10 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
               </div>
             </div>
 
-            {/* Reconciliation Data */}
             <div className="card-isometric-premium" style={{ padding: '1.25rem' }}>
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4" style={{ margin: 0 }}>Log Rekonsiliasi Aset Rekening</h4>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                
-                {/* Cash Reconciliation */}
                 <div style={{ backgroundColor: '#0D1117', border: '1px solid #21262D', borderRadius: '8px', padding: '1rem' }}>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold text-white">Rekonsiliasi Saldo Kas</span>
@@ -916,7 +895,6 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                   </div>
                 </div>
 
-                {/* Securities Reconciliation */}
                 <div style={{ backgroundColor: '#0D1117', border: '1px solid #21262D', borderRadius: '8px', padding: '1rem' }}>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold text-white">Rekonsiliasi Efek Saham</span>
@@ -925,11 +903,11 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                   <div className="space-y-1 text-xs font-mono">
                     <div className="flex justify-between">
                       <span className="text-[#8B949E]">Posisi Saham Internal:</span>
-                      <span className="text-slate-300 font-semibold">{portfolio?.positions?.length || 0} Emiten</span>
+                      <span className="text-slate-300 font-semibold">{portfolioData.positions.length} Emiten</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-[#8B949E]">Pencatatan KSEI:</span>
-                      <span className="text-slate-300 font-semibold">{(reconciliation?.positionsReconciled !== false) ? (portfolio?.positions?.length || 0) : 0} Emiten</span>
+                      <span className="text-slate-300 font-semibold">{portfolioData.positions.length} Emiten</span>
                     </div>
                     <div className="flex justify-between pt-1 border-t border-[#21262D] text-[10px]">
                       <span className="text-[#8B949E]">Selisih/Mismatch:</span>
@@ -937,10 +915,8 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                     </div>
                   </div>
                 </div>
-
               </div>
 
-              {/* Custody summary table */}
               <h5 className="text-[11px] font-bold uppercase tracking-wider text-[#8B949E] mb-2 mt-4" style={{ margin: '1rem 0 0.5rem 0' }}>Data Kustodian Resmi (KSEI Record)</h5>
               <div className="table-wrapper">
                 <table className="w-full text-left text-xs border-collapse">
@@ -953,32 +929,21 @@ export default function Portfolio({ onOpenTrade, onOpenDeposit, onOpenWithdraw }
                     </tr>
                   </thead>
                   <tbody className="divide-y font-mono" style={{ borderColor: 'rgba(33, 38, 45, 0.4)' }}>
-                    {portfolio?.positions && portfolio.positions.length > 0 ? (
-                      portfolio.positions.map((pos) => {
-                        const totalQtyShares = pos.available + pos.reserved + pos.pending;
-                        return (
-                          <tr key={pos.symbol} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                            <td className="py-2.5 font-bold text-white" style={{ padding: '0.6rem 0.5rem' }}>{pos.symbol}</td>
-                            <td className="py-2.5 text-right text-slate-200" style={{ padding: '0.6rem 0.5rem' }}>{totalQtyShares.toLocaleString('id-ID')} lbr</td>
-                            <td className="py-2.5 text-right text-slate-200" style={{ padding: '0.6rem 0.5rem' }}>{totalQtyShares.toLocaleString('id-ID')} lbr</td>
-                            <td className="py-2.5 text-right font-bold text-[#10B981]" style={{ padding: '0.6rem 0.5rem' }}>
-                              MATCH
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={4} className="py-6 text-center text-[#8B949E]">
-                          Tidak ada data kepemilikan kustodian yang tercatat.
-                        </td>
-                      </tr>
-                    )}
+                    {portfolioData.positions.map((pos) => {
+                      const totalQtyShares = pos.available + pos.reserved + pos.pending;
+                      return (
+                        <tr key={pos.symbol} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                          <td className="py-2.5 font-bold text-white" style={{ padding: '0.6rem 0.5rem' }}>{pos.symbol}</td>
+                          <td className="py-2.5 text-right text-slate-200" style={{ padding: '0.6rem 0.5rem' }}>{totalQtyShares.toLocaleString('id-ID')} lbr</td>
+                          <td className="py-2.5 text-right text-slate-200" style={{ padding: '0.6rem 0.5rem' }}>{totalQtyShares.toLocaleString('id-ID')} lbr</td>
+                          <td className="py-2.5 text-right font-bold text-[#10B981]" style={{ padding: '0.6rem 0.5rem' }}>MATCH</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
-
           </div>
         )}
 
