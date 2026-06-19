@@ -7,6 +7,7 @@ import { registerBrokerRoutes } from "./routes/brokers.js";
 import { registerCorporateActionRoutes } from "./routes/corporate-actions.js";
 import { registerFundamentalRoutes } from "./routes/fundamentals.js";
 import { registerHealthRoutes } from "./routes/health.js";
+import { registerIndexRoutes } from "./routes/indices.js";
 import { registerIssuerRoutes } from "./routes/issuers.js";
 import { registerReportingRoutes } from "./routes/reporting.js";
 import { registerRuleRoutes } from "./routes/rules.js";
@@ -34,6 +35,7 @@ export async function createApp() {
   await app.register(registerSettlementRoutes, { prefix: "/v1" });
   await app.register(registerCorporateActionRoutes, { prefix: "/v1" });
   await app.register(registerReportingRoutes, { prefix: "/v1" });
+  await app.register(registerIndexRoutes, { prefix: "/v1" });
   await app.register(registerSurveillanceRoutes, { prefix: "/v1" });
 
   app.setErrorHandler((error, _request, reply) => {
