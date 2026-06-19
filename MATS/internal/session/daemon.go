@@ -110,17 +110,16 @@ func (d *Daemon) Start(ctx context.Context) {
 						}
 					}
 				} else {
-					// All segments done, move to closed if not already
-					if currentSegment.Status != domain.SessionClosed {
-						d.controller.SetStatus(ctx, domain.SessionClosed)
-						go d.syncSessionClosedWithRetry(ctx, template.ID)
-						expired, err := d.controller.ExpireOpenOrders(ctx)
-						if err != nil {
-							d.logger.Error("auto-expire orders failed", "error", err)
-						} else {
-							d.logger.Info("auto-expire orders completed", "count", len(expired))
-						}
+					// All segments done, loop back to the first segment
+					d.logger.Info("all segments completed, looping back to first segment")
+					currentSegmentIdx = 0
+					segmentStartedAt = time.Now()
+					firstSegment := template.Segments[currentSegmentIdx]
+					d.controller.SetStatus(ctx, firstSegment.Status)
+					if err := d.controller.rules.Client().UpdateSessionStatus(ctx, template.ID, firstSegment.Status); err != nil {
+						d.logger.Error("failed to sync session start loop to BEI", "error", err)
 					}
+					d.logger.Info("session daemon restarted loop with segment", "sequence", currentSegmentIdx, "status", firstSegment.Status)
 				}
 			}
 		}
