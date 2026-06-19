@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { createChart, AreaSeries } from 'lightweight-charts';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
+import Portfolio from '../components/Portfolio';
 import { resolveMarketWsUrl } from '../config/endpoints';
 import { 
   LogOut, 
@@ -1575,6 +1576,12 @@ export default function Dashboard() {
               </div>
 
             </div>
+          ) : activeTab === 'Portofolio' ? (
+            <Portfolio 
+              onOpenTrade={handleOpenTrade}
+              onOpenDeposit={() => setModalType('deposit')}
+              onOpenWithdraw={() => setModalType('withdraw')}
+            />
           ) : (
             /* ==========================================
                SIDEBAR ROUTE PLACEHOLDER
