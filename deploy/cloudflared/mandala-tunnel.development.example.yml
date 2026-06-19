@@ -1,0 +1,11 @@
+tunnel: <UUID-TUNNEL-ANDA>
+credentials-file: C:\Users\micha\.cloudflared\<UUID-TUNNEL-ANDA>.json
+
+ingress:
+  - hostname: dev-mandala-sekuritas.michaelk.fun
+    service: http://localhost:4173
+
+  - hostname: dev-api-mandala-sekuritas.michaelk.fun
+    service: http://localhost:3002
+
+  - service: http_status:404

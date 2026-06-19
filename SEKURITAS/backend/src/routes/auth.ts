@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { authenticateUser, signUserToken } from "../lib/auth.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { env } from "../config/env.js";
 
 const authBodySchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase().trim()),
@@ -62,7 +63,7 @@ export default async function authRoutes(app: FastifyInstance) {
     return {
       token: signUserToken(user.id),
       user: publicUser(user),
-      verification_token: process.env.NODE_ENV === "production" ? undefined : token,
+      verification_token: env.isProduction ? undefined : token,
       message: "User registered successfully. Email verification is required before trading."
     };
   });

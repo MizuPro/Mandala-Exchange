@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireServiceToken } from "../lib/auth.js";
 import { handleWebhookUpdate } from "../services/order-service.js";
+import { env } from "../config/env.js";
 
 const matsOrderStatusSchema = z.object({
   event_type: z.string().optional(),
@@ -36,7 +37,7 @@ const matsOrderStatusSchema = z.object({
 
 export default async function matsWebhookRoutes(app: FastifyInstance) {
   app.post("/events", async (request, reply) => {
-    const expectedToken = process.env.MATS_TO_SEKURITAS_TOKEN || process.env.SEKURITAS_SERVICE_TOKEN;
+    const expectedToken = env.matsToSekuritasToken || process.env.SEKURITAS_SERVICE_TOKEN;
     if (!requireServiceToken(request, reply, expectedToken, "MATS")) return;
 
     const parsed = matsOrderStatusSchema.safeParse(request.body);

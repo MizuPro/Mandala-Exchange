@@ -3,6 +3,7 @@ import { processSettlement } from "../services/settlement-service.js";
 import { processCorporateAction } from "../services/corporate-action-service.js";
 import { z } from "zod";
 import { requireServiceToken } from "../lib/auth.js";
+import { env } from "../config/env.js";
 
 const settlementDetailSchema = z.object({
   mats_order_id: z.string().min(1),
@@ -35,7 +36,7 @@ const corporateActionWebhookSchema = z.object({
 export default async function beiWebhookRoutes(app: FastifyInstance) {
   // Webhook from BEI for Settlement Completed
   app.post("/webhook/bei/settlement", async (request, reply) => {
-    const expectedToken = process.env.BEI_TO_SEKURITAS_TOKEN || process.env.SEKURITAS_SERVICE_TOKEN;
+    const expectedToken = env.beiToSekuritasToken || process.env.SEKURITAS_SERVICE_TOKEN;
     if (!requireServiceToken(request, reply, expectedToken, "BEI")) return;
 
     const parsed = settlementWebhookSchema.safeParse(request.body);
@@ -61,7 +62,7 @@ export default async function beiWebhookRoutes(app: FastifyInstance) {
 
   // Webhook from BEI for Corporate Actions (Dividends, Splits, etc)
   app.post("/webhook/bei/corporate-action", async (request, reply) => {
-    const expectedToken = process.env.BEI_TO_SEKURITAS_TOKEN || process.env.SEKURITAS_SERVICE_TOKEN;
+    const expectedToken = env.beiToSekuritasToken || process.env.SEKURITAS_SERVICE_TOKEN;
     if (!requireServiceToken(request, reply, expectedToken, "BEI")) return;
 
     const parsed = corporateActionWebhookSchema.safeParse(request.body);

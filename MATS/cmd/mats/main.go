@@ -27,7 +27,13 @@ import (
 )
 
 func main() {
-	_ = godotenv.Load()
+	if envFile := os.Getenv("MANDALA_ENV_FILE"); envFile != "" {
+		_ = godotenv.Load(envFile)
+	} else if appEnv := os.Getenv("APP_ENV"); appEnv != "" {
+		_ = godotenv.Load(".env." + appEnv)
+	} else {
+		_ = godotenv.Load()
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
@@ -69,7 +75,7 @@ func main() {
 		initialSessionID = cfg.SessionID
 	}
 	engine := matching.NewEngine(seq, initialSessionID, summaries)
-	
+
 	hub := marketdata.NewHub()
 	hub.SetProviders(engine, rulesCache)
 	dispatcher := events.NewDispatcher(store, seq, beiClient, hub, events.Config{
@@ -124,5 +130,3 @@ func main() {
 		logger.Error("http shutdown failed", "error", err)
 	}
 }
-
-

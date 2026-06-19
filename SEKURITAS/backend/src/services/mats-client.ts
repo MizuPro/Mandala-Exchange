@@ -1,4 +1,5 @@
 import fetch from "node-fetch";
+import { env } from "../config/env.js";
 
 export class MatsClientError extends Error {
   constructor(
@@ -85,6 +86,6 @@ export class MatsClient {
 }
 
 export const matsClient = new MatsClient(
-  process.env.MATS_API_URL || "http://localhost:8082",
-  process.env.MATS_SERVICE_TOKEN || process.env.MATS_SEKURITAS_TOKEN || ""
+  env.matsApiUrl,
+  env.matsServiceToken || process.env.MATS_SEKURITAS_TOKEN || ""
 );

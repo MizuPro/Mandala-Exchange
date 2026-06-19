@@ -64,6 +64,7 @@ function parseServiceTokens(value: string | undefined) {
 }
 
 const configSchema = z.object({
+  APP_ENV: z.enum(["development", "production"]).default("development"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4100),
   HOST: z.string().default("0.0.0.0"),
@@ -76,6 +77,27 @@ const configSchema = z.object({
 });
 
 export const config = configSchema.parse(process.env);
+
+const weakTokenPattern = /(change-me|replace-with|^dev-|^local-)/i;
+if (config.NODE_ENV === "production" || config.APP_ENV === "production") {
+  const errors: string[] = [];
+  if (config.NODE_ENV !== "production") errors.push("NODE_ENV must be production when APP_ENV=production");
+  if (config.APP_ENV !== "production") errors.push("APP_ENV must be production when NODE_ENV=production");
+  if (/localhost:5441\/mandala_bei(\?|$)/.test(config.DATABASE_URL) || /\/mandala_bei(\?|$)/.test(config.DATABASE_URL)) {
+    errors.push("DATABASE_URL must not point to the development BEI database in production");
+  }
+  for (const service of config.BEI_SERVICE_TOKENS) {
+    if (service.token.length < 32 || weakTokenPattern.test(service.token)) {
+      errors.push(`BEI_SERVICE_TOKENS.${service.name} must use a strong production token`);
+    }
+  }
+  if (!config.BEI_TO_SEKURITAS_TOKEN || config.BEI_TO_SEKURITAS_TOKEN.length < 32 || weakTokenPattern.test(config.BEI_TO_SEKURITAS_TOKEN)) {
+    errors.push("BEI_TO_SEKURITAS_TOKEN must use a strong production token");
+  }
+  if (errors.length > 0) {
+    throw new Error(`Invalid BEI production environment:\n- ${errors.join("\n- ")}`);
+  }
+}
 
 if (!config.SEKURITAS_SETTLEMENT_WEBHOOK_URL) {
   if (config.NODE_ENV === "production") {

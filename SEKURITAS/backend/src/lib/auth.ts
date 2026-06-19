@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { eq } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { users } from "../db/schema.js";
+import { env } from "../config/env.js";
 
 export interface UserTokenPayload {
   user_id: string;
@@ -11,8 +12,8 @@ export interface UserTokenPayload {
 const DEV_JWT_SECRET = "mandala_sekuritas_dev_secret";
 
 export function jwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
+  const secret = env.jwtSecret;
+  if (!secret && env.isProduction) {
     throw new Error("JWT_SECRET is required in production");
   }
   return secret || DEV_JWT_SECRET;
@@ -54,7 +55,7 @@ export async function authenticateActiveUser(request: any, reply: FastifyReply) 
 }
 
 export function requireServiceToken(request: any, reply: FastifyReply, expectedToken: string | undefined, name: string) {
-  const allowInsecureLocal = process.env.ALLOW_INSECURE_LOCAL_TOKENS === "true";
+  const allowInsecureLocal = env.allowInsecureLocalTokens;
   const host = String(request.hostname || request.headers.host || "");
   if (!expectedToken && allowInsecureLocal && /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) {
     return true;
@@ -68,8 +69,8 @@ export function requireServiceToken(request: any, reply: FastifyReply, expectedT
 }
 
 export function requireAdminToken(request: any, reply: FastifyReply) {
-  const expectedToken = process.env.ADMIN_TOKEN;
-  const allowInsecureLocal = process.env.ALLOW_INSECURE_LOCAL_TOKENS === "true";
+  const expectedToken = env.adminToken;
+  const allowInsecureLocal = env.allowInsecureLocalTokens;
   const host = String(request.hostname || request.headers.host || "");
   if (!expectedToken && allowInsecureLocal && /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) {
     return true;

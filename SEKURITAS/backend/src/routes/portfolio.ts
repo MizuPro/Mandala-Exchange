@@ -13,8 +13,9 @@ import {
 import { desc, eq } from "drizzle-orm";
 import { authenticateActiveUser } from "../lib/auth.js";
 import { beiClient } from "../services/bei-client.js";
+import { env } from "../config/env.js";
 
-const BROKER_CODE = process.env.BROKER_CODE || "MANDALA";
+const BROKER_CODE = env.brokerCode;
 
 async function getBrokerAccount(userId: string) {
   const [brokerAcc] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, userId)).limit(1);

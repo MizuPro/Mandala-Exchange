@@ -14,17 +14,25 @@ function isPublicFrontendHost() {
 }
 
 export function resolveApiBase() {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+
   if (isPublicFrontendHost()) {
     return PUBLIC_API_BASE;
   }
 
-  return import.meta.env.VITE_API_URL || LOCAL_API_BASE;
+  return LOCAL_API_BASE;
 }
 
 export function resolveMarketWsUrl() {
+  if (import.meta.env.VITE_MATS_WS_URL) {
+    return import.meta.env.VITE_MATS_WS_URL;
+  }
+
   if (isPublicFrontendHost()) {
     return PUBLIC_MARKET_WS_URL;
   }
 
-  return import.meta.env.VITE_MATS_WS_URL || LOCAL_MARKET_WS_URL;
+  return LOCAL_MARKET_WS_URL;
 }

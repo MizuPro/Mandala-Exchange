@@ -1,26 +1,26 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: mandala-bei-postgres
+    container_name: ${BEI_POSTGRES_CONTAINER:-mandala-bei-postgres}
     environment:
-      POSTGRES_USER: mandala_bei
-      POSTGRES_PASSWORD: mandala_bei
-      POSTGRES_DB: mandala_bei
+      POSTGRES_USER: ${BEI_POSTGRES_USER:-mandala_bei}
+      POSTGRES_PASSWORD: ${BEI_POSTGRES_PASSWORD:-mandala_bei}
+      POSTGRES_DB: ${BEI_POSTGRES_DB:-mandala_bei}
     ports:
-      - "5441:5432"
+      - "${BEI_POSTGRES_PORT:-5441}:5432"
     volumes:
       - bei_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mandala_bei -d mandala_bei"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: mandala-redis
+    container_name: ${BEI_REDIS_CONTAINER:-mandala-redis}
     ports:
-      - "6379:6379"
+      - "${BEI_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -29,3 +29,4 @@ services:
 
 volumes:
   bei_postgres_data:
+    name: ${BEI_POSTGRES_VOLUME:-bei_postgres_data}
