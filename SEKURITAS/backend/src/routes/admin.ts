@@ -14,6 +14,11 @@ const depositSchema = z.object({
   amount: z.coerce.number().finite().positive().max(1_000_000_000_000),
 });
 
+const updateBalanceSchema = z.object({
+  userId: z.string().uuid(),
+  available: z.coerce.number().finite().nonnegative().max(1_000_000_000_000),
+});
+
 const createBotSchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase().trim()),
   password: z.string().min(12).optional(),
@@ -58,6 +63,76 @@ export default async function adminRoutes(app: FastifyInstance) {
     });
 
     return { message: "Deposit successful" };
+  });
+
+  // Get all users with their cash balances
+  app.get("/users", async (request, reply) => {
+    try {
+      const allUsers = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          status: users.status,
+          created_at: users.created_at,
+          broker_account_id: broker_accounts.id,
+          account_type: broker_accounts.account_type,
+          cash_available: cash_balances.available,
+          cash_reserved: cash_balances.reserved,
+          cash_pending: cash_balances.pending,
+        })
+        .from(users)
+        .leftJoin(broker_accounts, eq(broker_accounts.user_id, users.id))
+        .leftJoin(cash_balances, eq(cash_balances.broker_account_id, broker_accounts.id))
+        .orderBy(users.email);
+      return allUsers;
+    } catch (error: any) {
+      return reply.status(500).send({ error: error.message });
+    }
+  });
+
+  // Edit/Update user's balance directly
+  app.post("/users/balance", async (request, reply) => {
+    const parsed = updateBalanceSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid update balance payload" });
+    }
+    const { userId, available } = parsed.data;
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) return reply.status(404).send({ error: "User not found" });
+
+    const [brokerAcc] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, user.id)).limit(1);
+    if (!brokerAcc) return reply.status(404).send({ error: "Broker account not found" });
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        const [cash] = await tx.select().from(cash_balances).where(eq(cash_balances.broker_account_id, brokerAcc.id)).limit(1);
+        if (!cash) {
+          throw new Error("Cash balance not found");
+        }
+
+        const oldAvailable = parseFloat(cash.available);
+        const difference = available - oldAvailable;
+        const newAvailableStr = available.toFixed(6);
+
+        await tx.update(cash_balances).set({ available: newAvailableStr, updated_at: new Date() }).where(eq(cash_balances.id, cash.id));
+
+        // Track mutation history for audit logs
+        await tx.insert(ledger_movements).values({
+          broker_account_id: brokerAcc.id,
+          asset_type: "CASH",
+          amount: difference.toFixed(6),
+          balance_after: newAvailableStr,
+          reference_type: "ADMIN_ADJUSTMENT",
+        });
+
+        return { oldAvailable, newAvailable: available };
+      });
+
+      return { message: "Balance updated successfully", data: result };
+    } catch (error: any) {
+      return reply.status(500).send({ error: error.message });
+    }
   });
 
   app.post("/bots", async (request, reply) => {
