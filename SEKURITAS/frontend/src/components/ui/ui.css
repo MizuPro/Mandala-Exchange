@@ -1,0 +1,360 @@
+/* ==========================================================================
+   MANDALA EXCHANGE UI KIT - PREMIUM COMPONENT STYLES
+   Vanilla CSS untuk Modal, Button, Alert, dan Toast dengan Glassmorphism & Gelap
+   ========================================================================== */
+
+/* --- 1. MODAL COMPONENT (WITH ANIMATIONS) --- */
+.m-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background-color: rgba(3, 7, 18, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: m-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.m-modal-container {
+  width: 100%;
+  max-width: 500px;
+  background: linear-gradient(135deg, rgba(22, 27, 34, 0.9) 0%, rgba(13, 17, 23, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 
+              0 0 40px rgba(230, 34, 37, 0.03);
+  overflow: hidden;
+  animation: m-scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.m-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.m-modal-title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  color: #ffffff;
+  margin: 0;
+}
+
+.m-modal-close-btn {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.m-modal-close-btn:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.m-modal-body {
+  padding: 1.5rem;
+  color: #c9d1d9;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.m-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+/* --- 2. BUTTON COMPONENT --- */
+.m-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid transparent;
+  user-select: none;
+  text-decoration: none;
+  font-family: inherit;
+}
+
+/* Sizes */
+.m-btn-sm {
+  padding: 0.4rem 0.75rem;
+  font-size: 11px;
+}
+
+.m-btn-md {
+  padding: 0.6rem 1.25rem;
+  font-size: 13px;
+}
+
+.m-btn-lg {
+  padding: 0.8rem 1.75rem;
+  font-size: 15px;
+}
+
+/* Variants */
+.m-btn-primary {
+  background-color: #e62225;
+  color: #ffffff;
+}
+.m-btn-primary:hover:not(:disabled) {
+  background-color: #ff3337;
+  box-shadow: 0 0 15px rgba(230, 34, 37, 0.3);
+}
+
+.m-btn-secondary {
+  background-color: #161b22;
+  border-color: #21262d;
+  color: #c9d1d9;
+}
+.m-btn-secondary:hover:not(:disabled) {
+  background-color: #21262d;
+  border-color: #8b949e;
+  color: #ffffff;
+}
+
+.m-btn-success {
+  background-color: #10b981;
+  color: #ffffff;
+}
+.m-btn-success:hover:not(:disabled) {
+  background-color: #059669;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+}
+
+.m-btn-danger {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+.m-btn-danger:hover:not(:disabled) {
+  background-color: #dc2626;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+}
+
+.m-btn-ghost {
+  background-color: transparent;
+  color: #8b949e;
+}
+.m-btn-ghost:hover:not(:disabled) {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* States */
+.m-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.m-btn-loading {
+  position: relative;
+  color: transparent !important;
+}
+
+.m-btn-loading::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid cubic-bezier(0.16, 1, 0.3, 1);
+  border-top-color: currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: m-spin 0.6s linear infinite;
+}
+
+/* --- 3. ALERT COMPONENT (INLINE) --- */
+.m-alert {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border: 1px solid transparent;
+  margin-bottom: 1rem;
+}
+
+.m-alert-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.m-alert-content {
+  flex-grow: 1;
+}
+
+.m-alert-title {
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 0.25rem 0;
+}
+
+.m-alert-message {
+  color: #c9d1d9;
+  margin: 0;
+}
+
+/* Types */
+.m-alert-info {
+  background-color: rgba(15, 44, 89, 0.15);
+  border-color: rgba(15, 44, 89, 0.4);
+  color: #58a6ff;
+}
+.m-alert-info .m-alert-icon { color: #58a6ff; }
+
+.m-alert-success {
+  background-color: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #3fb950;
+}
+.m-alert-success .m-alert-icon { color: #3fb950; }
+
+.m-alert-warning {
+  background-color: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #d29922;
+}
+.m-alert-warning .m-alert-icon { color: #d29922; }
+
+.m-alert-error {
+  background-color: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #ff7b72;
+}
+.m-alert-error .m-alert-icon { color: #ff7b72; }
+
+/* --- 4. TOAST NOTIFICATION COMPONENT --- */
+.m-toast-provider {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 360px;
+  pointer-events: none;
+}
+
+.m-toast {
+  pointer-events: auto;
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(22, 27, 34, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left-width: 4px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  color: #c9d1d9;
+  font-size: 13px;
+  align-items: flex-start;
+  animation: m-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.m-toast-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.m-toast-content {
+  flex-grow: 1;
+}
+
+.m-toast-title {
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 0.15rem 0;
+}
+
+.m-toast-message {
+  font-size: 12px;
+  color: #8b949e;
+  margin: 0;
+}
+
+.m-toast-close {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  margin-top: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.m-toast-close:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Toast Left Border Colors */
+.m-toast-info { border-left-color: #58a6ff; }
+.m-toast-info .m-toast-icon { color: #58a6ff; }
+
+.m-toast-success { border-left-color: #3fb950; }
+.m-toast-success .m-toast-icon { color: #3fb950; }
+
+.m-toast-warning { border-left-color: #d29922; }
+.m-toast-warning .m-toast-icon { color: #d29922; }
+
+.m-toast-error { border-left-color: #ff7b72; }
+.m-toast-error .m-toast-icon { color: #ff7b72; }
+
+/* --- 5. KEYFRAMES & ANIMATIONS --- */
+@keyframes m-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes m-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes m-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes m-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
