@@ -49,6 +49,28 @@ export interface MarketState {
   trades: any[];
 }
 
+const ORDER_ENTRY_SESSION_STATUSES = new Set([
+  'pre_open',
+  'opening_auction',
+  'continuous',
+  'closing_auction',
+  'post_closing'
+]);
+
+export function normalizeSessionStatus(status?: string | null) {
+  return String(status || '').trim().toLowerCase();
+}
+
+export function isOrderEntrySessionStatus(status?: string | null) {
+  return ORDER_ENTRY_SESSION_STATUSES.has(normalizeSessionStatus(status));
+}
+
+export function formatMarketSessionLabel(status?: string | null) {
+  const normalized = normalizeSessionStatus(status);
+  if (!normalized) return 'SYNCING';
+  return `PASAR ${normalized.replace(/_/g, ' ').toUpperCase()}`;
+}
+
 export interface AccountProfile {
   account: { id: string; account_type: string; status: string; created_at: string };
   references: { sid: string | null; sre: string | null; rdn: string | null };
@@ -104,6 +126,7 @@ interface AppState {
   fetchPortfolio: () => Promise<void>;
   fetchOrders: () => Promise<void>;
   fetchMarketData: () => Promise<void>;
+  fetchMarketSession: () => Promise<void>;
   fetchAccountProfile: () => Promise<void>;
   fetchCompany: (symbol: string) => Promise<void>;
   fetchCorporateActions: () => Promise<void>;
@@ -115,10 +138,13 @@ interface AppState {
   fetchLeaderboard: () => Promise<void>;
   fetchNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
+  depositFunds: (amount: number) => Promise<any>;
+  withdrawFunds: (amount: number) => Promise<any>;
   placeOrder: (symbol: string, side: "buy" | "sell", price: number | undefined, quantity: number, orderType?: "limit" | "market") => Promise<any>;
   amendOrder: (id: string, payload: { price?: number; quantity?: number }) => Promise<void>;
   cancelOrder: (id: string) => Promise<void>;
   applyMarketEvent: (event: any) => void;
+  setMarketConnected: (connected: boolean) => void;
 }
 
 function readStoredUser() {
@@ -252,17 +278,33 @@ export const useStore = create<AppState>((set, get) => ({
     if (get().marketLoading) return;
     try {
       set({ marketLoading: true });
-      const [securities, feeSchedule] = await Promise.all([
+      const [securities, feeSchedule, activeSession] = await Promise.all([
         fetchApi('/market/securities'),
         fetchApi('/market/fees'),
+        fetchApi('/market/session').catch(() => null),
       ]);
+      const sessionStatus = normalizeSessionStatus(activeSession?.status || activeSession?.session_status);
       set({
         securities: Array.isArray(securities) ? securities : [],
         feeSchedule,
+        market: sessionStatus ? { ...get().market, sessionStatus } : get().market,
         marketLoading: false,
       });
     } catch (err: any) {
       set({ marketLoading: false, error: err.message });
+    }
+  },
+
+  fetchMarketSession: async () => {
+    try {
+      const activeSession = await fetchApi('/market/session');
+      const sessionStatus = normalizeSessionStatus(activeSession?.status || activeSession?.session_status);
+      if (!sessionStatus) return;
+      set((state) => ({
+        market: { ...state.market, sessionStatus },
+      }));
+    } catch {
+      // WebSocket remains the primary live channel; polling failure should not disrupt the UI.
     }
   },
 
@@ -383,6 +425,40 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  depositFunds: async (amount) => {
+    try {
+      set({ isLoading: true, error: null });
+      const result = await fetchApi('/funds/deposit', {
+        method: 'POST',
+        body: JSON.stringify({ amount })
+      });
+      await get().fetchPortfolio();
+      set({ isLoading: false });
+      return result;
+    } catch (err: any) {
+      if (isUnauthorized(err)) get().logout();
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
+  withdrawFunds: async (amount) => {
+    try {
+      set({ isLoading: true, error: null });
+      const result = await fetchApi('/funds/withdraw', {
+        method: 'POST',
+        body: JSON.stringify({ amount })
+      });
+      await get().fetchPortfolio();
+      set({ isLoading: false });
+      return result;
+    } catch (err: any) {
+      if (isUnauthorized(err)) get().logout();
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
   placeOrder: async (symbol, side, price, quantity, orderType = "limit") => {
     try {
       set({ orderActionLoading: true, isLoading: true, error: null });
@@ -435,16 +511,29 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  setMarketConnected: (connected) => {
+    set((state) => ({ market: { ...state.market, connected } }));
+  },
+
   applyMarketEvent: (event) => {
     if (!event || typeof event !== 'object') return;
     set((state) => {
-      const market = { ...state.market, connected: true };
+      let isConnected = true;
+      if (event.type === 'proxy_status' && event.payload?.status === 'upstream_disconnected') {
+        isConnected = false;
+      }
+      
+      const market = { ...state.market, connected: isConnected };
+      
       if (event.type === 'session_state') {
-        market.sessionStatus = event.payload?.status || event.payload?.session_status || '';
+        market.sessionStatus = normalizeSessionStatus(event.payload?.status || event.payload?.session_status);
       }
       if (event.type === 'session_timer') {
         market.timeRemainingSeconds = event.payload?.time_remaining_seconds;
         market.durationSeconds = event.payload?.duration_seconds;
+        if (event.payload?.status) {
+          market.sessionStatus = normalizeSessionStatus(event.payload.status);
+        }
       }
       if (event.type === 'market_halt') {
         const symbol = event.symbol || event.payload?.symbol;

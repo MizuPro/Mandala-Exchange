@@ -46,13 +46,9 @@ export default function ActivityOrder() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // --- Fetch Data on Mount & Auto-refresh ---
+  // --- Fetch Data on Mount ---
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(() => {
-      fetchOrders();
-    }, 5000);
-    return () => clearInterval(interval);
   }, [fetchOrders]);
 
   // --- Normalisasi dan Formatting ---

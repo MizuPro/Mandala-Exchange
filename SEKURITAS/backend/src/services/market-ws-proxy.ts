@@ -6,6 +6,11 @@ let upstream: WebSocket | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let connecting = false;
 
+// Cache untuk menyimpan data terakhir
+const depthCache = new Map<string, any>();
+const lastPriceCache = new Map<string, any>();
+let sessionStateCache: any | null = null;
+
 function upstreamUrl() {
   const baseUrl = process.env.MATS_MARKET_WS_URL || "ws://127.0.0.1:8082/v1/market-data/ws";
   const url = new URL(baseUrl);
@@ -16,18 +21,23 @@ function upstreamUrl() {
   if (token && !url.searchParams.has("access_token")) {
     url.searchParams.set("access_token", token);
   }
+  // Daftarkan symbols default agar MATS mengirim snapshot
+  if (!url.searchParams.has("symbols")) {
+    url.searchParams.set("symbols", "MNDL,NUSA,BARA");
+  }
   return url.toString();
 }
+
 
 function sendJson(socket: WebSocket, payload: unknown) {
   if (socket.readyState !== WebSocket.OPEN) return;
   socket.send(JSON.stringify(payload));
 }
 
-function broadcast(data: RawData) {
+function broadcast(data: RawData, isBinary: boolean) {
   for (const client of clients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(data);
+      client.send(data, { binary: isBinary });
     }
   }
 }
@@ -77,8 +87,34 @@ function ensureUpstream(logger?: FastifyBaseLogger) {
     logger?.info("MATS market WebSocket upstream connected");
   });
 
-  socket.on("message", (data) => {
-    broadcast(data);
+  socket.on("message", (data, isBinary) => {
+    try {
+      const event = JSON.parse(data.toString());
+      if (event.type === "depth_snapshot" && event.symbol) {
+        depthCache.set(event.symbol, event);
+      } else if (event.type === "last_price" && event.symbol) {
+        lastPriceCache.set(event.symbol, event);
+      } else if (event.type === "session_state") {
+        const status = event.payload?.status || event.payload?.session_status || '';
+        sessionStateCache = event;
+        // Reset order book jika sesi selesai / dimulai
+        if (status === "closed" || status === "pre_open") {
+          depthCache.clear();
+        }
+      } else if (event.type === "session_timer" && event.payload?.status) {
+        sessionStateCache = {
+          type: "session_state",
+          sequence: event.sequence,
+          occurred_at: event.occurred_at,
+          payload: {
+            status: event.payload.status,
+          },
+        };
+      }
+    } catch (e) {
+      // Abaikan error parsing JSON
+    }
+    broadcast(data, isBinary);
   });
 
   socket.on("error", (error) => {
@@ -113,6 +149,17 @@ export function handleMarketWsClient(socket: WebSocket, logger?: FastifyBaseLogg
     payload: { status: "client_connected" },
   });
 
+  // Kirim data cache saat terhubung
+  if (sessionStateCache) {
+    sendJson(socket, sessionStateCache);
+  }
+  for (const event of depthCache.values()) {
+    sendJson(socket, event);
+  }
+  for (const event of lastPriceCache.values()) {
+    sendJson(socket, event);
+  }
+
   socket.on("message", () => {
     // Browser messages are intentionally ignored for now; the upstream
     // subscription receives the complete public market stream.
@@ -131,6 +178,7 @@ export function handleMarketWsClient(socket: WebSocket, logger?: FastifyBaseLogg
 
   ensureUpstream(logger);
 }
+
 
 export function closeMarketWsProxy() {
   clearReconnectTimer();

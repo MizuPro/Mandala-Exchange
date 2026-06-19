@@ -8,14 +8,15 @@ import {
   TrendingDown,
   Info
 } from 'lucide-react';
-import { useStore } from '../store/useStore';
-import { useOutletContext } from 'react-router-dom';
+import { formatMarketSessionLabel, isOrderEntrySessionStatus, normalizeSessionStatus, useStore } from '../store/useStore';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 
 interface DashboardContext {
   onOpenTrade: (symbol: string, side: 'BUY' | 'SELL') => void;
 }
 
 export default function MarketPanel() {
+  const navigate = useNavigate();
   // --- Zustand Store Bindings ---
   const storeSecurities = useStore(state => state.securities);
   const market = useStore(state => state.market);
@@ -338,21 +339,23 @@ export default function MarketPanel() {
         
         {/* Status Pasar */}
         {(() => {
-          const isOpen = market.sessionStatus && market.sessionStatus !== 'closed';
+          const isKnown = Boolean(normalizeSessionStatus(market.sessionStatus));
+          const isOpen = isOrderEntrySessionStatus(market.sessionStatus);
+          const statusColor = isOpen ? '#10B981' : (isKnown ? '#EF4444' : '#F59E0B');
           return (
             <div 
               className="flex items-center gap-2 py-1.5 px-3 rounded-full text-xs"
               style={{ 
-                backgroundColor: isOpen ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
-                border: isOpen ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)' 
+                backgroundColor: isOpen ? 'rgba(16, 185, 129, 0.1)' : (isKnown ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)'),
+                border: isOpen ? '1px solid rgba(16, 185, 129, 0.3)' : (isKnown ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)')
               }}
             >
               <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOpen ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`}></span>
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isOpen ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`}></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: statusColor }}></span>
+                <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: statusColor }}></span>
               </span>
               <span className="font-bold text-slate-300 uppercase" style={{ fontSize: '11px' }}>
-                PASAR {market.sessionStatus?.toUpperCase() || 'CLOSED'}
+                {formatMarketSessionLabel(market.sessionStatus)}
               </span>
             </div>
           );
@@ -423,8 +426,9 @@ export default function MarketPanel() {
                       return (
                         <tr 
                           key={stock.symbol}
-                          className="clickable-table-row"
+                          className="clickable-table-row hover:bg-slate-800/25 transition-colors"
                           style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}
+                          onClick={() => navigate(`/market/${stock.symbol}`)}
                         >
                           <td className="py-2.5" style={{ padding: '0.6rem 0.5rem' }}>
                             <span className="font-bold text-white text-sm block">{stock.symbol}</span>

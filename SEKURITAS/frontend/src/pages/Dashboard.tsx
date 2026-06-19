@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, Link, Outlet } from 'react-router-dom';
-import { useStore } from '../store/useStore';
+import { formatMarketSessionLabel, isOrderEntrySessionStatus, normalizeSessionStatus, useStore } from '../store/useStore';
 import { resolveMarketWsUrl } from '../config/endpoints';
 import { 
   LogOut, 
@@ -30,19 +30,17 @@ export default function Dashboard() {
   const fetchPortfolio = useStore(state => state.fetchPortfolio);
   const fetchOrders = useStore(state => state.fetchOrders);
   const fetchMarketData = useStore(state => state.fetchMarketData);
+  const fetchMarketSession = useStore(state => state.fetchMarketSession);
   const fetchAccountProfile = useStore(state => state.fetchAccountProfile);
   const placeOrder = useStore(state => state.placeOrder);
   const applyMarketEvent = useStore(state => state.applyMarketEvent);
+  const depositFunds = useStore(state => state.depositFunds);
+  const withdrawFunds = useStore(state => state.withdrawFunds);
+  const setMarketConnected = useStore(state => state.setMarketConnected);
 
   // --- Local States ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  // Simulasi Offset RDN (Deposit & Withdraw lokal)
-  const [localBalanceOffset, setLocalBalanceOffset] = useState<number>(() => {
-    const saved = localStorage.getItem('local_rdn_offset');
-    return saved ? parseFloat(saved) : 0;
-  });
 
   // Modals
   const [modalType, setModalType] = useState<'deposit' | 'withdraw' | 'trade' | null>(null);
@@ -69,6 +67,7 @@ export default function Dashboard() {
     fetchPortfolio();
     fetchOrders();
     fetchMarketData();
+    fetchMarketSession();
     fetchAccountProfile();
 
     const interval = setInterval(() => {
@@ -76,8 +75,10 @@ export default function Dashboard() {
       fetchOrders();
     }, 5000);
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [fetchAccountProfile, fetchMarketData, fetchMarketSession, fetchOrders, fetchPortfolio]);
 
   // --- WebSocket Connection for Market Feed ---
   useEffect(() => {
@@ -109,6 +110,7 @@ export default function Dashboard() {
       };
 
       socket.onclose = () => {
+        setMarketConnected(false);
         if (!mountedRef.current) return;
         setTimeout(() => {
           delay = Math.min(delay * 2, MAX_DELAY);
@@ -123,25 +125,27 @@ export default function Dashboard() {
       mountedRef.current = false;
       socketRef.current?.close();
     };
-  }, [applyMarketEvent]);
+  }, [applyMarketEvent, setMarketConnected]);
 
   // --- Deposit & Withdraw Local State Handlers ---
-  const handleDepositSubmit = (e: React.FormEvent) => {
+  const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(depositAmount);
     if (isNaN(amount) || amount <= 0) {
       showToast('Masukkan jumlah deposit yang valid', 'error');
       return;
     }
-    const newOffset = localBalanceOffset + amount;
-    setLocalBalanceOffset(newOffset);
-    localStorage.setItem('local_rdn_offset', String(newOffset));
-    setDepositAmount('');
-    setModalType(null);
-    showToast(`Berhasil deposit Rp ${amount.toLocaleString('id-ID')} (Simulasi)`, 'success');
+    try {
+      await depositFunds(amount);
+      setDepositAmount('');
+      setModalType(null);
+      showToast(`Berhasil deposit Rp ${amount.toLocaleString('id-ID')} (Simulasi)`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Deposit belum tersedia', 'error');
+    }
   };
 
-  const handleWithdrawSubmit = (e: React.FormEvent) => {
+  const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(withdrawAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -152,12 +156,14 @@ export default function Dashboard() {
       showToast('Saldo tunai (Buying Power) tidak mencukupi', 'error');
       return;
     }
-    const newOffset = localBalanceOffset - amount;
-    setLocalBalanceOffset(newOffset);
-    localStorage.setItem('local_rdn_offset', String(newOffset));
-    setWithdrawAmount('');
-    setModalType(null);
-    showToast(`Berhasil penarikan Rp ${amount.toLocaleString('id-ID')} (Simulasi)`, 'success');
+    try {
+      await withdrawFunds(amount);
+      setWithdrawAmount('');
+      setModalType(null);
+      showToast(`Berhasil penarikan Rp ${amount.toLocaleString('id-ID')} (Simulasi)`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Penarikan belum tersedia', 'error');
+    }
   };
 
   // --- Order Placement ---
@@ -218,7 +224,7 @@ export default function Dashboard() {
   const rawCashPending = parseFloat(portfolio?.cash?.pending || '0');
 
   // RDN final
-  const buyingPower = Math.max(0, rawCashAvailable + localBalanceOffset);
+  const buyingPower = Math.max(0, rawCashAvailable);
 
   // --- Sidebar & Active Path Config ---
   const activePath = location.pathname;
@@ -441,9 +447,11 @@ export default function Dashboard() {
             {/* Indikator Status Pasar & IHSG */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
               {(() => {
-                const isOpen = market.sessionStatus && market.sessionStatus !== 'closed';
-                const indicatorBg = isOpen ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
-                const indicatorBorder = isOpen ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)';
+                const isKnown = Boolean(normalizeSessionStatus(market.sessionStatus));
+                const isOpen = isOrderEntrySessionStatus(market.sessionStatus);
+                const indicatorBg = isOpen ? 'rgba(16, 185, 129, 0.1)' : (isKnown ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)');
+                const indicatorBorder = isOpen ? '1px solid rgba(16, 185, 129, 0.3)' : (isKnown ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)');
+                const indicatorColor = isOpen ? '#10B981' : (isKnown ? '#EF4444' : '#F59E0B');
                 return (
                   <div 
                     id="market-status-indicator"
@@ -451,16 +459,16 @@ export default function Dashboard() {
                     style={{ backgroundColor: indicatorBg, border: indicatorBorder }}
                   >
                     <span className="relative flex h-2 w-2" style={{ display: 'inline-flex' }}>
-                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOpen ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`}></span>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: indicatorColor }}></span>
                       <span 
                         className="relative inline-flex rounded-full h-2 w-2"
                         style={{
-                          backgroundColor: isOpen ? '#10B981' : '#EF4444'
+                          backgroundColor: indicatorColor
                         }}
                       ></span>
                     </span>
                     <span className="font-semibold text-slate-300 uppercase hidden-mobile" style={{ fontSize: '11px' }}>
-                      PASAR {market.sessionStatus || 'CLOSED'}
+                      {formatMarketSessionLabel(market.sessionStatus)}
                     </span>
                   </div>
                 );
