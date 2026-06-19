@@ -27,12 +27,31 @@ export default async function marketRoutes(app: FastifyInstance) {
     }
   });
 
+  app.get("/session", async (_request, reply) => {
+    try {
+      const data = await beiClient.getActiveSession();
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(500).send({ error: e.message || "Failed to fetch active session from BEI" });
+    }
+  });
+
   app.get("/securities/:symbol", async (request: any, reply) => {
     try {
       const data = await beiClient.getSecurity(request.params.symbol);
       return reply.send(data);
     } catch (e: any) {
       return reply.status(500).send({ error: e.message || "Failed to fetch security detail from BEI" });
+    }
+  });
+
+  app.get("/securities/:symbol/candles", async (request: any, reply) => {
+    try {
+      const resolution = String(request.query?.resolution || "1m").trim();
+      const data = await beiClient.getCandles(request.params.symbol, resolution);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(500).send({ error: e.message || "Failed to fetch security candles from BEI" });
     }
   });
 

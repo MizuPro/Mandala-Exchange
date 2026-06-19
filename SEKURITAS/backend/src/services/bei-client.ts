@@ -1,3 +1,5 @@
+import { env } from "../config/env.js";
+
 export class BeiClient {
   private baseUrl: string;
   private serviceToken: string;
@@ -36,8 +38,19 @@ export class BeiClient {
     return this.get("/v1/public/fee-schedule", "Fetch fee schedule from BEI");
   }
 
+  async getActiveSession() {
+    return this.get("/v1/integration/mats/sessions/active", "Fetch active market session from BEI");
+  }
+
   async getSecurity(symbol: string) {
     return this.get(`/v1/public/securities/${encodeURIComponent(symbol.toUpperCase())}`, "Fetch security detail from BEI");
+  }
+
+  async getCandles(symbol: string, resolution: string) {
+    return this.get(
+      `/v1/public/securities/${encodeURIComponent(symbol.toUpperCase())}/candles?resolution=${encodeURIComponent(resolution)}`,
+      "Fetch candles from BEI"
+    );
   }
 
   async getFundamentals(symbol: string) {
@@ -99,6 +112,6 @@ export class BeiClient {
 }
 
 export const beiClient = new BeiClient(
-  process.env.BEI_API_URL || "http://localhost:4100",
-  process.env.BEI_SERVICE_TOKEN || process.env.BEI_SEKURITAS_TOKEN || ""
+  env.beiApiUrl,
+  env.beiServiceToken || process.env.BEI_SEKURITAS_TOKEN || ""
 );
