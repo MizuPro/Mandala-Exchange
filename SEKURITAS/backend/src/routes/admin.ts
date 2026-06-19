@@ -7,6 +7,7 @@ import { requireAdminToken, signUserToken } from "../lib/auth.js";
 import { hashPassword } from "../lib/password.js";
 import { createBrokerAccount } from "../services/account-service.js";
 import { reconcileSubmitUnknownOrders } from "../services/order-service.js";
+import { env } from "../config/env.js";
 import crypto from "crypto";
 
 const depositSchema = z.object({
@@ -31,6 +32,10 @@ export default async function adminRoutes(app: FastifyInstance) {
 
   // Deposit manual by admin
   app.post("/deposit", async (request, reply) => {
+    if (!env.isSimulatorFinance || env.isProduction) {
+      return reply.status(403).send({ error: "Manual simulator deposit is disabled outside development simulator mode" });
+    }
+
     const parsed = depositSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid deposit payload" });
@@ -92,6 +97,10 @@ export default async function adminRoutes(app: FastifyInstance) {
 
   // Edit/Update user's balance directly
   app.post("/users/balance", async (request, reply) => {
+    if (!env.isSimulatorFinance || env.isProduction) {
+      return reply.status(403).send({ error: "Manual balance adjustment is disabled outside development simulator mode" });
+    }
+
     const parsed = updateBalanceSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid update balance payload" });

@@ -7,8 +7,9 @@ import { estimateFee } from "./fee-service.js";
 import { MatsClientError, matsClient } from "./mats-client.js";
 import { createNotificationTx } from "./notification-service.js";
 import { processPendingSettlementsForOrder } from "./settlement-service.js";
+import { env } from "../config/env.js";
 
-const BROKER_CODE = process.env.BROKER_CODE || "MANDALA";
+const BROKER_CODE = env.brokerCode;
 const LOT_SIZE = Number(process.env.ORDER_LOT_SIZE || 100);
 type BrokerOrderType = "limit" | "market";
 
