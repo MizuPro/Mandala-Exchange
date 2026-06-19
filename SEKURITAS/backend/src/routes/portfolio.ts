@@ -144,7 +144,7 @@ export default async function portfolioRoutes(app: FastifyInstance) {
       const data = await beiClient.getSettlementSession(request.params.sessionId);
       return reply.send(data);
     } catch (error: any) {
-      return reply.status(502).send({ error: error.message || "Failed to fetch settlement status from BEI" });
+      return reply.status(500).send({ error: error.message || "Failed to fetch settlement status from BEI" });
     }
   });
 
@@ -155,7 +155,7 @@ export default async function portfolioRoutes(app: FastifyInstance) {
       const data = await beiClient.getCustodySummary(BROKER_CODE, brokerAcc.id);
       return reply.send(data);
     } catch (error: any) {
-      return reply.status(502).send({ error: error.message || "Failed to fetch custody summary from BEI" });
+      return reply.status(500).send({ error: error.message || "Failed to fetch custody summary from BEI" });
     }
   });
 
@@ -166,7 +166,7 @@ export default async function portfolioRoutes(app: FastifyInstance) {
       const data = await beiClient.getReconciliation(BROKER_CODE, brokerAcc.id);
       return reply.send(data);
     } catch (error: any) {
-      return reply.status(502).send({ error: error.message || "Failed to fetch reconciliation from BEI" });
+      return reply.status(500).send({ error: error.message || "Failed to fetch reconciliation from BEI" });
     }
   });
 }

@@ -13,7 +13,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getListedSecurities();
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch securities from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch securities from BEI" });
     }
   });
 
@@ -23,7 +23,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getFeeSchedule();
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch fees from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch fees from BEI" });
     }
   });
 
@@ -32,7 +32,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getSecurity(request.params.symbol);
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch security detail from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch security detail from BEI" });
     }
   });
 
@@ -41,7 +41,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getFundamentals(request.params.symbol);
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch fundamentals from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch fundamentals from BEI" });
     }
   });
 
@@ -50,7 +50,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getAnnouncements(request.params.symbol);
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch issuer announcements from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch issuer announcements from BEI" });
     }
   });
 
@@ -61,7 +61,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getAnnouncements(symbol);
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch issuer announcements from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch issuer announcements from BEI" });
     }
   });
 
@@ -70,7 +70,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getCorporateActions();
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch corporate actions from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch corporate actions from BEI" });
     }
   });
 
@@ -79,7 +79,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getIpoEvents();
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch IPO events from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch IPO events from BEI" });
     }
   });
 
@@ -88,7 +88,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getTradesReport(request.params.sessionId);
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch trades report from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch trades report from BEI" });
     }
   });
 
@@ -97,7 +97,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getSettlementsReport(request.params.sessionId);
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch settlements report from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch settlements report from BEI" });
     }
   });
 
@@ -106,7 +106,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getMarketSummaryReport(request.params.sessionId);
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch market summary report from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch market summary report from BEI" });
     }
   });
 
@@ -116,7 +116,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getMarketIndices();
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch market indices from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch market indices from BEI" });
     }
   });
 
@@ -127,7 +127,7 @@ export default async function marketRoutes(app: FastifyInstance) {
       const data = await beiClient.getIndexHistory(request.params.code, period);
       return reply.send(data);
     } catch (e: any) {
-      return reply.status(502).send({ error: e.message || "Failed to fetch index history from BEI" });
+      return reply.status(500).send({ error: e.message || "Failed to fetch index history from BEI" });
     }
   });
 }
