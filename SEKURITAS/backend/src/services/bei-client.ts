@@ -88,6 +88,14 @@ export class BeiClient {
   async getMarketSummaryReport(sessionId: string) {
     return this.get(`/v1/reports/market-summary/${encodeURIComponent(sessionId)}`, "Fetch market summary from BEI");
   }
+
+  async getMarketIndices() {
+    return this.get("/v1/indices", "Fetch market indices from BEI");
+  }
+
+  async getIndexHistory(code: string, period: string = "7D") {
+    return this.get(`/v1/indices/${encodeURIComponent(code)}/history?period=${period}`, "Fetch index history from BEI");
+  }
 }
 
 export const beiClient = new BeiClient(

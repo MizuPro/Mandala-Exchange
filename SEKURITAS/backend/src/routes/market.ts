@@ -109,4 +109,25 @@ export default async function marketRoutes(app: FastifyInstance) {
       return reply.status(502).send({ error: e.message || "Failed to fetch market summary report from BEI" });
     }
   });
+
+  // Market Indices (MDX, dll)
+  app.get("/indices", async (_request, reply) => {
+    try {
+      const data = await beiClient.getMarketIndices();
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch market indices from BEI" });
+    }
+  });
+
+  // Index History untuk chart
+  app.get("/indices/:code/history", async (request: any, reply) => {
+    try {
+      const period = (request.query as any)?.period || "7D";
+      const data = await beiClient.getIndexHistory(request.params.code, period);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(502).send({ error: e.message || "Failed to fetch index history from BEI" });
+    }
+  });
 }
