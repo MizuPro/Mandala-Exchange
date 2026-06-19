@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="id"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Login | Mandala Sekuritas</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-variant": "#45302d",
+                        "surface-bright": "#493431",
+                        "inverse-on-surface": "#402b29",
+                        "outline": "#ae8883",
+                        "border": "#21262D",
+                        "on-primary": "#690006",
+                        "on-secondary-container": "#a0b8ee",
+                        "on-surface-variant": "#e7bdb8",
+                        "background": "#0D1117",
+                        "tertiary-container": "#007db9",
+                        "surface-tint": "#ffb4ab",
+                        "primary": "#ffb4ab",
+                        "tertiary-fixed": "#cbe6ff",
+                        "on-error-container": "#ffdad6",
+                        "on-background": "#fddbd7",
+                        "text-secondary": "#8B949E",
+                        "secondary": "#aec7fd",
+                        "on-tertiary-container": "#ffffff",
+                        "on-primary-fixed-variant": "#93000c",
+                        "on-primary-fixed": "#410002",
+                        "secondary-fixed-dim": "#aec7fd",
+                        "on-secondary-fixed": "#001a41",
+                        "on-secondary-fixed-variant": "#2d4674",
+                        "on-tertiary": "#003450",
+                        "inverse-primary": "#c00013",
+                        "on-secondary": "#132f5d",
+                        "tertiary-fixed-dim": "#8fcdff",
+                        "on-error": "#690005",
+                        "surface-dim": "#1f0f0d",
+                        "surface-container-high": "#392523",
+                        "on-tertiary-fixed": "#001e30",
+                        "surface-container": "#2d1b19",
+                        "primary-fixed-dim": "#ffb4ab",
+                        "surface": "#161B22",
+                        "primary-fixed": "#ffdad6",
+                        "error": "#EF4444",
+                        "secondary-container": "#2f4977",
+                        "outline-variant": "#5d3f3c",
+                        "on-primary-container": "#ffffff",
+                        "primary-container": "#e62225",
+                        "surface-container-lowest": "#1a0a08",
+                        "surface-container-highest": "#45302d",
+                        "tertiary": "#8fcdff",
+                        "error-container": "#93000a",
+                        "on-tertiary-fixed-variant": "#004b71",
+                        "inverse-surface": "#fddbd7",
+                        "success": "#10B981",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-surface": "#fddbd7",
+                        "text-primary": "#FFFFFF",
+                        "surface-container-low": "#291715"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "sm": "8px",
+                        "2xl": "48px",
+                        "md": "16px",
+                        "gutter": "24px",
+                        "xl": "32px",
+                        "lg": "24px",
+                        "margin": "32px",
+                        "3xl": "64px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter"],
+                        "label-sm": ["Inter, sans-serif"],
+                        "h1": ["Inter, sans-serif"],
+                        "headline-xl-mobile": ["Inter"],
+                        "headline-xl": ["Inter"],
+                        "h2": ["Inter, sans-serif"],
+                        "body-md": ["Inter, sans-serif"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", {"lineHeight": "31.2px", "fontWeight": "600"}],
+                        "label-sm": ["0.85rem", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "h1": ["3rem", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-xl-mobile": ["32px", {"lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-xl": ["48px", {"lineHeight": "52.8px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "h2": ["1.5rem", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "body-md": ["1rem", {"lineHeight": "1.6", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .red-glow-hover:focus-within {
+            box-shadow: 0 0 15px rgba(230, 34, 37, 0.15);
+        }
+        .split-image-overlay {
+            background: linear-gradient(to right, rgba(13, 17, 23, 0.4), rgba(13, 17, 23, 0.1));
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col">
+<!-- TopNavBar (Minimal/Transactional Suppression Check: Visible as requested) -->
+<nav class="docked full-width top-0 bg-transparent flex justify-between items-center w-full px-gutter py-md max-w-7xl mx-auto z-50">
+<div class="font-headline-md text-headline-md font-bold text-primary">Mandala Sekuritas</div>
+<div class="flex items-center gap-md">
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors scale-95 active:scale-90 transition-transform" href="#">Back to Home</a>
+</div>
+</nav>
+<main class="flex-grow flex flex-col md:flex-row h-full">
+<!-- Left Side: Visual Narrative -->
+<div class="hidden md:flex md:w-1/2 relative bg-surface overflow-hidden">
+<div class="absolute inset-0 split-image-overlay z-10"></div>
+<img alt="High-fidelity 3D isometric illustration of a professional stock trading terminal" class="absolute inset-0 w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCdEi8ZDQsb5QW5FOPy3Y-kBvK5-oeBYfGihebyTG6lVWBWehdz9usMNwXTvIW4xKdwQuJj-jLFzL-dggOjfPAR7tq4Kcn-S5-VI4CX8kQUQVRYV43cx8zog9bXAi6ikbUrxT40Nc0-zEot-yvSx7BAannXlOrm0UlR3tQkWPUPTVXQCWSwdwViyYYz3mgAKAxxXgpbAPtmcrw-zVBTKuU-D5yz133w66G1NUBCXf3IAzV2xEGWHbDbig"/>
+<div class="relative z-20 p-2xl mt-auto max-w-lg">
+<h2 class="font-headline-xl text-headline-xl text-white mb-md">Masa Depan Investasi di Tangan Anda</h2>
+<p class="font-body-md text-body-md text-text-secondary">Akses instrumen pasar modal tercanggih dengan keamanan berlapis dan performa real-time.</p>
+</div>
+</div>
+<!-- Right Side: Login Form -->
+<div class="w-full md:w-1/2 flex flex-col justify-center items-center px-gutter py-3xl bg-background">
+<div class="w-full max-w-md">
+<!-- Brand Header -->
+<div class="flex flex-col items-center mb-xl">
+<div class="w-32 h-32 mb-lg">
+<img alt="Mandala Sekuritas Logo" class="w-full h-full object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxnVKXy-u_-LEifI1jgWftIeQV78FNj2iDv3fd5ONOgr5egh1Y99iS6u4CpwM-eIpOFpQ_uyy2yNbtrRCPXwHgbzbpkDbxm6-1jP984-b8ASqITqTFhR53zOMeAG7OgrqS_f-SRqQStgh1gkzp6DqEDp25VsLDZJOJ4Q4lcV4xBvm4vPfszOjb__XBSDA0ElY8eBTIU8wOoanBMc2cWg_UAzdjTV4K1N9AJOH9gQpsaes6amKPbtcEsHk8s09aFdVLfhk"/>
+</div>
+<h1 class="font-headline-md text-headline-md text-text-primary text-center">Selamat Datang Kembali</h1>
+<p class="font-body-md text-body-md text-text-secondary text-center mt-xs">Masuk ke akun Mandala Sekuritas Anda untuk mulai trading.</p>
+</div>
+<!-- Form Section -->
+<form class="space-y-gutter" onsubmit="event.preventDefault();">
+<!-- User ID -->
+<div class="space-y-sm">
+<label class="font-label-sm text-label-sm text-text-secondary" for="uid">User ID / Email</label>
+<div class="relative red-glow-hover transition-all duration-300">
+<input class="w-full bg-surface border border-border rounded-lg px-md py-md text-on-surface placeholder:text-surface-variant focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all outline-none" id="uid" placeholder="Masukkan ID atau Email" type="text"/>
+<span class="material-symbols-outlined absolute right-md top-1/2 -translate-y-1/2 text-text-secondary">person</span>
+</div>
+</div>
+<!-- Password -->
+<div class="space-y-sm">
+<div class="flex justify-between items-center">
+<label class="font-label-sm text-label-sm text-text-secondary" for="pwd">Password</label>
+<a class="font-label-sm text-label-sm text-primary hover:underline" href="#">Lupa Password?</a>
+</div>
+<div class="relative red-glow-hover transition-all duration-300">
+<input class="w-full bg-surface border border-border rounded-lg px-md py-md text-on-surface placeholder:text-surface-variant focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all outline-none" id="pwd" placeholder="••••••••" type="password"/>
+<button class="absolute right-md top-1/2 -translate-y-1/2 text-text-secondary hover:text-primary transition-colors" onclick="togglePassword()" type="button">
+<span class="material-symbols-outlined" id="pwd-icon">visibility</span>
+</button>
+</div>
+</div>
+<!-- Remember Me -->
+<div class="flex items-center gap-sm">
+<input class="w-4 h-4 rounded border-border bg-surface text-primary-container focus:ring-primary-container focus:ring-offset-background" id="remember" type="checkbox"/>
+<label class="font-label-sm text-label-sm text-text-secondary cursor-pointer select-none" for="remember">Ingat Saya</label>
+</div>
+<!-- Actions -->
+<div class="space-y-md pt-md">
+<button class="w-full bg-primary-container text-on-primary-container font-headline-md py-md rounded-xl hover:brightness-110 active:scale-[0.98] transition-all flex justify-center items-center gap-sm" type="submit">
+                            Masuk Sekarang
+                        </button>
+</div>
+</form>
+<!-- Footer Note -->
+<div class="mt-2xl text-center">
+<p class="font-body-md text-body-md text-text-secondary">
+                        Belum punya akun? <a class="text-primary font-bold hover:underline" href="#">Daftar Sekarang</a>
+</p>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer (Mandatory Styling Application) -->
+<footer class="w-full py-xl px-gutter flex flex-col md:flex-row justify-between items-center gap-md bg-background border-t border-border">
+<div class="font-headline-md text-headline-md text-primary">Mandala Sekuritas</div>
+<div class="flex flex-wrap justify-center gap-lg">
+<a class="font-label-sm text-label-sm text-text-secondary hover:text-on-background transition-colors opacity-80 hover:opacity-100" href="#">Privacy Policy</a>
+<a class="font-label-sm text-label-sm text-text-secondary hover:text-on-background transition-colors opacity-80 hover:opacity-100" href="#">Terms of Service</a>
+<a class="font-label-sm text-label-sm text-text-secondary hover:text-on-background transition-colors opacity-80 hover:opacity-100" href="#">Security</a>
+</div>
+<div class="font-label-sm text-label-sm text-text-secondary">© 2024 Mandala Sekuritas. All rights reserved.</div>
+</footer>
+<script>
+        function togglePassword() {
+            const pwdInput = document.getElementById('pwd');
+            const pwdIcon = document.getElementById('pwd-icon');
+            if (pwdInput.type === 'password') {
+                pwdInput.type = 'text';
+                pwdIcon.innerText = 'visibility_off';
+            } else {
+                pwdInput.type = 'password';
+                pwdIcon.innerText = 'visibility';
+            }
+        }
+    </script>
+</body></html>

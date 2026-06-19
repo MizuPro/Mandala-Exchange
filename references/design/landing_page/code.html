@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="id"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mandala Sekuritas | Era Baru Investasi Saham Modern</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-highest": "#45302d",
+                        "on-secondary-container": "#a0b8ee",
+                        "success": "#10B981",
+                        "background": "#0D1117",
+                        "inverse-primary": "#c00013",
+                        "surface-variant": "#45302d",
+                        "surface-tint": "#ffb4ab",
+                        "primary-container": "#e62225",
+                        "inverse-surface": "#fddbd7",
+                        "secondary-fixed": "#d8e2ff",
+                        "primary-fixed-dim": "#ffb4ab",
+                        "on-error": "#690005",
+                        "on-primary-fixed-variant": "#93000c",
+                        "text-primary": "#FFFFFF",
+                        "on-tertiary-container": "#ffffff",
+                        "on-background": "#fddbd7",
+                        "inverse-on-surface": "#402b29",
+                        "outline-variant": "#5d3f3c",
+                        "text-secondary": "#8B949E",
+                        "on-primary": "#690006",
+                        "surface-container": "#2d1b19",
+                        "on-secondary-fixed-variant": "#2d4674",
+                        "surface-container-high": "#392523",
+                        "border": "#21262D",
+                        "tertiary-container": "#007db9",
+                        "error-container": "#93000a",
+                        "on-surface-variant": "#e7bdb8",
+                        "primary-fixed": "#ffdad6",
+                        "surface-container-low": "#291715",
+                        "secondary-fixed-dim": "#aec7fd",
+                        "tertiary-fixed": "#cbe6ff",
+                        "secondary": "#aec7fd",
+                        "on-error-container": "#ffdad6",
+                        "surface-bright": "#493431",
+                        "error": "#EF4444",
+                        "on-secondary": "#132f5d",
+                        "surface": "#161B22",
+                        "tertiary-fixed-dim": "#8fcdff",
+                        "tertiary": "#8fcdff",
+                        "primary": "#ffb4ab",
+                        "outline": "#ae8883",
+                        "surface-container-lowest": "#1a0a08",
+                        "on-surface": "#fddbd7",
+                        "on-tertiary-fixed-variant": "#004b71",
+                        "on-primary-container": "#ffffff",
+                        "on-tertiary": "#003450",
+                        "on-secondary-fixed": "#001a41",
+                        "on-primary-fixed": "#410002",
+                        "secondary-container": "#2f4977",
+                        "on-tertiary-fixed": "#001e30",
+                        "surface-dim": "#1f0f0d"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "24px",
+                        "margin": "32px",
+                        "sm": "8px",
+                        "xs": "4px",
+                        "xl": "32px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "2xl": "48px",
+                        "3xl": "64px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter, sans-serif"],
+                        "label-sm": ["Inter, sans-serif"],
+                        "headline-xl": ["Inter, sans-serif"],
+                        "h1": ["Inter, sans-serif"],
+                        "headline-md": ["Inter, sans-serif"],
+                        "h2": ["Inter, sans-serif"]
+                    },
+                    "fontSize": {
+                        "body-md": ["1rem", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "label-sm": ["0.85rem", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "headline-xl": ["48px", {"lineHeight": "52.8px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "h1": ["3rem", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-md": ["24px", {"lineHeight": "31.2px", "fontWeight": "600"}],
+                        "h2": ["1.5rem", {"lineHeight": "1.3", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #0D1117;
+            color: #FFFFFF;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        .neon-glow-red {
+            box-shadow: 0 0 15px rgba(230, 34, 37, 0.4);
+        }
+
+        .isometric-layer {
+            transform: perspective(1000px) rotateX(15deg) rotateY(-20deg) rotateZ(5deg);
+            transition: all 0.5s ease-out;
+        }
+
+        .floating {
+            animation: floating 4s ease-in-out infinite;
+        }
+
+        @keyframes floating {
+            0%, 100% { transform: translateY(0) rotateX(15deg) rotateY(-20deg) rotateZ(5deg); }
+            50% { transform: translateY(-15px) rotateX(15deg) rotateY(-20deg) rotateZ(5deg); }
+        }
+
+        .glass-card {
+            background: rgba(22, 27, 34, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid #21262D;
+        }
+
+        .scrolling-text {
+            animation: scroll 20s linear infinite;
+        }
+
+        @keyframes scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-primary-container selection:text-white">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-border">
+<div class="flex justify-between items-center px-margin py-sm max-w-screen-2xl mx-auto">
+<div class="flex items-center gap-md">
+<img alt="Mandala Sekuritas" class="h-10 w-auto" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDWoCavJeYoLm_ZDn8o0ecvpHVX04LJV2F2EMzw7pMXZ6QPDv2h16ysdcimzU9PVzR7gTFvG-Q3X3jRoUcGr3wfGgSuXRITC8vBFOx2qG5hFHI_viJi1H1y6u4xoUNNvMxZrPLl8AqsXDiHwThhNKY6NgeYwLRslfzgnGH9U-sN_lThgtoLL-1myfR041uIkQDCFJPLYBvAi_8qN-ZIuMqFekdpdIQKiqYdO5Qe9NyQ427XjhnyOXXEco4k_Ymy9oMb6So"/>
+</div>
+<div class="hidden md:flex items-center gap-xl">
+<a class="text-primary font-bold border-b-2 border-primary-container pb-1 font-label-sm text-label-sm" href="#">Home</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-colors font-label-sm text-label-sm" href="#">Stock Trading</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-colors font-label-sm text-label-sm" href="#">Riset Pasar</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-colors font-label-sm text-label-sm" href="#">Edukasi</a>
+</div>
+<div class="flex items-center gap-md">
+<button class="hidden lg:flex px-md py-xs rounded-lg border border-border text-on-surface hover:bg-surface-container-high transition-all font-label-sm text-label-sm">
+                    Download App
+                </button>
+<button class="px-md py-xs rounded-lg bg-primary-container text-on-primary-container neon-glow-red hover:brightness-110 active:scale-95 transition-all font-label-sm text-label-sm">
+                    Mulai Investasi
+                </button>
+</div>
+</div>
+</nav>
+<!-- Hero Section -->
+<main class="relative min-h-screen pt-32 pb-20 px-margin flex items-center overflow-hidden">
+<!-- Ambient Background Glows -->
+<div class="absolute -top-40 -left-40 w-96 h-96 bg-primary-container/10 blur-[120px] rounded-full"></div>
+<div class="absolute -bottom-40 -right-40 w-96 h-96 bg-tertiary-container/10 blur-[120px] rounded-full"></div>
+<div class="max-w-screen-2xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
+<!-- Left Content -->
+<div class="lg:col-span-6 space-y-xl text-left">
+<div class="inline-flex items-center gap-sm px-md py-xs bg-surface-container-high border border-border rounded-full animate-bounce">
+<span class="flex h-2 w-2 rounded-full bg-success"></span>
+<span class="text-label-sm font-label-sm text-success">IHSG Terkini: 7,245.8 (+0.45%)</span>
+</div>
+<h1 class="text-h1 font-h1 tracking-tighter">
+                    Era baru <span class="text-primary-container relative">investasi<span class="absolute -bottom-1 left-0 w-full h-1 bg-primary-container/30 blur-sm"></span></span> saham modern.
+                </h1>
+<p class="text-body-md font-body-md text-text-secondary max-w-lg">
+                    Platform trading intuitif yang ramah untuk pemula, namun tetap tangguh dibekali instrumen analisis kompleks bagi para profesional. Mulai perjalanan finansial Anda hari ini.
+                </p>
+<div class="flex flex-col sm:flex-row gap-md">
+<button class="px-xl py-md rounded-xl bg-primary-container text-white font-headline-md text-headline-md flex items-center justify-center gap-sm hover:brightness-110 transition-all neon-glow-red group">
+                        Buka Akun Gratis
+                        <span class="material-symbols-outlined group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</button>
+<button class="px-xl py-md rounded-xl border border-border text-on-surface font-headline-md text-headline-md flex items-center justify-center gap-sm hover:bg-surface-container-high transition-all">
+                        Pelajari Fitur
+                    </button>
+</div>
+<div class="flex items-center gap-xl pt-xl">
+<div class="space-y-xs">
+<p class="text-headline-md font-headline-md text-text-primary">1.2M+</p>
+<p class="text-label-sm font-label-sm text-text-secondary">Investor Aktif</p>
+</div>
+<div class="h-10 w-px bg-border"></div>
+<div class="space-y-xs">
+<p class="text-headline-md font-headline-md text-text-primary">Rp 45T+</p>
+<p class="text-label-sm font-label-sm text-text-secondary">Total Aset</p>
+</div>
+<div class="h-10 w-px bg-border"></div>
+<div class="space-y-xs">
+<p class="text-headline-md font-headline-md text-text-primary">4.9/5</p>
+<p class="text-label-sm font-label-sm text-text-secondary">App Store</p>
+</div>
+</div>
+</div>
+<!-- Right Content: 3D Isometric Dashboard -->
+<div class="lg:col-span-6 relative h-[600px] hidden lg:block">
+<!-- Background Decorative Cubes -->
+<div class="absolute top-10 right-20 w-12 h-12 bg-surface border border-border transform rotate-12 opacity-50 z-0"></div>
+<div class="absolute bottom-20 left-10 w-8 h-8 bg-surface-container-high border border-border transform -rotate-12 opacity-30 z-0"></div>
+<div class="absolute top-1/2 right-0 w-10 h-10 bg-primary-container/20 border border-primary-container/30 transform rotate-45 z-0"></div>
+<div class="relative w-full h-full floating">
+<!-- Main Chart Card -->
+<div class="absolute top-0 left-10 w-[420px] glass-card rounded-2xl p-lg shadow-2xl z-30 isometric-layer hover:translate-z-10 cursor-default">
+<div class="flex justify-between items-center mb-md">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-[12px] font-bold">M</div>
+<div>
+<h3 class="text-body-md font-bold text-white">MNDL / IDR</h3>
+<p class="text-[10px] text-text-secondary">Mandala Capital Corp.</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-body-md font-bold text-success">+12.42%</p>
+<p class="text-[10px] text-text-secondary">Vol: 1.4M</p>
+</div>
+</div>
+<div class="w-full h-40 bg-surface-container-low/50 rounded-lg relative overflow-hidden mb-md border border-border/50">
+<!-- Simulated Chart Grid -->
+<div class="absolute inset-0 grid grid-cols-8 gap-px opacity-20">
+<div class="border-r border-border"></div><div class="border-r border-border"></div><div class="border-r border-border"></div><div class="border-r border-border"></div><div class="border-r border-border"></div><div class="border-r border-border"></div><div class="border-r border-border"></div><div class="border-r border-border"></div>
+</div>
+<!-- Candlesticks Simulation -->
+<div class="absolute bottom-4 left-4 flex items-end gap-2 h-3/4">
+<div class="w-1 bg-success h-1/4 rounded-sm"></div>
+<div class="w-1 bg-success h-2/4 rounded-sm"></div>
+<div class="w-1 bg-error h-1/3 rounded-sm"></div>
+<div class="w-1 bg-success h-3/4 rounded-sm"></div>
+<div class="w-1 bg-success h-full rounded-sm"></div>
+<div class="w-1 bg-success h-[90%] rounded-sm"></div>
+<div class="w-1 bg-error h-1/2 rounded-sm"></div>
+<div class="w-1 bg-success h-2/3 rounded-sm"></div>
+</div>
+</div>
+<div class="flex gap-sm">
+<span class="px-sm py-xs bg-surface-container rounded-md text-[10px] text-primary-container border border-primary-container/20">RSI 65.4</span>
+<span class="px-sm py-xs bg-surface-container rounded-md text-[10px] text-secondary border border-secondary/20">EMA 20</span>
+<span class="px-sm py-xs bg-surface-container rounded-md text-[10px] text-success border border-success/20">Breakout</span>
+</div>
+</div>
+<!-- Portfolio Ring Card -->
+<div class="absolute top-48 -right-4 w-[280px] glass-card rounded-2xl p-md shadow-2xl z-40 isometric-layer" style="transform: perspective(1000px) rotateX(15deg) rotateY(-20deg) rotateZ(5deg) translateY(20px);">
+<h4 class="text-label-sm font-bold mb-md">Portfolio Snapshot</h4>
+<div class="flex items-center gap-md">
+<div class="relative w-20 h-20">
+<svg class="w-full h-full -rotate-90" viewbox="0 0 36 36">
+<circle class="stroke-surface-container-high" cx="18" cy="18" fill="none" r="16" stroke-width="4"></circle>
+<circle class="stroke-primary-container" cx="18" cy="18" fill="none" r="16" stroke-dasharray="70, 100" stroke-width="4"></circle>
+</svg>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="text-xs font-bold">70%</span>
+</div>
+</div>
+<div class="space-y-xs">
+<div class="flex items-center gap-xs">
+<div class="w-2 h-2 rounded-full bg-primary-container"></div>
+<span class="text-[10px] text-text-secondary">Equities</span>
+</div>
+<div class="flex items-center gap-xs">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="text-[10px] text-text-secondary">Cash</span>
+</div>
+<div class="mt-sm px-sm py-1 bg-success/10 rounded text-success text-[10px] font-bold inline-block">
+                                    Profit: +Rp 8.4M
+                                </div>
+</div>
+</div>
+</div>
+<!-- Order Book Card -->
+<div class="absolute -bottom-10 left-32 w-[340px] glass-card rounded-2xl p-md shadow-2xl z-50 isometric-layer" style="transform: perspective(1000px) rotateX(15deg) rotateY(-20deg) rotateZ(5deg) translateY(40px);">
+<div class="flex justify-between items-center mb-sm">
+<h4 class="text-label-sm font-bold">Order Book</h4>
+<span class="material-symbols-outlined text-sm text-text-secondary">settings</span>
+</div>
+<div class="grid grid-cols-2 gap-md text-[10px] mb-md">
+<div class="space-y-1">
+<div class="flex justify-between text-success"><span>1,245</span><span>500K</span></div>
+<div class="flex justify-between text-success"><span>1,240</span><span>1.2M</span></div>
+<div class="flex justify-between text-success"><span>1,235</span><span>800K</span></div>
+</div>
+<div class="space-y-1 text-right">
+<div class="flex justify-between text-error"><span>1,250</span><span>200K</span></div>
+<div class="flex justify-between text-error"><span>1,255</span><span>150K</span></div>
+<div class="flex justify-between text-error"><span>1,260</span><span>900K</span></div>
+</div>
+</div>
+<div class="flex gap-md">
+<button class="flex-1 py-md bg-success/20 text-success border border-success/30 rounded-lg font-bold text-label-sm hover:bg-success hover:text-white transition-all shadow-[0_0_10px_rgba(16,185,129,0.2)]">Beli</button>
+<button class="flex-1 py-md bg-primary-container/20 text-primary-container border border-primary-container/30 rounded-lg font-bold text-label-sm hover:bg-primary-container hover:text-white transition-all shadow-[0_0_10px_rgba(230,34,37,0.2)]">Jual</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Partners / Trust Bar -->
+<section class="border-y border-border py-xl bg-surface-container-lowest overflow-hidden">
+<div class="flex whitespace-nowrap scrolling-text gap-3xl">
+<div class="flex items-center gap-xl text-on-surface-variant font-bold text-headline-md grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all cursor-default">
+<span class="material-symbols-outlined text-3xl">account_balance</span> BURSA EFEK INDONESIA
+            </div>
+<div class="flex items-center gap-xl text-on-surface-variant font-bold text-headline-md grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all cursor-default">
+<span class="material-symbols-outlined text-3xl">verified_user</span> OJK REGULATED
+            </div>
+<div class="flex items-center gap-xl text-on-surface-variant font-bold text-headline-md grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all cursor-default">
+<span class="material-symbols-outlined text-3xl">security</span> KSEI TERDAFTAR
+            </div>
+<div class="flex items-center gap-xl text-on-surface-variant font-bold text-headline-md grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all cursor-default">
+<span class="material-symbols-outlined text-3xl">monitoring</span> SIPF PROTECTED
+            </div>
+<!-- Repeat for seamless scroll -->
+<div class="flex items-center gap-xl text-on-surface-variant font-bold text-headline-md grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all cursor-default">
+<span class="material-symbols-outlined text-3xl">account_balance</span> BURSA EFEK INDONESIA
+            </div>
+<div class="flex items-center gap-xl text-on-surface-variant font-bold text-headline-md grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all cursor-default">
+<span class="material-symbols-outlined text-3xl">verified_user</span> OJK REGULATED
+            </div>
+</div>
+</section>
+<!-- Footer -->
+<footer class="w-full py-xl bg-surface-container-lowest border-t border-border">
+<div class="flex flex-col md:flex-row justify-between items-center px-margin max-w-screen-2xl mx-auto gap-xl">
+<div class="flex flex-col items-center md:items-start gap-sm">
+<div class="text-headline-md font-headline-md font-bold text-primary-container">Mandala Sekuritas</div>
+<p class="text-body-md font-body-md text-on-surface-variant text-center md:text-left">© 2024 Mandala Sekuritas. Licensed and regulated by OJK.</p>
+</div>
+<div class="flex flex-wrap justify-center gap-xl">
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-sm text-label-sm" href="#">Privacy Policy</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-sm text-label-sm" href="#">Terms of Service</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-sm text-label-sm" href="#">Risk Disclosure</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-sm text-label-sm" href="#">Contact Us</a>
+</div>
+<div class="flex items-center gap-md">
+<a class="w-8 h-8 flex items-center justify-center rounded-full border border-border text-on-surface-variant hover:text-primary hover:border-primary transition-all" href="#">
+<span class="material-symbols-outlined text-sm">public</span>
+</a>
+<a class="w-8 h-8 flex items-center justify-center rounded-full border border-border text-on-surface-variant hover:text-primary hover:border-primary transition-all" href="#">
+<span class="material-symbols-outlined text-sm">mail</span>
+</a>
+<a class="w-8 h-8 flex items-center justify-center rounded-full border border-border text-on-surface-variant hover:text-primary hover:border-primary transition-all" href="#">
+<span class="material-symbols-outlined text-sm">chat</span>
+</a>
+</div>
+</div>
+</footer>
+<script>
+        // Smooth hover micro-interactions for 3D elements
+        document.querySelectorAll('.isometric-layer').forEach(card => {
+            card.addEventListener('mousemove', (e) => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                const rotateX = (y - centerY) / 20;
+                const rotateY = (centerX - x) / 20;
+                
+                card.style.transform = `perspective(1000px) rotateX(${15 + rotateX}deg) rotateY(${-20 + rotateY}deg) rotateZ(5deg) scale3d(1.02, 1.02, 1.02)`;
+            });
+            
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = `perspective(1000px) rotateX(15deg) rotateY(-20deg) rotateZ(5deg) scale3d(1, 1, 1)`;
+            });
+        });
+    </script>
+</body></html>
