@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { users, broker_accounts, sid_references, sre_references, rdn_references, cash_balances, email_verifications } from "../db/schema.js";
 import crypto from "crypto";
+import { env } from "../config/env.js";
 
 export async function createBrokerAccount(userId: string, accountType: "HUMAN" | "BOT" = "HUMAN") {
   return await db.transaction(async (tx) => {
@@ -27,10 +28,12 @@ export async function createBrokerAccount(userId: string, accountType: "HUMAN" |
       sre: `SRE${sreSuffix}`
     });
 
-    await tx.insert(rdn_references).values({
-      broker_account_id: account.id,
-      rdn: `RDN${rdnSuffix}`
-    });
+    if (env.isSimulatorFinance) {
+      await tx.insert(rdn_references).values({
+        broker_account_id: account.id,
+        rdn: `RDN${rdnSuffix}`
+      });
+    }
 
     // Initialize cash balance
     await tx.insert(cash_balances).values({

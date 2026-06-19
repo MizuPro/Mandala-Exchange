@@ -21,16 +21,14 @@ export default function SettingsPage() {
   const accountProfile = useStore(state => state.accountProfile);
   const feeSchedule = useStore(state => state.feeSchedule);
   const fetchAccountProfile = useStore(state => state.fetchAccountProfile);
-  const fetchPortfolio = useStore(state => state.fetchPortfolio);
+  const depositFunds = useStore(state => state.depositFunds);
 
   // --- Local States ---
   const [activeTab, setActiveTab] = useState<'profile' | 'fees' | 'security' | 'preferences'>('profile');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // RDN Sandbox State
-  const [rdnOffset, setRdnOffset] = useState<string>(() => {
-    return localStorage.getItem('local_rdn_offset') || '0';
-  });
+  const [rdnDepositAmount, setRdnDepositAmount] = useState<string>('0');
 
   // Security - Password
   const [oldPassword, setOldPassword] = useState('');
@@ -65,16 +63,20 @@ export default function SettingsPage() {
   }, [fetchAccountProfile]);
 
   // --- Actions ---
-  const handleSaveRdnSandbox = (e: React.FormEvent) => {
+  const handleSaveRdnSandbox = async (e: React.FormEvent) => {
     e.preventDefault();
-    const val = parseFloat(rdnOffset);
-    if (isNaN(val)) {
+    const val = parseFloat(rdnDepositAmount);
+    if (isNaN(val) || val <= 0) {
       showToast('Masukkan jumlah nominal angka yang valid!', 'error');
       return;
     }
-    localStorage.setItem('local_rdn_offset', String(val));
-    fetchPortfolio(); // Refresh portfolio summary di store
-    showToast(`Saldo RDN Sandbox berhasil disesuaikan ke Rp ${val.toLocaleString('id-ID')} (Simulasi)`, 'success');
+    try {
+      await depositFunds(val);
+      setRdnDepositAmount('0');
+      showToast(`Saldo RDN Sandbox berhasil ditambah Rp ${val.toLocaleString('id-ID')} (Simulasi)`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Sandbox RDN belum tersedia', 'error');
+    }
   };
 
   const handleUpdatePassword = (e: React.FormEvent) => {
@@ -485,20 +487,20 @@ export default function SettingsPage() {
                 <div className="mb-4">
                   <h3 className="text-base font-bold text-white mb-1" style={{ margin: 0 }}>RDN Sandbox Simulator</h3>
                   <p className="text-xs text-[#8B949E]">
-                    Simulasi suntikan modal dana. Sesuaikan nominal tambahan saldo virtual RDN di bursa agar Anda dapat melakukan pengujian transaksi pembelian portofolio tanpa batas.
+                    Simulasi suntikan modal dana development. Dana masuk ke backend dan ledger, bukan lagi disimpan di browser.
                   </p>
                 </div>
 
                 <form onSubmit={handleSaveRdnSandbox} className="space-y-3 max-w-sm">
                   <div>
                     <label className="text-[10px] uppercase font-bold tracking-wider text-[#8B949E] block mb-1">
-                      Nominal Dana Simulasi Tambahan (IDR)
+                      Nominal Deposit Simulasi (IDR)
                     </label>
                     <div className="flex gap-2">
                       <input 
                         type="number" 
-                        value={rdnOffset}
-                        onChange={(e) => setRdnOffset(e.target.value)}
+                        value={rdnDepositAmount}
+                        onChange={(e) => setRdnDepositAmount(e.target.value)}
                         className="bg-[#0D1117] border border-[#21262D] rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-[#E62225] font-mono font-bold"
                       />
                       <button 
@@ -509,7 +511,7 @@ export default function SettingsPage() {
                       </button>
                     </div>
                     <span className="text-[9px] text-[#8B949E] mt-1.5 block leading-relaxed font-mono">
-                      Nilai saat ini: Rp {parseFloat(rdnOffset || '0').toLocaleString('id-ID')}
+                      Production akan menolak simulator sampai integrasi RDN Bank Mandala aktif.
                     </span>
                   </div>
                 </form>

@@ -95,12 +95,6 @@ export default function Portfolio() {
     setTimeout(() => setCopySuccess(null), 2000);
   };
 
-  // --- Local Balance Offset (deposit/withdraw simulasi dari Dashboard) ---
-  const localBalanceOffset = useMemo(() => {
-    const saved = localStorage.getItem('local_rdn_offset');
-    return saved ? parseFloat(saved) : 0;
-  }, [portfolioLoading]);
-
   // Menggunakan data store rill dari backend, atau kosong jika tidak ada / gagal
   const portfolioData = useMemo(() => {
     if (storePortfolio && storePortfolio.positions) {
@@ -121,7 +115,7 @@ export default function Portfolio() {
     }).format(Number(val));
   };
 
-  const cashAvailable = parseFloat(portfolioData.cash.available) + localBalanceOffset;
+  const cashAvailable = parseFloat(portfolioData.cash.available);
   const cashReserved = parseFloat(portfolioData.cash.reserved);
   const cashPending = parseFloat(portfolioData.cash.pending);
   const totalCash = cashAvailable + cashReserved + cashPending;

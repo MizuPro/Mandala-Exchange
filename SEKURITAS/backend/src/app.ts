@@ -11,27 +11,17 @@ import marketRoutes from "./routes/market.js";
 import matsWebhookRoutes from "./routes/mats-webhooks.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
 import notificationRoutes from "./routes/notifications.js";
+import fundsRoutes from "./routes/funds.js";
 import { reconcileSubmitUnknownOrders } from "./services/order-service.js";
 import { closeMarketWsProxy } from "./services/market-ws-proxy.js";
-
-const defaultFrontendOrigins = [
-  "http://localhost:5173",
-  "http://localhost:4173",
-  "https://mandala-sekuritas.michaelk.fun",
-];
-
-function frontendOrigins() {
-  const raw = process.env.FRONTEND_ORIGINS;
-  if (!raw) return defaultFrontendOrigins;
-  return raw.split(",").map((origin) => origin.trim()).filter(Boolean);
-}
+import { env } from "./config/env.js";
 
 export async function createApp() {
   const app = Fastify({
     logger: true,
   });
 
-  const allowedOrigins = new Set(frontendOrigins());
+  const allowedOrigins = new Set(env.frontendOrigins);
   await app.register(cors, {
     origin: (origin, callback) => {
       if (!origin) {
@@ -59,6 +49,7 @@ export async function createApp() {
   await app.register(marketRoutes, { prefix: "/api/v1/market" });
   await app.register(leaderboardRoutes, { prefix: "/api/v1/leaderboard" });
   await app.register(notificationRoutes, { prefix: "/api/v1/notifications" });
+  await app.register(fundsRoutes, { prefix: "/api/v1/funds" });
 
   let reconcileInProgress = false;
   const reconcileInterval = setInterval(async () => {
