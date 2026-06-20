@@ -64,6 +64,52 @@ function numericString(value: number | undefined) {
   return value === undefined ? undefined : value.toString();
 }
 
+async function validateSecurityTickValues(values: {
+  board: string;
+  marketMechanism?: string;
+  referencePrice?: number | string | null;
+  previousClose?: number | string | null;
+  ipoPrice?: number | string | null;
+}) {
+  const marketSegment = values.marketMechanism || "regular";
+  const rules = await pool.query(
+    `
+    SELECT t.min_price, t.max_price, t.tick_size
+    FROM trading_rule_profiles p
+    JOIN tick_size_rules t ON t.profile_id = p.id
+    WHERE p.board = $1 AND (p.market_segment = $2 OR p.market_segment = 'regular')
+    ORDER BY t.min_price::numeric
+    `,
+    [values.board, marketSegment]
+  );
+
+  if (rules.rows.length === 0) {
+    throw badRequest("Tick size rule not found for security board", { board: values.board, marketSegment });
+  }
+
+  const ensureValid = (field: string, rawValue: number | string | null | undefined) => {
+    if (rawValue === undefined || rawValue === null) return;
+    const price = Number(rawValue);
+    if (!Number.isFinite(price) || price <= 0) return;
+    const rule = rules.rows.find((row) => {
+      const min = Number(row.min_price);
+      const max = row.max_price === null ? Number.POSITIVE_INFINITY : Number(row.max_price);
+      return price >= min && price <= max;
+    });
+    if (!rule) {
+      throw badRequest(`${field} has no matching tick size rule`, { field, price });
+    }
+    const tick = Number(rule.tick_size);
+    if (tick <= 0 || price % tick !== 0) {
+      throw badRequest(`${field} is not valid for tick size`, { field, price, tickSize: tick });
+    }
+  };
+
+  ensureValid("referencePrice", values.referencePrice);
+  ensureValid("previousClose", values.previousClose);
+  ensureValid("ipoPrice", values.ipoPrice);
+}
+
 export async function registerIssuerRoutes(app: FastifyInstance) {
   app.get("/issuers", async () => {
     return db.select().from(issuers).orderBy(issuers.code);
@@ -116,6 +162,7 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
 
   app.post("/securities", async (request) => {
     const body = securityBody.parse(request.body);
+    await validateSecurityTickValues(body);
     const [created] = await db
       .insert(listedSecurities)
       .values({
@@ -143,6 +190,13 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
     const body = securityPatchBody.parse(request.body);
     const [before] = await db.select().from(listedSecurities).where(eq(listedSecurities.symbol, params.symbol));
     if (!before) throw notFound("Security not found");
+    await validateSecurityTickValues({
+      board: body.board ?? before.board,
+      marketMechanism: body.marketMechanism ?? before.marketMechanism,
+      referencePrice: body.referencePrice ?? before.referencePrice,
+      previousClose: body.previousClose ?? before.previousClose,
+      ipoPrice: body.ipoPrice ?? before.ipoPrice
+    });
     const [updated] = await db
       .update(listedSecurities)
       .set({
@@ -171,6 +225,20 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
   app.get("/public/securities", async () => {
     const result = await pool.query(`
       SELECT s.*, i.code AS issuer_code, i.name AS issuer_name,
+        (
+          SELECT t.price
+          FROM trades t
+          WHERE t.security_id = s.id
+          ORDER BY t.occurred_at DESC, t.sequence_number DESC
+          LIMIT 1
+        ) AS last,
+        (
+          SELECT t.occurred_at
+          FROM trades t
+          WHERE t.security_id = s.id
+          ORDER BY t.occurred_at DESC, t.sequence_number DESC
+          LIMIT 1
+        ) AS last_occurred_at,
         COALESCE(json_agg(n.*) FILTER (WHERE n.id IS NOT NULL AND n.is_active = true), '[]') AS active_notations
       FROM listed_securities s
       JOIN issuers i ON i.id = s.issuer_id
@@ -198,6 +266,20 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
     const result = await pool.query(
       `
       SELECT s.*, i.code AS issuer_code, i.name AS issuer_name, i.summary, i.business_description,
+        (
+          SELECT t.price
+          FROM trades t
+          WHERE t.security_id = s.id
+          ORDER BY t.occurred_at DESC, t.sequence_number DESC
+          LIMIT 1
+        ) AS last,
+        (
+          SELECT t.occurred_at
+          FROM trades t
+          WHERE t.security_id = s.id
+          ORDER BY t.occurred_at DESC, t.sequence_number DESC
+          LIMIT 1
+        ) AS last_occurred_at,
         COALESCE(json_agg(n.*) FILTER (WHERE n.id IS NOT NULL AND n.is_active = true), '[]') AS active_notations
       FROM listed_securities s
       JOIN issuers i ON i.id = s.issuer_id
