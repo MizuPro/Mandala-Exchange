@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, pool } from "../db/index.js";
 import { brokerMembers, listedSecurities, sessionTemplates, trades } from "../db/schema.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
+import { applyTradeDelta } from "../services/mdxDelta.js";
 
 const tradeCaptureBody = z.object({
   matsTradeId: z.string().min(1),
@@ -85,6 +86,10 @@ export async function registerTradeRoutes(app: FastifyInstance) {
       if (existingConcurrently) return { idempotent: true, trade: existingConcurrently };
       throw badRequest("Trade was not captured");
     }
+
+    // Fire and forget delta update for MDX real-time index
+    applyTradeDelta(body.symbol, body.price).catch(err => console.error("[MDX-Delta] Failed to apply delta:", err));
+
     return { idempotent: false, trade: created };
   });
 

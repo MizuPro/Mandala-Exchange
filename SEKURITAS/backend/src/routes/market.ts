@@ -1,8 +1,33 @@
 import { FastifyInstance } from "fastify";
 import { beiClient } from "../services/bei-client.js";
 import { handleMarketWsClient } from "../services/market-ws-proxy.js";
+import { Redis } from "ioredis";
+
+const redisSubscriber = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+redisSubscriber.subscribe("market_updates").catch(console.error);
 
 export default async function marketRoutes(app: FastifyInstance) {
+  app.get("/stream/indices", (request, reply) => {
+    reply.raw.setHeader('Content-Type', 'text/event-stream');
+    reply.raw.setHeader('Cache-Control', 'no-cache');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    
+    const listener = (channel: string, message: string) => {
+      if (channel === 'market_updates') {
+        const parsed = JSON.parse(message);
+        if (parsed.type === 'INDEX_UPDATE') {
+          reply.raw.write(`data: ${message}\n\n`);
+        }
+      }
+    };
+    
+    redisSubscriber.on('message', listener);
+    
+    request.raw.on('close', () => {
+      redisSubscriber.off('message', listener);
+    });
+  });
+
   app.get("/ws", { websocket: true }, (socket, request) => {
     handleMarketWsClient(socket, request.log);
   });

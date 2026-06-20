@@ -94,9 +94,44 @@ export default function DashboardHome() {
     }
   };
 
-  useEffect(() => {
+    useEffect(() => {
     fetchMdxData(chartTimeframe);
   }, [chartTimeframe]);
+
+  // Real-time MDX Index Stream via SSE
+  useEffect(() => {
+    import('../config/endpoints').then(({ resolveApiBase }) => {
+      const apiBase = resolveApiBase();
+      const eventSource = new EventSource(`${apiBase}/market/stream/indices`);
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'INDEX_UPDATE' && data.payload) {
+            const payload = typeof data.payload === 'string' ? JSON.parse(data.payload) : data.payload;
+            if (payload.code === 'MDX') {
+              setMdxCurrent(prev => {
+                if (!prev) return prev;
+                return { ...prev, value: parseFloat(payload.last_value) };
+              });
+              // Append to history for real-time chart feeling
+              setMdxHistory(prev => {
+                const newPoint = { time: payload.timestamp, value: parseFloat(payload.last_value) };
+                // Keep the array manageable by removing oldest if too large, or just push
+                return [...prev, newPoint];
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("Failed parsing SSE index update:", err);
+        }
+      };
+
+      return () => {
+        eventSource.close();
+      };
+    });
+  }, []);
 
   // --- Watchlist Handler ---
   const toggleWatchlist = (symbol: string) => {

@@ -18,6 +18,7 @@ import { actorFromRequest, correlationIdFromRequest, writeAudit } from "../lib/a
 import { badRequest } from "../lib/errors.js";
 import { boardTypes, sessionStatuses, settlementModes, tradingHaltStatuses } from "../types/enums.js";
 import { publishMarketUpdate } from "../lib/redis.js";
+import { initializeMdxSession } from "../services/mdxDelta.js";
 import { config } from "../config.js";
 
 const profileBody = z.object({
@@ -222,6 +223,10 @@ export async function registerRuleRoutes(app: FastifyInstance) {
 
     if (!updated) throw badRequest("Active session not found");
 
+    if (body.status === "pre_open") {
+      initializeMdxSession().catch(err => console.error("[MDX-Delta] Failed to initialize session:", err));
+    }
+
       // Auto-Settlement Trigger
     if (body.status === "closed") {
       // Trade capture finality barrier: if MATS provides an expected trade count,
@@ -287,31 +292,22 @@ export async function registerRuleRoutes(app: FastifyInstance) {
 
         console.log(`[Market-Data] Generated summaries for ${summaryRes.rowCount} securities.`);
 
-        // 2. Update listed_securities (previous_close and reference_price)
         if (summaryRes.rows.length > 0) {
-          for (const row of summaryRes.rows) {
-            await pool.query(`
-              UPDATE listed_securities 
-              SET previous_close = $1, reference_price = $1, updated_at = now()
-              WHERE id = $2
-            `, [row.close, row.security_id]);
-          }
-          console.log(`[Market-Data] Updated previous_close for ${summaryRes.rowCount} securities.`);
-
-          // 3. Update market_indices (MDX) using Market Cap weighted VWAP
+          // 2. Update market_indices (MDX) using Market Cap weighted Close Price
+          // MUST BE DONE BEFORE updating listed_securities previous_close!
           const idxRes = await pool.query(`
-            WITH session_vwap AS (
-              SELECT security_id, SUM(price::numeric * quantity::numeric) / NULLIF(SUM(quantity::numeric), 0) as vwap
+            WITH session_close AS (
+              SELECT security_id, (array_agg(price ORDER BY sequence_number DESC))[1] as close_price
               FROM trades
               WHERE session_id = $1
               GROUP BY security_id
             ),
             index_calc AS (
               SELECT 
-                SUM(s.vwap * ls.shares_outstanding) as current_mcap,
+                SUM(COALESCE(sc.close_price, ls.previous_close, ls.reference_price) * ls.shares_outstanding) as current_mcap,
                 SUM(COALESCE(ls.previous_close, ls.reference_price) * ls.shares_outstanding) as prev_mcap
-              FROM session_vwap s
-              JOIN listed_securities ls ON s.security_id = ls.id
+              FROM listed_securities ls
+              LEFT JOIN session_close sc ON sc.security_id = ls.id
             )
             UPDATE market_indices 
             SET 
@@ -329,6 +325,16 @@ export async function registerRuleRoutes(app: FastifyInstance) {
           if (idxRes.rowCount && idxRes.rowCount > 0) {
             console.log(`[Market-Data] Updated index MDX to ${parseFloat(idxRes.rows[0].last_value).toFixed(2)}`);
           }
+
+          // 3. Update listed_securities (previous_close and reference_price)
+          for (const row of summaryRes.rows) {
+            await pool.query(`
+              UPDATE listed_securities 
+              SET previous_close = $1, reference_price = $1, updated_at = now()
+              WHERE id = $2
+            `, [row.close, row.security_id]);
+          }
+          console.log(`[Market-Data] Updated previous_close for ${summaryRes.rowCount} securities.`);
         }
       } catch (err) {
         console.error(`[Market-Data] Error aggregating session data:`, err);

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/index.js";
+import redisClient from "../lib/redis.js";
 
 export async function registerIndexRoutes(app: FastifyInstance) {
   // GET /v1/indices — daftar semua indeks (last value saat ini)
@@ -9,7 +10,26 @@ export async function registerIndexRoutes(app: FastifyInstance) {
       FROM market_indices
       ORDER BY code
     `);
-    return result.rows;
+    const rows = result.rows;
+    if (redisClient.status === "ready") {
+      for (const row of rows) {
+        if (row.code === 'MDX') {
+          const currentMcapStr = await redisClient.get("mdx:current_mcap");
+          const prevMcapStr = await redisClient.get("mdx:prev_mcap");
+          const lastValueStartStr = await redisClient.get("mdx:last_value_start");
+          if (currentMcapStr && prevMcapStr && lastValueStartStr) {
+            const currentMcap = parseFloat(currentMcapStr);
+            const prevMcap = parseFloat(prevMcapStr);
+            const lastValueStart = parseFloat(lastValueStartStr);
+            if (prevMcap > 0) {
+              const indexRatio = currentMcap / prevMcap;
+              row.last_value = (lastValueStart * indexRatio).toFixed(2);
+            }
+          }
+        }
+      }
+    }
+    return rows;
   });
 
   // GET /v1/indices/:code — detail satu indeks
@@ -23,7 +43,23 @@ export async function registerIndexRoutes(app: FastifyInstance) {
       return request.server.httpErrors?.notFound?.(`Index ${code} not found`) 
         ?? { error: `Index ${code} not found` };
     }
-    return result.rows[0];
+    
+    const row = result.rows[0];
+    if (row.code === 'MDX' && redisClient.status === "ready") {
+      const currentMcapStr = await redisClient.get("mdx:current_mcap");
+      const prevMcapStr = await redisClient.get("mdx:prev_mcap");
+      const lastValueStartStr = await redisClient.get("mdx:last_value_start");
+      if (currentMcapStr && prevMcapStr && lastValueStartStr) {
+        const currentMcap = parseFloat(currentMcapStr);
+        const prevMcap = parseFloat(prevMcapStr);
+        const lastValueStart = parseFloat(lastValueStartStr);
+        if (prevMcap > 0) {
+          const indexRatio = currentMcap / prevMcap;
+          row.last_value = (lastValueStart * indexRatio).toFixed(2);
+        }
+      }
+    }
+    return row;
   });
 
   /**
