@@ -30,12 +30,28 @@ async function main() {
       `
       INSERT INTO listed_securities (issuer_id, symbol, name, board, sector, shares_outstanding, ipo_price, reference_price, previous_close, status, market_mechanism, listed_at)
       VALUES
-        ($1, 'MNDL', 'Mandala Digital Infrastruktur Tbk', 'new_economy', 'Technology', 10000000000, 250, 320, 315, 'listed', 'regular', CURRENT_DATE),
+        ($1, 'MNDL', 'Mandala Digital Infrastruktur Tbk', 'new_economy', 'Technology', 10000000000, 250, 320, 316, 'listed', 'regular', CURRENT_DATE),
         ($2, 'NUSA', 'Nusantara Consumer Goods Tbk', 'main', 'Consumer', 8000000000, 500, 740, 735, 'listed', 'regular', CURRENT_DATE),
         ($3, 'BARA', 'Bara Energi Mandiri Tbk', 'development', 'Energy', 12000000000, 150, 188, 190, 'listed', 'regular', CURRENT_DATE)
-      ON CONFLICT (symbol) DO UPDATE SET reference_price = excluded.reference_price, previous_close = excluded.previous_close, updated_at = now()
+      ON CONFLICT (symbol) DO UPDATE SET
+        name = excluded.name,
+        board = excluded.board,
+        sector = excluded.sector,
+        shares_outstanding = excluded.shares_outstanding,
+        ipo_price = COALESCE(listed_securities.ipo_price, excluded.ipo_price),
+        reference_price = CASE
+          WHEN $4::boolean OR listed_securities.reference_price <= 0 THEN excluded.reference_price
+          ELSE listed_securities.reference_price
+        END,
+        previous_close = CASE
+          WHEN $4::boolean OR listed_securities.previous_close IS NULL OR listed_securities.previous_close <= 0 THEN excluded.previous_close
+          ELSE listed_securities.previous_close
+        END,
+        status = excluded.status,
+        market_mechanism = excluded.market_mechanism,
+        updated_at = now()
       `,
-      [issuerByCode.MNDL, issuerByCode.NUSA, issuerByCode.BARA]
+      [issuerByCode.MNDL, issuerByCode.NUSA, issuerByCode.BARA, process.env.SEED_RESET_MARKET === "true"]
     );
 
     await pool.query(`
