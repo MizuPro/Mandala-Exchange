@@ -9,6 +9,7 @@ let connecting = false;
 // Cache untuk menyimpan data terakhir
 const depthCache = new Map<string, any>();
 const lastPriceCache = new Map<string, any>();
+const summaryCache = new Map<string, any>();
 let sessionStateCache: any | null = null;
 
 function upstreamUrl() {
@@ -94,12 +95,15 @@ function ensureUpstream(logger?: FastifyBaseLogger) {
         depthCache.set(event.symbol, event);
       } else if (event.type === "last_price" && event.symbol) {
         lastPriceCache.set(event.symbol, event);
+      } else if (event.type === "market_summary" && event.symbol) {
+        summaryCache.set(event.symbol, event);
       } else if (event.type === "session_state") {
         const status = event.payload?.status || event.payload?.session_status || '';
         sessionStateCache = event;
         // Reset order book jika sesi selesai / dimulai
         if (status === "closed" || status === "pre_open") {
           depthCache.clear();
+          summaryCache.clear();
         }
       } else if (event.type === "session_timer" && event.payload?.status) {
         sessionStateCache = {
@@ -157,6 +161,9 @@ export function handleMarketWsClient(socket: WebSocket, logger?: FastifyBaseLogg
     sendJson(socket, event);
   }
   for (const event of lastPriceCache.values()) {
+    sendJson(socket, event);
+  }
+  for (const event of summaryCache.values()) {
     sendJson(socket, event);
   }
 
