@@ -1,175 +1,163 @@
-# Implementation Plan - Bug Analyzer Status Pasar Frontend
+# Implementation Plan - Perbaikan Persistensi Harga, ARA/ARB, dan Tick Size
 
-Target analisis: indikator status pasar dan tombol order yang menampilkan `PASAR TUTUP` di frontend SEKURITAS.
-Mode: soft.
-Fokus: alur data session status dari MATS -> SEKURITAS backend WebSocket proxy -> Zustand store -> UI Market/Dashboard/MarketDetail.
+## Ringkasan Analisis
+
+Mode analisis: deep.
+
+Target masalah:
+- Harga saham dan ARA/ARB kembali ke nilai awal setelah server dibuka ulang.
+- Seed MNDL memakai harga `315`, padahal tidak valid untuk tick size yang berlaku.
+- Bug lain yang berkaitan dengan kesinambungan harga, market summary, dan validasi fraksi harga.
+
+Kesimpulan utama:
+- Masalah reset harga di development memang dapat dibuktikan dari kode. `start-all.bat` menjalankan seed BEI setiap start development, dan seed BEI meng-overwrite `reference_price` dan `previous_close`.
+- Last price intraday di MATS/Sekuritas masih berbasis memory cache. Jika proses mati/restart sebelum sesi ditutup dan market summary BEI belum menjadi sumber state, UI bisa fallback ke `previous_close`.
+- Seed MNDL `previous_close = 315` invalid karena untuk rentang harga 200-499 tick size-nya adalah 2.
+
+## Confirmed Bug 1 - Seed development mengembalikan harga dan ARA/ARB ke nilai awal
+
+Lokasi bukti:
+- `start-all.bat:57-58`
+- `BEI/src/db/seed.ts:31-36`
+- `MATS/internal/rules/cache.go:206-210`
+- `MATS/internal/rules/cache.go:388-406`
+
+Detail:
+- `start-all.bat` menjalankan `npm run db:seed` setiap mode `development`.
+- Seed BEI memakai `ON CONFLICT (symbol) DO UPDATE SET reference_price = excluded.reference_price, previous_close = excluded.previous_close`.
+- Akibatnya setiap start ulang development, `listed_securities.reference_price` dan `previous_close` untuk MNDL/NUSA/BARA dikembalikan ke nilai seed.
+- ARA/ARB di MATS dihitung dari `security.ReferencePrice`, jadi reset `reference_price` membuat ARA/ARB ikut kembali ke nilai awal.
+
+Rencana fix:
+1. Ubah seed listed securities agar tidak meng-overwrite harga dinamis saat symbol sudah ada.
+2. Tetap izinkan seed memperbarui metadata statis seperti nama, board, sector, shares outstanding, status, dan mechanism jika memang perlu.
+3. Untuk `reference_price` dan `previous_close`, gunakan strategi konservatif:
+   - saat insert baru: pakai nilai seed;
+   - saat conflict: jangan update kedua kolom tersebut, atau update hanya jika nilai existing NULL/0.
+4. Tambahkan opsi reset eksplisit untuk development, misalnya script `db:seed:reset-market` atau env flag `SEED_RESET_MARKET=true`, agar reset tetap bisa dilakukan saat memang dibutuhkan.
+
+## Confirmed Bug 2 - Harga terakhir intraday hilang setelah restart proses sebelum sesi ditutup
+
+Lokasi bukti:
+- `MATS/cmd/mats/main.go:71`
+- `MATS/internal/marketdata/summary.go:9-15`
+- `MATS/internal/marketdata/summary.go:18-40`
+- `MATS/internal/orders/service.go:190-196`
+- `MATS/internal/orders/service.go:364-370`
+- `SEKURITAS/backend/src/services/market-ws-proxy.ts:9-12`
+- `SEKURITAS/frontend/src/store/useStore.ts:558-565`
+- `SEKURITAS/frontend/src/components/MarketPanel.tsx:97-98`
+- `SEKURITAS/frontend/src/pages/MarketDetail.tsx:208-209`
+
+Detail:
+- MATS memang menyimpan trade ke persistence store saat match.
+- Namun `SummaryStore` MATS dibuat baru di memory setiap proses start dan hanya diisi oleh trade baru.
+- `Recover()` MATS hanya memuat open orders ke matching engine, tidak membangun ulang `SummaryStore` dari trade yang sudah tersimpan.
+- Proxy WebSocket Sekuritas juga menyimpan `lastPriceCache` dan `summaryCache` di memory proses.
+- Saat proses restart, frontend akan kehilangan event `last_price` terakhir dan fallback ke `previous_close` dari securities.
+
+Rencana fix:
+1. Tambahkan method persistence di MATS untuk mengambil agregasi trade terakhir per symbol untuk session aktif.
+2. Saat boot MATS setelah `orderService.Recover(ctx)`, rebuild `SummaryStore` dari trade persistence:
+   - open, high, low, close/last, volume, value, frequency per symbol;
+   - gunakan session aktif dari BEI/rules cache.
+3. Publikasikan snapshot `last_price` dan `market_summary` hasil recovery ke WebSocket hub setelah recovery selesai.
+4. Di Sekuritas backend, tambahkan fallback REST untuk initial market state dari BEI atau MATS saat WebSocket baru connect dan cache kosong.
+5. Di frontend, saat `fetchMarketData()` menerima securities, isi `market.lastPrices` awal dari `last`/`reference_price`/`previous_close` yang sudah dinormalisasi agar UI tidak kosong atau mundur ke data salah.
+
+## Confirmed Bug 3 - Seed MNDL memakai previous_close invalid tick size
+
+Lokasi bukti:
+- `BEI/src/db/seed.ts:33`
+- `BEI/src/db/seed.ts:68-74`
+- `MATS/internal/rules/cache.go:372-384`
+
+Detail:
+- Seed MNDL saat ini: `reference_price = 320`, `previous_close = 315`.
+- Seed tick size:
+  - 1-199: tick 1
+  - 200-499: tick 2
+  - 500-1999: tick 5
+  - 2000-4999: tick 10
+  - 5000 ke atas: tick 25
+- Karena `315` berada di rentang 200-499, tick size yang berlaku adalah `2`.
+- Validator MATS memakai `price % tickSize == 0`, sehingga `315 % 2 != 0`.
+
+Rencana fix:
+1. Ubah seed MNDL `previous_close` dari `315` menjadi harga valid terdekat.
+2. Rekomendasi nilai: `316`, karena paling dekat dengan 315 dan valid untuk tick size 2.
+3. Pastikan `reference_price = 320` tetap valid.
+4. Tambahkan test ringan atau script validasi seed yang mengecek semua `reference_price`, `previous_close`, dan `ipo_price` seed terhadap tick size masing-masing.
+
+## Confirmed Bug 4 - Frontend menghitung ARA/ARB tanpa pembulatan tick
+
+Lokasi bukti:
+- `SEKURITAS/frontend/src/pages/MarketDetail.tsx:215-240`
+- `SEKURITAS/frontend/src/pages/MarketDetail.tsx:529-542`
+- `SEKURITAS/frontend/src/pages/MarketDetail.tsx:2915-2923`
+- `MATS/internal/rules/cache.go:206-210`
+- `MATS/internal/rules/cache.go:388-406`
+
+Detail:
+- Frontend menghitung ARA dengan `Math.floor(refPrice * (1 + araPercent))`.
+- Frontend menghitung ARB dengan `Math.ceil(refPrice * (1 - arbPercent))`.
+- Hasil ini belum disesuaikan ke tick size.
+- Backend MATS memvalidasi price band dan tick size secara terpisah, sehingga batas yang ditampilkan frontend bisa berupa angka yang tidak bisa dipakai sebagai harga order valid.
+- Contoh: untuk harga di rentang tick 5, ARB hasil `ceil` bisa menjadi angka yang bukan kelipatan 5.
+
+Rencana fix:
+1. Buat helper bersama di frontend untuk:
+   - menentukan tick size dari harga;
+   - membulatkan ARA ke bawah ke tick valid;
+   - membulatkan ARB ke atas ke tick valid.
+2. Pakai helper tersebut untuk tampilan ARA/ARB, tombol stepper, validasi input, dan clamp price.
+3. Jaga konsistensi dengan backend MATS, atau lebih baik expose rules snapshot dari backend agar frontend tidak hardcode fraksi harga.
+4. Tambahkan minimal unit test untuk helper tick rounding.
+
+## Potential Concern 1 - API create/patch security belum memvalidasi harga terhadap tick size
+
+Lokasi bukti:
+- `BEI/src/routes/issuers.ts:24-38`
+- `BEI/src/routes/issuers.ts:117-127`
+- `BEI/src/routes/issuers.ts:141-154`
+
+Detail:
+- Schema `securityBody` hanya memastikan `referencePrice` dan `previousClose` positif.
+- Tidak ada validasi bahwa harga tersebut valid terhadap tick size profile board/market segment.
+- Ini bukan penyebab langsung reset development, tetapi sumber data invalid yang sama bisa masuk lewat API admin.
+
+Rencana fix:
+1. Tambahkan validasi tick size saat create/patch security untuk `referencePrice`, `previousClose`, dan `ipoPrice`.
+2. Validasi perlu mengambil rule profile berdasarkan `board` dan `marketMechanism`.
+3. Jika belum ingin memblokir admin flow, mulai dari warning/audit log, lalu naikkan menjadi hard validation setelah UI admin siap.
+
+## Urutan Eksekusi yang Disarankan
+
+1. Perbaiki seed:
+   - MNDL `previous_close` menjadi `316`.
+   - `ON CONFLICT` tidak meng-overwrite `reference_price` dan `previous_close` kecuali reset eksplisit.
+2. Tambahkan script/flag reset market eksplisit untuk development.
+3. Tambahkan recovery market summary MATS dari persistence store saat boot.
+4. Tambahkan fallback initial market state di Sekuritas backend/frontend.
+5. Perbaiki helper ARA/ARB frontend agar rounded ke tick size valid.
+6. Tambahkan validasi seed/API terkait tick size.
+7. Jalankan test:
+   - `npm test` atau test terkait BEI jika tersedia;
+   - `go test ./...` di MATS;
+   - build frontend Sekuritas;
+   - skenario manual: trade MNDL, restart semua service development, pastikan last price/reference tidak reset kecuali reset eksplisit.
+
+## Catatan Implementasi
+
+- Perubahan seed harus hati-hati agar data statis tetap idempotent, tetapi data market yang dinamis tidak tertimpa.
+- Untuk "tetap berlanjut walaupun server mati", sumber kebenaran harga harus persistent:
+  - trade history di MATS/BEI;
+  - market summary hasil agregasi;
+  - listed securities reference/previous close hanya untuk baseline antar sesi, bukan cache intraday satu-satunya.
+- Jika server mati di tengah sesi dan belum ada session close, recovery harus memakai trade yang sudah tersimpan, bukan menunggu trade baru.
+
+## request_feedback
 
 request_feedback = true
 
----
-
-## Ringkasan Temuan
-
-Ditemukan bug terkonfirmasi pada cara frontend menentukan status awal market. UI menganggap `market.sessionStatus` kosong sebagai pasar tertutup. Padahal nilai kosong bukan berarti closed, melainkan status belum diterima dari WebSocket.
-
-Runtime lokal menunjukkan:
-
-- MATS health sudah memiliki `session_status` aktif.
-- BEI active session juga aktif.
-- WebSocket proxy SEKURITAS mengirim frame pertama `proxy_status`, bukan `session_state`.
-- Frontend mengabaikan `proxy_status`, sehingga `market.sessionStatus` tetap kosong sampai event `session_state` atau `session_timer` masuk.
-
-Akibatnya, pada halaman detail saham tombol order bisa menampilkan `PASAR TUTUP` walaupun sesi sebenarnya sedang `pre_open` atau `continuous`.
-
----
-
-## 1. Confirmed Bug - Frontend Menganggap Status Kosong Sebagai Pasar Tutup
-
-### Lokasi
-
-- `SEKURITAS/frontend/src/store/useStore.ts:163`
-- `SEKURITAS/frontend/src/pages/MarketDetail.tsx:497-498`
-- `SEKURITAS/frontend/src/pages/MarketDetail.tsx:1502`
-- `SEKURITAS/frontend/src/pages/MarketDetail.tsx:1510`
-- `SEKURITAS/frontend/src/pages/Dashboard.tsx:444-463`
-- `SEKURITAS/frontend/src/components/MarketPanel.tsx:342-356`
-
-### Alur Bug
-
-State awal market dibuat dengan `sessionStatus: ""`.
-
-Di `MarketDetail`, status pasar dihitung dengan:
-
-```ts
-const isMarketOpen = market.sessionStatus && market.sessionStatus !== 'closed';
-```
-
-Saat `sessionStatus` masih kosong, `isMarketOpen` menjadi falsy. Tombol order kemudian:
-
-- disabled karena `!isMarketOpen`
-- menampilkan teks `PASAR TUTUP`
-
-Masalahnya, string kosong bukan status pasar valid. Itu adalah state `unknown/loading`. UI saat ini menyamakan `unknown` dengan `closed`.
-
-### Dampak
-
-- User melihat `PASAR TUTUP` walaupun session backend sedang `pre_open` atau `continuous`.
-- Tombol order terkunci sebelum event WebSocket session masuk.
-- Jika WebSocket tidak menerima event session, UI bisa terus salah menampilkan pasar tertutup.
-
-### Rencana Perbaikan
-
-1. Tambahkan helper eksplisit untuk status pasar, misalnya:
-
-```ts
-const ORDER_ENTRY_SESSION_STATUSES = new Set([
-  'pre_open',
-  'opening_auction',
-  'continuous',
-  'closing_auction',
-  'post_closing'
-]);
-```
-
-2. Ganti logika `market.sessionStatus && market.sessionStatus !== 'closed'` dengan helper yang membedakan:
-
-- `unknown`: status belum diterima
-- `open`: status mengizinkan order entry
-- `closed`: status benar-benar closed/halted/pre_close/non_cancellation/random_closing jika memang tidak boleh entry
-
-3. Di tombol `MarketDetail`, jangan tampilkan `PASAR TUTUP` saat status masih kosong. Gunakan teks seperti `MENUNGGU STATUS PASAR` dan tetap disabled sampai status valid diterima.
-4. Untuk header `Dashboard` dan `MarketPanel`, tampilkan state `SYNCING` atau `OFFLINE` saat status kosong, bukan `CLOSED`.
-
----
-
-## 2. Confirmed Bug - WebSocket Proxy Tidak Cache `session_state` Untuk Client Baru
-
-### Lokasi
-
-- `SEKURITAS/backend/src/services/market-ws-proxy.ts:8-9`
-- `SEKURITAS/backend/src/services/market-ws-proxy.ts:78-99`
-- `SEKURITAS/backend/src/services/market-ws-proxy.ts:135-146`
-- `MATS/internal/marketdata/ws.go:123-134`
-
-### Alur Bug
-
-MATS sudah benar mengirim initial snapshot:
-
-- Saat client WebSocket baru connect ke MATS, `sendInitialSnapshots` mengirim event `session_state`.
-
-Namun frontend tidak connect langsung ke MATS. Frontend connect ke proxy SEKURITAS.
-
-Proxy SEKURITAS saat ini hanya menyimpan cache:
-
-- `depthCache`
-- `lastPriceCache`
-
-Saat client browser baru connect ke proxy, proxy hanya mengirim:
-
-- `proxy_status`
-- cached depth
-- cached last price
-
-Proxy tidak mengirim cached `session_state`, karena event session tidak pernah disimpan. Jika upstream MATS sudah terbuka dari client lain, client baru tidak mendapatkan initial `session_state` dari MATS. Client harus menunggu event session berikutnya.
-
-### Dampak
-
-- Client baru bisa masuk dengan `sessionStatus` kosong.
-- UI menampilkan fallback `CLOSED` atau `PASAR TUTUP`.
-- Perilaku menjadi tidak konsisten antar tab/client, tergantung timing event WebSocket.
-
-### Rencana Perbaikan
-
-1. Tambahkan cache `sessionStateCache` di `market-ws-proxy.ts`.
-2. Saat proxy menerima event `session_state` atau `session_timer`, simpan event terakhir yang memiliki status.
-3. Saat browser client baru connect, kirim `sessionStateCache` setelah `proxy_status` dan sebelum cache depth/last price.
-4. Jika cache belum ada, proxy bisa mengirim event eksplisit:
-
-```json
-{
-  "type": "session_state",
-  "payload": { "status": "" }
-}
-```
-
-Namun lebih baik proxy mengambil snapshot dari MATS/BEI atau menunggu upstream initial event pertama, lalu broadcast ke client.
-
----
-
-## 3. Potential Concern - `fetchMarketData()` Tidak Mengambil Session Status Awal
-
-### Lokasi
-
-- `SEKURITAS/frontend/src/store/useStore.ts:254-265`
-- `SEKURITAS/backend/src/routes/market.ts:9-20`
-- `BEI/src/routes/rules.ts:196-207`
-
-### Penjelasan
-
-Frontend initial data fetch hanya mengambil:
-
-- `/market/securities`
-- `/market/fees`
-
-Session status hanya datang dari WebSocket. Ini bukan bug fatal jika WebSocket selalu sehat dan proxy selalu mengirim snapshot session. Namun untuk UX yang stabil, REST initial fetch sebaiknya bisa mengisi status pasar sebelum WebSocket event datang.
-
-### Rencana Perbaikan
-
-1. Tambahkan endpoint backend SEKURITAS, misalnya `GET /api/v1/market/session`, yang proxy ke BEI active session atau MATS health.
-2. Update `fetchMarketData()` agar ikut mengambil session status awal.
-3. Setelah WebSocket aktif, WebSocket tetap menjadi sumber update real-time.
-
----
-
-## Verifikasi Setelah Perbaikan
-
-1. Jalankan dev stack dengan `start-all.bat development`.
-2. Buka `/market/:symbol` saat session backend `pre_open`.
-3. Pastikan tombol tidak lagi menampilkan `PASAR TUTUP`; jika status sudah `pre_open`, tombol boleh menampilkan kirim order sesuai aturan entry.
-4. Buka tab browser kedua saat tab pertama masih aktif. Tab kedua harus langsung menerima status session dari proxy cache.
-5. Ubah session ke `continuous`, lalu pastikan header `Dashboard`, `MarketPanel`, dan tombol `MarketDetail` sinkron.
-6. Putuskan WebSocket sementara. UI harus menampilkan `OFFLINE` atau `SYNCING`, bukan `PASAR TUTUP` palsu.
-
-## Catatan Eksekusi
-
-Plan ini bisa dieksekusi oleh Gemini 3 Flash. Scope perbaikannya kecil sampai menengah dan sebagian besar berada di frontend store/UI serta satu file WebSocket proxy backend. Model yang lebih advanced tidak wajib, kecuali ingin sekaligus menambahkan test end-to-end WebSocket lintas service.
+Plan ini bisa dieksekusi oleh Gemini 3 Flash untuk perubahan seed, helper frontend, dan fallback sederhana. Untuk recovery MATS dari persistence store dan sinkronisasi antar service, model yang lebih advanced lebih disarankan karena menyentuh Go persistence, WebSocket event, dan kontrak BEI/Sekuritas.
