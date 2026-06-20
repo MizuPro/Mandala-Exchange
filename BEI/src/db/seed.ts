@@ -51,7 +51,7 @@ async function main() {
         market_mechanism = excluded.market_mechanism,
         updated_at = now()
       `,
-      [issuerByCode.MNDL, issuerByCode.NUSA, issuerByCode.BARA, process.env.SEED_RESET_MARKET === "true"]
+      [issuerByCode.MNDL, issuerByCode.NUSA, issuerByCode.BARA, process.env.SEED_RESET_MARKET?.trim() === "true"]
     );
 
     await pool.query(`
