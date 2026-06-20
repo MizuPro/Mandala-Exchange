@@ -259,6 +259,82 @@ export async function registerRuleRoutes(app: FastifyInstance) {
         }
       }
 
+      // Data Aggregation & Market Summary Generation
+      try {
+        console.log(`[Market-Data] Starting aggregation for session ${body.sessionId}`);
+        
+        // 1. Aggregate trades to generate market_summaries
+        const summaryRes = await pool.query(`
+          INSERT INTO market_summaries (
+            session_id, security_id, open, high, low, close, last, volume, value, frequency
+          )
+          SELECT 
+            $1,
+            security_id,
+            (array_agg(price ORDER BY sequence_number ASC))[1] as open,
+            MAX(price) as high,
+            MIN(price) as low,
+            (array_agg(price ORDER BY sequence_number DESC))[1] as close,
+            (array_agg(price ORDER BY sequence_number DESC))[1] as last,
+            SUM(quantity) as volume,
+            SUM(value) as value,
+            COUNT(id) as frequency
+          FROM trades
+          WHERE session_id = $1
+          GROUP BY security_id
+          RETURNING security_id, close, volume, value;
+        `, [body.sessionId]);
+
+        console.log(`[Market-Data] Generated summaries for ${summaryRes.rowCount} securities.`);
+
+        // 2. Update listed_securities (previous_close and reference_price)
+        if (summaryRes.rows.length > 0) {
+          for (const row of summaryRes.rows) {
+            await pool.query(`
+              UPDATE listed_securities 
+              SET previous_close = $1, reference_price = $1, updated_at = now()
+              WHERE id = $2
+            `, [row.close, row.security_id]);
+          }
+          console.log(`[Market-Data] Updated previous_close for ${summaryRes.rowCount} securities.`);
+
+          // 3. Update market_indices (MDX) using Market Cap weighted VWAP
+          const idxRes = await pool.query(`
+            WITH session_vwap AS (
+              SELECT security_id, SUM(price::numeric * quantity::numeric) / NULLIF(SUM(quantity::numeric), 0) as vwap
+              FROM trades
+              WHERE session_id = $1
+              GROUP BY security_id
+            ),
+            index_calc AS (
+              SELECT 
+                SUM(s.vwap * ls.shares_outstanding) as current_mcap,
+                SUM(COALESCE(ls.previous_close, ls.reference_price) * ls.shares_outstanding) as prev_mcap
+              FROM session_vwap s
+              JOIN listed_securities ls ON s.security_id = ls.id
+            )
+            UPDATE market_indices 
+            SET 
+              last_value = CASE 
+                WHEN (SELECT prev_mcap FROM index_calc) > 0 
+                THEN last_value * (SELECT current_mcap / prev_mcap FROM index_calc)
+                ELSE last_value 
+              END,
+              calculated_at = now(), 
+              updated_at = now()
+            WHERE code = 'MDX'
+            RETURNING last_value;
+          `, [body.sessionId]);
+
+          if (idxRes.rowCount && idxRes.rowCount > 0) {
+            console.log(`[Market-Data] Updated index MDX to ${parseFloat(idxRes.rows[0].last_value).toFixed(2)}`);
+          }
+        }
+      } catch (err) {
+        console.error(`[Market-Data] Error aggregating session data:`, err);
+        // Do not throw, allow settlement to proceed even if market data aggregation fails
+      }
+
       const settlementToken = internalSettlementToken();
       if (!settlementToken) {
         throw badRequest("No internal settlement-capable service token configured — cannot trigger auto-settlement");
