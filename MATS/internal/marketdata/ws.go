@@ -25,6 +25,10 @@ type SnapshotProvider interface {
 	Snapshot(symbol string) domain.BookSnapshot
 }
 
+type SummaryProvider interface {
+	Summary(symbol string) (domain.MarketSummary, bool)
+}
+
 type SessionProvider interface {
 	SessionState() domain.SessionStatus
 }
@@ -135,6 +139,7 @@ func (h *Hub) sendInitialSnapshots(c *client) {
 	if snapshotProvider == nil {
 		return
 	}
+	summaryProvider, _ := snapshotProvider.(SummaryProvider)
 	for symbol := range c.symbols {
 		snapshot := snapshotProvider.Snapshot(symbol)
 		c.send <- Event{
@@ -142,6 +147,28 @@ func (h *Hub) sendInitialSnapshots(c *client) {
 			Symbol:     symbol,
 			OccurredAt: time.Now().UTC(),
 			Payload:    snapshot,
+		}
+		if summaryProvider == nil {
+			continue
+		}
+		summary, ok := summaryProvider.Summary(symbol)
+		if !ok {
+			continue
+		}
+		c.send <- Event{
+			Type:       "last_price",
+			Symbol:     symbol,
+			OccurredAt: time.Now().UTC(),
+			Payload: map[string]any{
+				"symbol": symbol,
+				"last":   summary.Last,
+			},
+		}
+		c.send <- Event{
+			Type:       "market_summary",
+			Symbol:     symbol,
+			OccurredAt: time.Now().UTC(),
+			Payload:    summary,
 		}
 	}
 }

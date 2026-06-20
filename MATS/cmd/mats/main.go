@@ -91,6 +91,15 @@ func main() {
 		logger.Error("recover order book", "error", err)
 		os.Exit(1)
 	}
+	if initialSessionID != "" {
+		trades, err := store.LoadTradesBySession(ctx, initialSessionID)
+		if err != nil {
+			logger.Error("recover market summaries", "session_id", initialSessionID, "error", err)
+			os.Exit(1)
+		}
+		summaries.Recover(trades)
+		logger.Info("recovered market summaries", "session_id", initialSessionID, "trades", len(trades))
+	}
 
 	sessionController := session.NewController(rulesCache, orderService, dispatcher)
 	sessionDaemon := session.NewDaemon(sessionController, logger)

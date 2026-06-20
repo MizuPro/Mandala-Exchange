@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"sync"
 	"time"
 
@@ -144,6 +145,21 @@ func (s *MemoryStore) CountSessionTrades(_ context.Context, sessionID string) (i
 		}
 	}
 	return count, nil
+}
+
+func (s *MemoryStore) LoadTradesBySession(_ context.Context, sessionID string) ([]domain.Trade, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	trades := make([]domain.Trade, 0)
+	for _, trade := range s.trades {
+		if trade.SessionID == sessionID {
+			trades = append(trades, *trade)
+		}
+	}
+	sort.Slice(trades, func(i, j int) bool {
+		return trades[i].SequenceNumber < trades[j].SequenceNumber
+	})
+	return trades, nil
 }
 
 func (s *MemoryStore) FindTradesByOrderID(_ context.Context, orderID string) ([]domain.Trade, error) {

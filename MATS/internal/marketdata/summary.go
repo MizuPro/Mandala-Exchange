@@ -18,6 +18,19 @@ func NewSummaryStore() *SummaryStore {
 func (s *SummaryStore) ApplyTrade(trade domain.Trade) domain.MarketSummary {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.applyTradeLocked(trade)
+}
+
+func (s *SummaryStore) Recover(trades []domain.Trade) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.summaries = make(map[string]domain.MarketSummary)
+	for _, trade := range trades {
+		s.applyTradeLocked(trade)
+	}
+}
+
+func (s *SummaryStore) applyTradeLocked(trade domain.Trade) domain.MarketSummary {
 	summary := s.summaries[trade.Symbol]
 	if summary.Symbol == "" {
 		summary.Symbol = trade.Symbol
