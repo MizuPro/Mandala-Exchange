@@ -123,7 +123,28 @@ export default function Dashboard() {
 
     return () => {
       mountedRef.current = false;
-      socketRef.current?.close();
+      const socket = socketRef.current;
+      if (socket) {
+        socket.onmessage = null;
+        if (socket.readyState === WebSocket.CONNECTING) {
+          // Avoid triggering "closed before connection established" warning by waiting until open to close.
+          // Set empty handlers so error/close events don't trigger state updates or reconnects.
+          socket.onopen = () => {
+            socket.close();
+          };
+          socket.onerror = () => {
+            // Ignore error after unmount
+          };
+          socket.onclose = () => {
+            // Ignore close after unmount
+          };
+        } else {
+          socket.onopen = null;
+          socket.onerror = null;
+          socket.onclose = null;
+          socket.close();
+        }
+      }
     };
   }, [applyMarketEvent, setMarketConnected]);
 
