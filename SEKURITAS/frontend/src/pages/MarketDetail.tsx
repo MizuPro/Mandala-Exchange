@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import { createChart, CandlestickSeries } from 'lightweight-charts';
 import { formatMarketSessionLabel, isOrderEntrySessionStatus, normalizeSessionStatus, useStore } from '../store/useStore';
@@ -24,6 +25,13 @@ const LOT_SIZE = 100;
 const formatIDR = (value: string | number | undefined | null) => {
   if (value === undefined || value === null) return 'Rp 0';
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(Number(value || 0));
+};
+
+const formatCompactNumber = (num: number) => {
+  if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(1) + ' B';
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + ' M';
+  if (num >= 1_000) return (num / 1_000).toFixed(1) + ' K';
+  return num.toLocaleString('id-ID');
 };
 
 interface DashboardContext {
@@ -70,6 +78,145 @@ export default function MarketDetail() {
   const [limitPrice, setLimitPrice] = useState<string>('');
   const [orderActionLoading, setOrderActionLoading] = useState(false);
 
+  // Modal Popup States
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
+  const [successOrderDetails, setSuccessOrderDetails] = useState<any>(null);
+  const [sliderPercent, setSliderPercent] = useState<number>(0);
+
+  // --- BEI Tick Size Helpers ---
+  const getTickSize = (price: number): number => {
+    if (price < 200) return 1;
+    if (price < 500) return 2;
+    if (price < 2000) return 5;
+    if (price < 5000) return 10;
+    return 25;
+  };
+
+  const getTickSizeForIncrement = (price: number): number => {
+    if (price < 200) return 1;
+    if (price < 500) return 2;
+    if (price < 2000) return 5;
+    if (price < 5000) return 10;
+    return 25;
+  };
+
+  const getTickSizeForDecrement = (price: number): number => {
+    if (price <= 200) return 1;
+    if (price <= 500) return 2;
+    if (price <= 2000) return 5;
+    if (price <= 5000) return 10;
+    return 25;
+  };
+
+  const roundDownToTick = (price: number): number => {
+    const tick = getTickSize(price);
+    return Math.max(1, Math.floor(price / tick) * tick);
+  };
+
+  const roundUpToTick = (price: number): number => {
+    const tick = getTickSize(price);
+    return Math.max(1, Math.ceil(price / tick) * tick);
+  };
+
+  const isValidTickPrice = (price: number): boolean => {
+    return price > 0 && price % getTickSize(price) === 0;
+  };
+
+  const openOrderModal = (side: 'BUY' | 'SELL') => {
+    setTradeSide(side);
+    setOrderType('limit');
+    setLimitPrice(lastPrice > 0 ? String(lastPrice) : '');
+    setQtyLots(1);
+    setSliderPercent(0);
+    setShowSuccessOverlay(false);
+    setSuccessOrderDetails(null);
+    setIsOrderModalOpen(true);
+  };
+
+  const adjustPrice = (direction: 'up' | 'down') => {
+    if (orderType === 'market') return;
+    const currentVal = Number(limitPrice) || lastPrice || 0;
+    const ara = araArbValues?.ara || 999999;
+    const arb = araArbValues?.arb || 1;
+
+    let newVal = currentVal;
+    if (direction === 'up') {
+      const tick = getTickSizeForIncrement(currentVal);
+      newVal = roundUpToTick(currentVal + tick);
+      if (newVal > ara) {
+        showToast(`Harga tidak boleh melampaui batas ARA (Rp ${ara.toLocaleString('id-ID')})`, 'error');
+        return;
+      }
+    } else {
+      const tick = getTickSizeForDecrement(currentVal);
+      newVal = roundDownToTick(Math.max(1, currentVal - tick));
+      if (newVal < arb) {
+        showToast(`Harga tidak boleh kurang dari batas ARB (Rp ${arb.toLocaleString('id-ID')})`, 'error');
+        return;
+      }
+    }
+
+    setLimitPrice(String(newVal));
+  };
+
+  const handlePriceChange = (val: string) => {
+    const clean = val.replace(/\D/g, '');
+    if (clean === '') {
+      setLimitPrice('');
+      return;
+    }
+    const parsed = parseInt(clean) || 0;
+    const ara = araArbValues?.ara || 999999;
+
+    if (parsed > ara) {
+      showToast(`Harga melebihi batas ARA (Rp ${ara.toLocaleString('id-ID')})`, 'error');
+      setLimitPrice(String(ara));
+      return;
+    }
+    setLimitPrice(String(parsed));
+  };
+
+  const handleLotChange = (val: string) => {
+    const clean = val.replace(/\D/g, '');
+    if (clean === '') {
+      setQtyLots(1);
+      return;
+    }
+    const parsed = parseInt(clean) || 1;
+    setQtyLots(Math.max(1, parsed));
+  };
+
+  const handleSliderChange = (percent: number) => {
+    setSliderPercent(percent);
+    if (tradeSide === 'BUY') {
+      const brokerRate = Number(feeSchedule?.brokerBuyRate) || 0.0015;
+      const vatRate = Number(feeSchedule?.vatRate) || 0.11;
+      const effectiveFeeRate = brokerRate * (1 + vatRate);
+      
+      const priceNum = orderType === 'market' ? lastPrice : parseFloat(limitPrice || '0');
+      if (priceNum > 0) {
+        const costPerLot = priceNum * 100 * (1 + effectiveFeeRate);
+        const allocatedBudget = buyingPower * (percent / 100);
+        let calculatedLots = Math.floor(allocatedBudget / costPerLot);
+        if (calculatedLots < 1 && percent > 0) {
+          calculatedLots = 1;
+        }
+        setQtyLots(calculatedLots);
+      }
+    } else {
+      if (ownedQtyLots > 0) {
+        let calculatedLots = Math.floor(ownedQtyLots * (percent / 100));
+        if (calculatedLots < 1 && percent > 0) {
+          calculatedLots = 1;
+        }
+        setQtyLots(calculatedLots);
+      } else {
+        setQtyLots(0);
+      }
+    }
+  };
+
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<any>(null);
   const candleSeriesRef = useRef<any>(null);
@@ -109,8 +256,8 @@ export default function MarketDetail() {
       arbPercent = 0.10;
     }
 
-    const ara = Math.floor(refPrice * (1 + araPercent));
-    const arb = Math.max(1, Math.ceil(refPrice * (1 - arbPercent)));
+    const ara = roundDownToTick(Math.floor(refPrice * (1 + araPercent)));
+    const arb = roundUpToTick(Math.max(1, Math.ceil(refPrice * (1 - arbPercent))));
 
     return { ara, arb };
   }, [activeSecurity]);
@@ -343,6 +490,18 @@ export default function MarketDetail() {
       }
     }
   }, [market.sessionStatus, resolution]);
+ 
+  // Menonaktifkan scroll pada background body saat modal transaksi terbuka
+  useEffect(() => {
+    if (isOrderModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOrderModalOpen]);
 
   // --- 4. Perhitungan Finansial Form Transaksi ---
   const calculatedEstValue = useMemo(() => {
@@ -371,15 +530,44 @@ export default function MarketDetail() {
     return pos.available / LOT_SIZE;
   }, [portfolio?.positions, activeSymbol]);
 
+  const currentUsedPercentage = useMemo(() => {
+    if (tradeSide === 'BUY') {
+      if (buyingPower <= 0) return 0;
+      const percent = (totalBill / buyingPower) * 100;
+      return Math.min(100, Math.round(percent));
+    } else {
+      if (ownedQtyLots <= 0) return 0;
+      const percent = (qtyLots / ownedQtyLots) * 100;
+      return Math.min(100, Math.round(percent));
+    }
+  }, [tradeSide, totalBill, buyingPower, qtyLots, ownedQtyLots]);
+
   // --- 5. Order Action Handlers ---
   const handleExecuteTrade = async () => {
     if (orderActionLoading) return;
     const priceVal = orderType === 'market' ? undefined : Number(limitPrice);
     const sharesQty = qtyLots * LOT_SIZE;
 
-    if (orderType === 'limit' && (!priceVal || priceVal <= 0 || !Number.isInteger(priceVal))) {
-      showToast('Masukkan harga limit rupiah bulat yang valid', 'error');
-      return;
+    const ara = araArbValues?.ara || 999999;
+    const arb = araArbValues?.arb || 1;
+
+    if (orderType === 'limit') {
+      if (!priceVal || priceVal <= 0 || !Number.isInteger(priceVal)) {
+        showToast('Masukkan harga limit rupiah bulat yang valid', 'error');
+        return;
+      }
+      if (!isValidTickPrice(priceVal)) {
+        showToast(`Harga tidak sesuai fraksi. Tick size di harga ini adalah Rp ${getTickSize(priceVal).toLocaleString('id-ID')}`, 'error');
+        return;
+      }
+      if (priceVal > ara) {
+        showToast(`Harga limit melebihi batas ARA (Rp ${ara.toLocaleString('id-ID')})`, 'error');
+        return;
+      }
+      if (priceVal < arb) {
+        showToast(`Harga limit kurang dari batas ARB (Rp ${arb.toLocaleString('id-ID')})`, 'error');
+        return;
+      }
     }
 
     if (tradeSide === 'BUY' && totalBill > buyingPower) {
@@ -401,6 +589,18 @@ export default function MarketDetail() {
         sharesQty,
         orderType
       );
+
+      // Simpan detail untuk success overlay
+      setSuccessOrderDetails({
+        symbol: activeSymbol,
+        side: tradeSide,
+        type: orderType,
+        price: priceVal || lastPrice,
+        qtyLots: qtyLots,
+        totalBill: totalBill,
+        deferred: res?.deferred || false
+      });
+      setShowSuccessOverlay(true);
 
       if (res?.deferred) {
         showToast(`Order Beli ${activeSymbol} dikirim ke antrean deferred`, 'success');
@@ -458,26 +658,27 @@ export default function MarketDetail() {
   const activeDepth = useMemo(() => {
     const depth = market.depth[activeSymbol] || { bids: [], asks: [] };
     
-    // Sort asks (terendah ke tertinggi)
-    const sortedAsks = [...depth.asks].sort((a, b) => b.price - a.price).slice(-5); // Ambil 5 terendah
-    // Sort bids (tertinggi ke terendah)
-    const sortedBids = [...depth.bids].sort((a, b) => b.price - a.price).slice(0, 5); // Ambil 5 tertinggi
+    // Sort asks (terendah ke tertinggi) -> best ask (terendah) di indeks 0
+    const sortedAsks = [...depth.asks].sort((a, b) => a.price - b.price).slice(0, 10);
+    // Sort bids (tertinggi ke terendah) -> best bid (tertinggi) di indeks 0
+    const sortedBids = [...depth.bids].sort((a, b) => b.price - a.price).slice(0, 10);
 
-    // Hitung max volume untuk scaling horizontal bar visualizer
-    const allLevels = [...sortedAsks, ...sortedBids];
-    const maxQty = allLevels.reduce((max, lvl) => Math.max(max, lvl.quantity || lvl.qty || 0), 1);
+    // Hitung max volume masing-masing untuk scaling horizontal bar visualizer secara independen
+    const maxBidQty = sortedBids.reduce((max, lvl) => Math.max(max, lvl.quantity || lvl.qty || 0), 1);
+    const maxAskQty = sortedAsks.reduce((max, lvl) => Math.max(max, lvl.quantity || lvl.qty || 0), 1);
 
     return {
       asks: sortedAsks,
       bids: sortedBids,
-      maxQty
+      maxBidQty,
+      maxAskQty
     };
   }, [market.depth, activeSymbol]);
 
   // Spread (Selisih Harga Bid-Ask Terbaik)
   const marketSpread = useMemo(() => {
     const bestBid = activeDepth.bids[0]?.price || 0;
-    const bestAsk = activeDepth.asks[activeDepth.asks.length - 1]?.price || 0;
+    const bestAsk = activeDepth.asks[0]?.price || 0;
     if (bestBid > 0 && bestAsk > 0) {
       return bestAsk - bestBid;
     }
@@ -499,6 +700,39 @@ export default function MarketDetail() {
   const isMarketOpen = isOrderEntrySessionStatus(market.sessionStatus);
   const sessionStatusColor = isMarketOpen ? '#10B981' : (hasSessionStatus ? '#EF4444' : '#F59E0B');
   const closedButtonLabel = hasSessionStatus ? 'PASAR TUTUP' : 'MENUNGGU STATUS PASAR';
+
+  // Hitung total volume bid dan ask (dalam Lot) dari data depth asli
+  const totalBidVolume = useMemo(() => {
+    const depth = market.depth[activeSymbol];
+    if (!depth || !depth.bids) return 0;
+    return depth.bids.reduce((sum, bid) => sum + (bid.quantity || bid.qty || 0), 0) / LOT_SIZE;
+  }, [market.depth, activeSymbol]);
+
+  const totalAskVolume = useMemo(() => {
+    const depth = market.depth[activeSymbol];
+    if (!depth || !depth.asks) return 0;
+    return depth.asks.reduce((sum, ask) => sum + (ask.quantity || ask.qty || 0), 0) / LOT_SIZE;
+  }, [market.depth, activeSymbol]);
+
+  // Ambil summary pasar
+  const activeSummary = market.summaries[activeSymbol] || null;
+
+  // Warna dinamis untuk lastPrice, open, high, low
+  const lastPriceColor = priceChange > 0 ? '#10B981' : (priceChange < 0 ? '#EF4444' : '#F59E0B');
+  const openPrice = activeSummary?.open || prevClose;
+  const openColor = openPrice > prevClose ? '#10B981' : (openPrice < prevClose ? '#EF4444' : '#F59E0B');
+  const highPrice = activeSummary?.high || prevClose;
+  const highColor = highPrice > prevClose ? '#10B981' : (highPrice < prevClose ? '#EF4444' : '#F59E0B');
+  const lowPrice = activeSummary?.low || prevClose;
+  const lowColor = lowPrice > prevClose ? '#10B981' : (lowPrice < prevClose ? '#EF4444' : '#F59E0B');
+  const lotVolume = activeSummary?.volume ? (activeSummary.volume / 100) : 0;
+  const valVolume = activeSummary?.value || 0;
+  const avgPrice = activeSummary?.volume > 0 ? (activeSummary.value / activeSummary.volume) : prevClose;
+  const freqValue = activeSummary?.frequency || 0;
+
+  // Foreign simulated
+  const fBuy = valVolume * 0.38;
+  const fSell = valVolume * 0.24;
 
   return (
     <div className="market-detail-premium-container animate-fade-in">
@@ -648,64 +882,213 @@ export default function MarketDetail() {
           color: #FFFFFF;
         }
 
-        /* Order Book Table */
-        .orderbook-panel {
-          font-family: monospace;
-          font-size: 12px;
+        /* Orderbook Widget Premium (Reworked) */
+        .orderbook-widget-premium {
+          background-color: #161B22;
+          border: 1px solid #21262D;
+          border-radius: 12px;
+          overflow: hidden;
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          font-family: 'Inter', sans-serif;
+          user-select: none;
         }
-        .ob-header-row {
+
+        .ob-header-info {
+          padding: 12px 16px;
+          border-bottom: 1px solid #21262D;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background-color: #0D1117;
+        }
+
+        .ob-symbol-badge {
+          background-color: #21262D;
+          color: #FFFFFF;
+          font-size: 11px;
+          font-weight: 800;
+          padding: 3px 8px;
+          border-radius: 4px;
+          letter-spacing: 0.05em;
+        }
+
+        .ob-last-label {
+          font-size: 10px;
+          color: #8B949E;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .ob-last-price {
+          font-size: 16px;
+          font-weight: 800;
+          font-family: monospace;
+          margin-left: auto;
+        }
+
+        .ob-stats-grid {
+          padding: 12px 16px;
           display: grid;
           grid-template-columns: repeat(3, 1fr);
-          color: #8B949E;
-          font-size: 10px;
-          text-transform: uppercase;
-          font-weight: 700;
-          padding-bottom: 6px;
+          background-color: #161B22;
           border-bottom: 1px solid #21262D;
         }
-        .ob-level-row {
+
+        .ob-stat-cell {
+          display: flex;
+          flex-direction: column;
+          padding: 6px 8px;
+          font-size: 11px;
+        }
+
+        .ob-stat-cell.border-r {
+          border-right: 1px solid #21262D;
+        }
+
+        .ob-stat-cell.border-b {
+          border-bottom: 1px solid #21262D;
+        }
+
+        .ob-stat-label {
+          color: #8B949E;
+          font-size: 10px;
+          font-weight: 500;
+          margin-bottom: 2px;
+        }
+
+        .ob-stat-val {
+          font-weight: 700;
+          font-family: monospace;
+        }
+
+        .ob-stat-val.text-warning {
+          color: #F59E0B;
+        }
+
+        .ob-table-header {
+          background-color: #0D1117;
+          border-bottom: 1px solid #21262D;
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          padding: 8px 0;
+          font-size: 11px;
+          font-weight: 800;
+          color: #8B949E;
+          text-transform: uppercase;
+        }
+
+        .ob-rows-container {
+          display: flex;
+          flex-direction: column;
+          background-color: #161B22;
+          font-size: 11px;
+        }
+
+        .ob-data-row {
           position: relative;
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(4, 1fr);
           padding: 6.5px 0;
           border-bottom: 1px solid rgba(255, 255, 255, 0.01);
           z-index: 1;
-        }
-        .ob-bar-bg-ask {
-          position: absolute;
-          right: 0;
-          top: 2px;
-          bottom: 2px;
-          background: rgba(239, 68, 68, 0.06);
-          border-right: 2px solid rgba(239, 68, 68, 0.3);
-          z-index: -1;
-          transition: width 0.3s ease;
-        }
-        .ob-bar-bg-bid {
-          position: absolute;
-          right: 0;
-          top: 2px;
-          bottom: 2px;
-          background: rgba(16, 185, 129, 0.06);
-          border-right: 2px solid rgba(16, 185, 129, 0.3);
-          z-index: -1;
-          transition: width 0.3s ease;
-        }
-        .ob-spread-separator {
-          display: flex;
-          justify-content: space-between;
           align-items: center;
-          padding: 6px 10px;
-          background-color: #161B22;
-          border: 1px solid #21262D;
-          border-radius: 6px;
-          margin: 6px 0;
-          font-size: 11px;
+          transition: background-color 0.2s ease;
+        }
+
+        .ob-data-row:hover {
+          background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .ob-depth-bar-bid {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          right: 50%;
+          background-color: rgba(16, 185, 129, 0.08);
+          z-index: -1;
+          pointer-events: none;
+          transition: width 0.3s ease;
+        }
+
+        .ob-depth-bar-offer {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          left: 50%;
+          background-color: rgba(239, 68, 68, 0.08);
+          z-index: -1;
+          pointer-events: none;
+          transition: width 0.3s ease;
+        }
+
+        .ob-cell {
+          position: relative;
+          font-family: monospace;
+          z-index: 2;
+          color: #FFFFFF;
+        }
+
+        .ob-cell-lot-bid {
+          color: #E2E8F0;
+        }
+
+        .ob-cell-lot-ask {
+          color: #E2E8F0;
+        }
+
+        .ob-col-1 {
+          text-align: left;
+          padding-left: 16px;
+          font-variant-numeric: tabular-nums;
+        }
+
+        .ob-col-2 {
+          text-align: right;
+          padding-right: 36px;
+          font-variant-numeric: tabular-nums;
+          font-weight: bold;
+        }
+
+        .ob-col-3 {
+          text-align: left;
+          padding-left: 36px;
+          font-variant-numeric: tabular-nums;
+          font-weight: bold;
+        }
+
+        .ob-col-4 {
+          text-align: right;
+          padding-right: 16px;
+          font-variant-numeric: tabular-nums;
+        }
+
+        .ob-empty-state {
+          padding: 24px 12px;
+          text-align: center;
           color: #8B949E;
+          font-size: 11px;
+        }
+
+        .ob-table-footer {
+          background-color: #0D1117;
+          border-top: 1px solid #21262D;
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          align-items: center;
+          padding: 10px 0;
+          font-size: 12px;
+          font-weight: 800;
+          color: #FFFFFF;
+          font-family: monospace;
+        }
+
+        .ob-total-label {
+          color: #8B949E;
+          font-size: 10px;
           font-weight: 700;
+          letter-spacing: 0.1em;
         }
 
         /* Order Entry */
@@ -1081,6 +1464,495 @@ export default function MarketDetail() {
         .btn-toggle-announcement:hover {
           text-decoration: underline;
         }
+
+        /* Order Modal Native Styles */
+        .order-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(13, 17, 23, 0.75);
+          backdrop-filter: blur(8px);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1rem;
+        }
+
+        .order-modal-container {
+          background: #161B22;
+          border: 1px solid #21262D;
+          width: 100%;
+          max-width: 420px;
+          border-radius: 24px;
+          overflow: hidden;
+          position: relative;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .order-modal-content {
+          padding: 1.5rem;
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+
+        .order-modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .order-modal-badge-classic {
+          background: #21262D;
+          border: 1px solid #30363D;
+          color: #8B949E;
+          font-size: 10px;
+          font-weight: 700;
+          padding: 4px 10px;
+          border-radius: 9999px;
+          text-transform: uppercase;
+        }
+
+        .order-modal-title {
+          font-size: 16px;
+          font-weight: 800;
+          margin: 0;
+          letter-spacing: -0.02em;
+        }
+
+        .order-modal-close-btn {
+          background: transparent;
+          border: none;
+          color: #8B949E;
+          cursor: pointer;
+          transition: color 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .order-modal-close-btn:hover {
+          color: #FFFFFF;
+        }
+
+        .order-modal-asset-banner {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #0D1117;
+          border: 1px solid #21262D;
+          padding: 12px 16px;
+          border-radius: 16px;
+        }
+
+        .asset-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .asset-logo {
+          width: 32px;
+          height: 32px;
+          border-radius: 9999px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .asset-info {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .asset-code {
+          font-weight: 800;
+          color: #FFFFFF;
+          font-size: 14px;
+        }
+
+        .asset-name {
+          font-size: 10px;
+          color: #8B949E;
+        }
+
+        .asset-price {
+          font-weight: 800;
+          color: #FFFFFF;
+          font-size: 14px;
+          text-align: right;
+        }
+
+        .asset-change {
+          font-size: 10px;
+          font-weight: 700;
+          text-align: right;
+        }
+
+        .order-modal-tabs {
+          display: flex;
+          border-bottom: 1px solid #21262D;
+          gap: 1.5rem;
+        }
+
+        .modal-tab-btn {
+          background: transparent;
+          border: none;
+          border-bottom: 2px solid transparent;
+          padding-bottom: 8px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #8B949E;
+          cursor: pointer;
+          transition: all 0.2s;
+          letter-spacing: 0.05em;
+        }
+        .modal-tab-btn:hover {
+          color: #FFFFFF;
+        }
+
+        .order-modal-balance-box {
+          background: #0D1117;
+          border: 1px solid #21262D;
+          border-radius: 16px;
+          padding: 12px 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .balance-info-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 11px;
+          color: #8B949E;
+        }
+
+        .balance-val {
+          font-weight: 800;
+          color: #FFFFFF;
+          margin-left: auto;
+        }
+
+        .slider-container {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-top: 4px;
+        }
+
+        .slider-wrapper {
+          flex: 1;
+          display: flex;
+          align-items: center;
+        }
+
+        .modal-range-slider {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 100%;
+          height: 20px !important;
+          background: transparent !important;
+          border: none !important;
+          padding: 0 !important;
+          margin: 0;
+          outline: none;
+          cursor: pointer;
+        }
+
+        .modal-range-slider::-webkit-slider-runnable-track {
+          width: 100%;
+          height: 6px;
+          border-radius: 9999px;
+          background: linear-gradient(to right, var(--slider-color) 0%, var(--slider-color) var(--slider-progress), #21262D var(--slider-progress), #21262D 100%);
+        }
+
+        .modal-range-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 16px;
+          height: 16px;
+          border-radius: 9999px;
+          background: #FFFFFF;
+          border: 2px solid var(--slider-color);
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          margin-top: -5px;
+          transition: transform 0.1s;
+        }
+        .modal-range-slider::-webkit-slider-thumb:hover {
+          transform: scale(1.2);
+        }
+
+        .modal-range-slider::-moz-range-track {
+          width: 100%;
+          height: 6px;
+          border-radius: 9999px;
+          background: linear-gradient(to right, var(--slider-color) 0%, var(--slider-color) var(--slider-progress), #21262D var(--slider-progress), #21262D 100%);
+        }
+
+        .modal-range-slider::-moz-range-thumb {
+          width: 16px;
+          height: 16px;
+          border: 2px solid var(--slider-color);
+          border-radius: 9999px;
+          background: #FFFFFF;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          cursor: pointer;
+        }
+
+        .slider-percentage-text {
+          font-size: 11px;
+          font-weight: 800;
+          color: #FFFFFF;
+          width: 28px;
+          text-align: right;
+        }
+
+        .quick-percent-buttons {
+          display: flex;
+          gap: 6px;
+          justify-content: space-between;
+        }
+
+        .btn-pct-quick {
+          flex: 1;
+          background: #161B22;
+          border: 1px solid #21262D;
+          border-radius: 8px;
+          padding: 6px 0;
+          font-size: 10px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .btn-pct-quick:hover {
+          border-color: #30363D;
+          color: #FFFFFF;
+        }
+
+        .stepper-group-fields {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .stepper-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .stepper-label {
+          font-size: 12px;
+          font-weight: 700;
+          color: #8B949E;
+        }
+
+        .stepper-control-box {
+          display: flex;
+          align-items: center;
+          background: #0D1117;
+          border: 1px solid #21262D;
+          border-radius: 12px;
+          height: 36px;
+          width: 180px;
+          overflow: hidden;
+        }
+
+        .stepper-btn {
+          width: 36px;
+          height: 100%;
+          background: transparent;
+          border: none;
+          color: #8B949E;
+          font-size: 14px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background 0.2s, color 0.2s;
+        }
+        .stepper-btn:hover:not(:disabled) {
+          background: #21262D;
+          color: #FFFFFF;
+        }
+        .stepper-btn:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+        }
+
+        .stepper-input {
+          flex: 1;
+          background: transparent;
+          border: none;
+          outline: none;
+          color: #FFFFFF;
+          font-weight: 800;
+          font-size: 12px;
+          text-align: center;
+          width: 100%;
+        }
+        .stepper-input:disabled {
+          color: #8B949E;
+        }
+
+        .ara-arb-readout {
+          display: flex;
+          justify-content: space-between;
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid #21262D;
+          padding: 8px 12px;
+          border-radius: 10px;
+        }
+
+        .ara-arb-col {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .tag-label {
+          font-size: 9px;
+          color: #8B949E;
+          text-transform: uppercase;
+          font-weight: 600;
+        }
+
+        .tag-val {
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .total-investment-box {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          border-top: 1px solid #21262D;
+          padding-top: 12px;
+        }
+
+        .investment-header {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .investment-header .title {
+          font-size: 12px;
+          font-weight: 800;
+          color: #FFFFFF;
+        }
+
+        .investment-header .subtitle {
+          font-size: 9px;
+          color: #8B949E;
+        }
+
+        .investment-value {
+          font-size: 18px;
+          font-weight: 800;
+          color: #F59E0B;
+          letter-spacing: -0.02em;
+        }
+
+        .modal-submit-btn {
+          width: 100%;
+          border: none;
+          border-radius: 14px;
+          padding: 14px 0;
+          font-size: 13px;
+          font-weight: 800;
+          cursor: pointer;
+          transition: opacity 0.2s, transform 0.1s;
+        }
+        .modal-submit-btn:hover:not(:disabled) {
+          opacity: 0.9;
+        }
+        .modal-submit-btn:active:not(:disabled) {
+          transform: scale(0.98);
+        }
+        .modal-submit-btn:disabled {
+          cursor: not-allowed;
+          opacity: 0.6;
+        }
+
+        .order-success-overlay {
+          position: absolute;
+          inset: 0;
+          background: #161B22;
+          z-index: 10;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 1.5rem;
+          text-align: center;
+        }
+
+        .order-success-icon-wrap {
+          margin-bottom: 12px;
+        }
+
+        .order-success-title {
+          font-size: 16px;
+          font-weight: 800;
+          color: #FFFFFF;
+          margin: 0 0 6px 0;
+        }
+
+        .order-success-subtitle {
+          font-size: 11px;
+          color: #8B949E;
+          margin: 0 0 16px 0;
+          line-height: 1.4;
+        }
+
+        .order-success-summary-box {
+          width: 100%;
+          background: #0D1117;
+          border: 1px solid #21262D;
+          border-radius: 16px;
+          padding: 12px 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-bottom: 20px;
+          text-align: left;
+        }
+
+        .summary-row {
+          display: flex;
+          justify-content: space-between;
+          font-size: 11px;
+        }
+
+        .summary-label {
+          color: #8B949E;
+        }
+
+        .summary-val {
+          color: #FFFFFF;
+          font-weight: 700;
+        }
+
+        .summary-row.total-row {
+          border-top: 1px solid #21262D;
+          padding-top: 8px;
+          margin-top: 4px;
+        }
+
+        .btn-success-close {
+          width: 100%;
+          background: #21262D;
+          border: 1px solid #30363D;
+          color: #FFFFFF;
+          border-radius: 12px;
+          padding: 12px 0;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        .btn-success-close:hover {
+          background: #30363D;
+        }
       `}</style>
 
       {/* TOAST POPUP */}
@@ -1285,12 +2157,7 @@ export default function MarketDetail() {
         <div className="orderbook-sidebar-col">
           
           {/* Order Book */}
-          <div className="card-premium-dark">
-            <span className="card-title-label">
-              <Layers size={14} className="text-primary" />
-              Order Book (Kedalaman Antrean)
-            </span>
-
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {isSuspended && (
               <div style={{
                 backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -1301,216 +2168,214 @@ export default function MarketDetail() {
               </div>
             )}
 
-            <div className="orderbook-panel">
-              <div className="ob-header-row">
-                <span>Vol Beli (Lot)</span>
-                <span style={{ textAlign: 'center' }}>Harga</span>
-                <span style={{ textAlign: 'right' }}>Vol Jual (Lot)</span>
-              </div>
-
-              {/* ASKS (Penawaran Jual - Asks Terendah di Bawah) */}
-              {[...activeDepth.asks].reverse().map((ask, idx) => {
-                const volLot = (ask.quantity || ask.qty || 0) / LOT_SIZE;
-                const widthPercent = activeDepth.maxQty > 0 ? ((ask.quantity || ask.qty || 0) / activeDepth.maxQty) * 100 : 0;
-                return (
-                  <div key={`ask-${idx}`} className="ob-level-row">
-                    <div className="ob-bar-bg-ask" style={{ width: `${widthPercent}%` }}></div>
-                    <span style={{ color: '#8B949E' }}>-</span>
-                    <span style={{ color: '#EF4444', textAlign: 'center', fontWeight: 'bold' }}>
-                      {ask.price.toLocaleString('id-ID')}
-                    </span>
-                    <span style={{ color: '#FFFFFF', textAlign: 'right' }}>
-                      {volLot.toLocaleString('id-ID')}
-                    </span>
-                  </div>
-                );
-              })}
-
-              {/* SPREAD BAR */}
-              <div className="ob-spread-separator">
-                <span>Selisih (Spread)</span>
-                <span style={{ color: '#F59E0B', fontFamily: 'monospace' }}>
-                  Rp {marketSpread.toLocaleString('id-ID')}
+            <div className="orderbook-widget-premium">
+              {/* 1. Header Info Saham */}
+              <div className="ob-header-info">
+                <span className="ob-symbol-badge">{activeSymbol}</span>
+                <span className="ob-last-label">LAST</span>
+                <span className="ob-last-price" style={{ color: lastPriceColor }}>
+                  {lastPrice.toLocaleString('id-ID')}
                 </span>
               </div>
 
-              {/* BIDS (Antrean Beli - Bid Tertinggi di Atas) */}
-              {activeDepth.bids.map((bid, idx) => {
-                const volLot = (bid.quantity || bid.qty || 0) / LOT_SIZE;
-                const widthPercent = activeDepth.maxQty > 0 ? ((bid.quantity || bid.qty || 0) / activeDepth.maxQty) * 100 : 0;
-                return (
-                  <div key={`bid-${idx}`} className="ob-level-row">
-                    <div className="ob-bar-bg-bid" style={{ width: `${widthPercent}%` }}></div>
-                    <span style={{ color: '#FFFFFF' }}>{volLot.toLocaleString('id-ID')}</span>
-                    <span style={{ color: '#10B981', textAlign: 'center', fontWeight: 'bold' }}>
-                      {bid.price.toLocaleString('id-ID')}
-                    </span>
-                    <span style={{ color: '#8B949E', textAlign: 'right' }}>-</span>
-                  </div>
-                );
-              })}
-
-              {activeDepth.asks.length === 0 && activeDepth.bids.length === 0 && (
-                <div style={{ padding: '20px 0', textAlign: 'center', color: '#8B949E', fontSize: '11px' }}>
-                  Antrean kosong (Sesi perdagangan closed / belum ada order).
+              {/* 2. Grid Statistik Harian */}
+              <div className="ob-stats-grid">
+                {/* Baris 1 */}
+                <div className="ob-stat-cell border-r border-b">
+                  <span className="ob-stat-label">Prev</span>
+                  <span className="ob-stat-val text-warning">{prevClose.toLocaleString('id-ID')}</span>
                 </div>
-              )}
+                <div className="ob-stat-cell border-r border-b">
+                  <span className="ob-stat-label">Open</span>
+                  <span className="ob-stat-val" style={{ color: openColor }}>{openPrice.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="ob-stat-cell border-b">
+                  <span className="ob-stat-label">Lot</span>
+                  <span className="ob-stat-val text-white">{formatCompactNumber(lotVolume)}</span>
+                </div>
+
+                {/* Baris 2 */}
+                <div className="ob-stat-cell border-r border-b">
+                  <span className="ob-stat-label">Chg</span>
+                  <span className="ob-stat-val" style={{ color: lastPriceColor }}>
+                    {priceChange >= 0 ? `+${priceChange.toLocaleString('id-ID')}` : priceChange.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="ob-stat-cell border-r border-b">
+                  <span className="ob-stat-label">High</span>
+                  <span className="ob-stat-val" style={{ color: highColor }}>{highPrice.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="ob-stat-cell border-b">
+                  <span className="ob-stat-label">Val</span>
+                  <span className="ob-stat-val text-white">{formatCompactNumber(valVolume)}</span>
+                </div>
+
+                {/* Baris 3 */}
+                <div className="ob-stat-cell border-r border-b">
+                  <span className="ob-stat-label">%</span>
+                  <span className="ob-stat-val" style={{ color: lastPriceColor }}>
+                    {priceChangePercent >= 0 ? `+${priceChangePercent.toFixed(2)}%` : `${priceChangePercent.toFixed(2)}%`}
+                  </span>
+                </div>
+                <div className="ob-stat-cell border-r border-b">
+                  <span className="ob-stat-label">Low</span>
+                  <span className="ob-stat-val" style={{ color: lowColor }}>{lowPrice.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="ob-stat-cell border-b">
+                  <span className="ob-stat-label">Avg</span>
+                  <span className="ob-stat-val text-white">{avgPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}</span>
+                </div>
+
+                {/* Baris 4 */}
+                <div className="ob-stat-cell border-r border-b">
+                  <span className="ob-stat-label">Freq</span>
+                  <span className="ob-stat-val text-white">{freqValue.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="ob-stat-cell border-r border-b">
+                  <span className="ob-stat-label">F Buy</span>
+                  <span className="ob-stat-val text-white">{formatCompactNumber(fBuy)}</span>
+                </div>
+                <div className="ob-stat-cell border-b">
+                  <span className="ob-stat-label">F Sell</span>
+                  <span className="ob-stat-val text-white">{formatCompactNumber(fSell)}</span>
+                </div>
+
+                {/* Baris 5 */}
+                <div className="ob-stat-cell border-r">
+                  <span className="ob-stat-label">ARA</span>
+                  <span className="ob-stat-val text-success" style={{ color: '#10B981' }}>
+                    {araArbValues ? araArbValues.ara.toLocaleString('id-ID') : '-'}
+                  </span>
+                </div>
+                <div className="ob-stat-cell border-r">
+                  <span className="ob-stat-label">ARB</span>
+                  <span className="ob-stat-val text-danger" style={{ color: '#EF4444' }}>
+                    {araArbValues ? araArbValues.arb.toLocaleString('id-ID') : '-'}
+                  </span>
+                </div>
+                <div className="ob-stat-cell">
+                  <span className="ob-stat-label">Board</span>
+                  <span className="ob-stat-val text-white" style={{ fontSize: '10px', textTransform: 'uppercase' }}>
+                    {(activeSecurity as any)?.board || 'Main'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 3. Tabel Header */}
+              <div className="ob-table-header">
+                <div className="ob-col-1">Lot</div>
+                <div className="ob-col-2">Bid</div>
+                <div className="ob-col-3">Offer</div>
+                <div className="ob-col-4">Lot</div>
+              </div>
+
+              {/* 4. Baris Data Transaksi */}
+              <div className="ob-rows-container">
+                {Array.from({ length: 10 }).map((_, idx) => {
+                  const bid = activeDepth.bids[idx];
+                  const ask = activeDepth.asks[idx];
+
+                  const bidVolLot = bid ? (bid.quantity || bid.qty || 0) / LOT_SIZE : null;
+                  const askVolLot = ask ? (ask.quantity || ask.qty || 0) / LOT_SIZE : null;
+
+                  const bidBarWidth = bid && activeDepth.maxBidQty > 0 
+                    ? ((bid.quantity || bid.qty || 0) / activeDepth.maxBidQty) * 50 
+                    : 0;
+                  const askBarWidth = ask && activeDepth.maxAskQty > 0 
+                    ? ((ask.quantity || ask.qty || 0) / activeDepth.maxAskQty) * 50 
+                    : 0;
+
+                  const bidPriceColor = bid 
+                    ? (bid.price > prevClose ? '#10B981' : (bid.price < prevClose ? '#EF4444' : '#F59E0B'))
+                    : '#FFFFFF';
+                  const askPriceColor = ask 
+                    ? (ask.price > prevClose ? '#10B981' : (ask.price < prevClose ? '#EF4444' : '#F59E0B'))
+                    : '#FFFFFF';
+
+                  return (
+                    <div key={`ob-row-${idx}`} className="ob-data-row">
+                      {/* Depth Bar Bid */}
+                      {bid && (
+                        <div className="ob-depth-bar-bid" style={{ width: `${bidBarWidth}%` }}></div>
+                      )}
+                      {/* Depth Bar Offer */}
+                      {ask && (
+                        <div className="ob-depth-bar-offer" style={{ width: `${askBarWidth}%` }}></div>
+                      )}
+
+                      <div className="ob-cell ob-col-1 ob-cell-lot-bid">
+                        {bidVolLot !== null ? bidVolLot.toLocaleString('id-ID') : '-'}
+                      </div>
+                      <div className="ob-cell ob-col-2" style={{ color: bidPriceColor }}>
+                        {bid ? bid.price.toLocaleString('id-ID') : '-'}
+                      </div>
+                      <div className="ob-cell ob-col-3" style={{ color: askPriceColor }}>
+                        {ask ? ask.price.toLocaleString('id-ID') : '-'}
+                      </div>
+                      <div className="ob-cell ob-col-4 ob-cell-lot-ask">
+                        {askVolLot !== null ? askVolLot.toLocaleString('id-ID') : '-'}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {activeDepth.asks.length === 0 && activeDepth.bids.length === 0 && (
+                  <div className="ob-empty-state">
+                    Antrean kosong (Sesi perdagangan closed / belum ada order).
+                  </div>
+                )}
+              </div>
+
+              {/* 5. Total Rekapitulasi */}
+              <div className="ob-table-footer">
+                <div className="ob-col-1">{totalBidVolume.toLocaleString('id-ID')}</div>
+                <div style={{ gridColumn: 'span 2', textAlign: 'center' }} className="ob-total-label">TOTAL (LOT)</div>
+                <div className="ob-col-4">{totalAskVolume.toLocaleString('id-ID')}</div>
+              </div>
             </div>
           </div>
 
-          {/* Order Entry */}
-          <div className="card-premium-dark">
-            <span className="card-title-label">
-              <Wallet size={14} className="text-primary" />
-              Order Entry Console
-            </span>
-
-            {/* Toggle Side Beli / Jual */}
-            <div className="oe-side-select">
-              <button 
-                type="button" 
-                onClick={() => setTradeSide('BUY')}
-                className="oe-side-btn"
-                style={{
-                  backgroundColor: tradeSide === 'BUY' ? '#10B981' : 'transparent',
-                  color: tradeSide === 'BUY' ? '#FFFFFF' : '#8B949E'
-                }}
-              >
-                BELI (BUY)
-              </button>
-              <button 
-                type="button" 
-                onClick={() => setTradeSide('SELL')}
-                className="oe-side-btn"
-                style={{
-                  backgroundColor: tradeSide === 'SELL' ? '#EF4444' : 'transparent',
-                  color: tradeSide === 'SELL' ? '#FFFFFF' : '#8B949E'
-                }}
-              >
-                JUAL (SELL)
-              </button>
-            </div>
-
-            {/* Segmented Control Order Type */}
-            <div className="oe-type-tabs">
-              <button 
-                type="button" 
-                onClick={() => setOrderType('limit')}
-                className={`oe-type-tab-btn ${orderType === 'limit' ? 'active' : ''}`}
-              >
-                LIMIT
-              </button>
-              <button 
-                type="button" 
-                onClick={() => setOrderType('market')}
-                className={`oe-type-tab-btn ${orderType === 'market' ? 'active' : ''}`}
-              >
-                MARKET
-              </button>
-            </div>
-
-            {/* RDN info & Kepemilikan */}
-            <div style={{ backgroundColor: '#161B22', border: '1px solid #21262D', borderRadius: '8px', padding: '10px', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
-                <span style={{ color: '#8B949E' }}>RDN Buying Power:</span>
-                <span style={{ color: '#FFFFFF', fontWeight: 'bold' }}>Rp {buyingPower.toLocaleString('id-ID')}</span>
-              </div>
-              {tradeSide === 'SELL' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
-                  <span style={{ color: '#8B949E' }}>Kepemilikan Saham:</span>
-                  <span style={{ color: '#FFFFFF', fontWeight: 'bold' }}>{ownedQtyLots.toLocaleString('id-ID')} Lot</span>
-                </div>
-              )}
-              {araArbValues && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace', borderTop: '1px dashed #21262D', paddingTop: '4px', marginTop: '4px' }}>
-                  <span style={{ color: '#8B949E' }}>Batas ARA / ARB:</span>
-                  <span style={{ fontWeight: 'bold' }}>
-                    <span style={{ color: '#10B981' }}>Rp {araArbValues.ara.toLocaleString('id-ID')}</span>
-                    <span style={{ color: '#8B949E' }}> / </span>
-                    <span style={{ color: '#EF4444' }}>Rp {araArbValues.arb.toLocaleString('id-ID')}</span>
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Input Form */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {orderType === 'limit' && (
-                <div className="oe-input-box">
-                  <span className="oe-input-label">Harga</span>
-                  <input 
-                    type="number" 
-                    value={limitPrice} 
-                    onChange={(e) => setLimitPrice(e.target.value)} 
-                    placeholder="Harga Limit"
-                    className="oe-input-field"
-                    disabled={isSuspended}
-                  />
-                  <span className="oe-input-label" style={{ fontSize: '9px' }}>IDR</span>
-                </div>
-              )}
-
-              <div className="oe-input-box">
-                <span className="oe-input-label">Jumlah</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <button 
-                    type="button" 
-                    onClick={() => setQtyLots(Math.max(1, qtyLots - 1))}
-                    className="btn-qty-adj"
-                    disabled={isSuspended}
-                  >
-                    -
-                  </button>
-                  <input 
-                    type="number" 
-                    value={qtyLots} 
-                    onChange={(e) => setQtyLots(Math.max(1, parseInt(e.target.value) || 1))}
-                    style={{ background: 'transparent', border: 'none', color: '#FFFFFF', fontWeight: 'bold', width: '40px', textAlign: 'center', fontSize: '13px', outline: 'none' }}
-                    min="1"
-                    disabled={isSuspended}
-                  />
-                  <button 
-                    type="button" 
-                    onClick={() => setQtyLots(qtyLots + 1)}
-                    className="btn-qty-adj"
-                    disabled={isSuspended}
-                  >
-                    +
-                  </button>
-                </div>
-                <span className="oe-input-label">LOT</span>
-              </div>
-            </div>
-
-            {/* Summary Transaksi */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', borderTop: '1px solid #21262D', paddingTop: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
-                <span style={{ color: '#8B949E' }}>Nilai Order:</span>
-                <span style={{ color: '#FFFFFF' }}>Rp {calculatedEstValue.toLocaleString('id-ID')}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
-                <span style={{ color: '#8B949E' }}>Estimasi Biaya Broker:</span>
-                <span style={{ color: '#FFFFFF' }}>Rp {Math.round(calculatedEstFee).toLocaleString('id-ID')}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace', fontSize: '12px', fontWeight: 'bold', borderTop: '1px solid rgba(33, 38, 45, 0.4)', paddingTop: '6px' }}>
-                <span style={{ color: '#FFFFFF' }}>{tradeSide === 'BUY' ? 'Total Tagihan:' : 'Total Terima:'}</span>
-                <span style={{ color: '#F59E0B' }}>Rp {Math.round(totalBill).toLocaleString('id-ID')}</span>
-              </div>
-            </div>
-
-            {/* Execute Button */}
+          {/* Tombol Beli / Jual Modal Trigger */}
+          <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
             <button 
-              type="button" 
-              onClick={handleExecuteTrade}
-              disabled={isSuspended || orderActionLoading || !isMarketOpen}
+              type="button"
+              onClick={() => openOrderModal('BUY')}
+              disabled={isSuspended}
               style={{
-                width: '100%', border: 'none', padding: '12px', borderRadius: '8px', 
-                fontWeight: 'bold', fontSize: '12px', color: '#FFFFFF', cursor: 'pointer',
-                backgroundColor: isSuspended || !isMarketOpen ? '#21262D' : (tradeSide === 'BUY' ? '#10B981' : '#EF4444'),
-                transition: 'opacity 0.2s ease'
+                flex: 1,
+                border: 'none',
+                padding: '14px',
+                borderRadius: '8px', 
+                fontWeight: 'bold',
+                fontSize: '14px',
+                color: '#FFFFFF',
+                cursor: isSuspended ? 'not-allowed' : 'pointer',
+                backgroundColor: isSuspended ? '#21262D' : '#10B981',
+                transition: 'opacity 0.2s ease, transform 0.1s ease'
               }}
+              className="oe-modal-trigger-btn"
             >
-              {orderActionLoading ? 'Memproses...' : (!isMarketOpen ? closedButtonLabel : `KIRIM ORDER ${tradeSide === 'BUY' ? 'BELI' : 'JUAL'}`)}
+              BELI (BUY)
+            </button>
+            <button 
+              type="button"
+              onClick={() => openOrderModal('SELL')}
+              disabled={isSuspended}
+              style={{
+                flex: 1,
+                border: 'none',
+                padding: '14px',
+                borderRadius: '8px', 
+                fontWeight: 'bold',
+                fontSize: '14px',
+                color: '#FFFFFF',
+                cursor: isSuspended ? 'not-allowed' : 'pointer',
+                backgroundColor: isSuspended ? '#21262D' : '#EF4444',
+                transition: 'opacity 0.2s ease, transform 0.1s ease'
+              }}
+              className="oe-modal-trigger-btn"
+            >
+              JUAL (SELL)
             </button>
           </div>
 
@@ -1811,6 +2676,339 @@ export default function MarketDetail() {
           </div>
         )}
       </div>
+
+      {/* --- MODAL POPUP ORDER ENTRY --- */}
+      {isOrderModalOpen && createPortal(
+        <div className="order-modal-backdrop animate-fade-in" onClick={(e) => {
+          if (e.target === e.currentTarget) setIsOrderModalOpen(false);
+        }}>
+          <div className="order-modal-container">
+            
+            {/* SUCCESS OVERLAY */}
+            {showSuccessOverlay && successOrderDetails && (
+              <div className="order-success-overlay">
+                <div className="order-success-icon-wrap">
+                  <CheckCircle size={48} className="text-success animate-scale-up" />
+                </div>
+                <h3 className="order-success-title">Order Berhasil Dikirim</h3>
+                <p className="order-success-subtitle">
+                  {successOrderDetails.deferred 
+                    ? `Instruksi order ${successOrderDetails.side} ${successOrderDetails.symbol} telah dikirim ke antrean deferred (bursa belum buka).`
+                    : `Instruksi order ${successOrderDetails.side} ${successOrderDetails.symbol} Anda telah masuk ke sistem antrean.`
+                  }
+                </p>
+                
+                <div className="order-success-summary-box">
+                  <div className="summary-row">
+                    <span className="summary-label">Tipe Order</span>
+                    <span className="summary-val">{successOrderDetails.type.toUpperCase()}</span>
+                  </div>
+                  <div className="summary-row">
+                    <span className="summary-label">Saham</span>
+                    <span className="summary-val">{successOrderDetails.symbol} ({activeSecurity?.name || 'Sekuritas Asset'})</span>
+                  </div>
+                  <div className="summary-row">
+                    <span className="summary-label">Harga Saham</span>
+                    <span className="summary-val">
+                      {successOrderDetails.type === 'market' ? 'Market Price' : `Rp ${successOrderDetails.price.toLocaleString('id-ID')}`}
+                    </span>
+                  </div>
+                  <div className="summary-row">
+                    <span className="summary-label">Jumlah Order</span>
+                    <span className="summary-val">{successOrderDetails.qtyLots.toLocaleString('id-ID')} Lot ({ (successOrderDetails.qtyLots * 100).toLocaleString('id-ID') } Lembar)</span>
+                  </div>
+                  <div className="summary-row total-row">
+                    <span className="summary-label font-bold">Total {successOrderDetails.side === 'BUY' ? 'Investasi' : 'Penerimaan'}</span>
+                    <span className="summary-val text-warning font-bold">Rp {Math.round(successOrderDetails.totalBill).toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+                
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setIsOrderModalOpen(false);
+                    setShowSuccessOverlay(false);
+                  }} 
+                  className="btn-success-close"
+                >
+                  Tutup
+                </button>
+              </div>
+            )}
+
+            {/* MODAL MAIN CONTENT */}
+            <div className="order-modal-content">
+              {/* HEADER ROW */}
+              <div className="order-modal-header">
+                {/* Classic / Advanced Indicator */}
+                <div className="order-modal-badge-classic">
+                  Classic
+                </div>
+
+                {/* Title Beli / Jual */}
+                <h2 className="order-modal-title" style={{ color: tradeSide === 'BUY' ? '#10B981' : '#EF4444' }}>
+                  {tradeSide === 'BUY' ? 'Buy' : 'Sell'} Order
+                </h2>
+
+                {/* Close Button */}
+                <button 
+                  type="button"
+                  className="order-modal-close-btn" 
+                  onClick={() => setIsOrderModalOpen(false)}
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              {/* ASSET BANNER */}
+              <div className="order-modal-asset-banner">
+                <div className="asset-left">
+                  {/* Logo Mockup */}
+                  <div className="asset-logo" style={{ backgroundColor: tradeSide === 'BUY' ? '#10B981' : '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span className="font-extrabold text-sm text-white">{activeSymbol.slice(0, 2)}</span>
+                  </div>
+                  <div className="asset-info">
+                    <div className="asset-code-row" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="asset-code" style={{ fontWeight: 800, color: '#FFFFFF', fontSize: '14px' }}>{activeSymbol}</span>
+                      <span className="asset-board-badge" style={{ fontSize: '9px', fontWeight: 700, color: '#F59E0B', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', padding: '1px 4px', borderRadius: '4px', textTransform: 'uppercase' }}>{(activeSecurity as any)?.board || 'Main'}</span>
+                    </div>
+                    <span className="asset-name" style={{ fontSize: '10px', color: '#8B949E' }}>{activeSecurity?.name || 'Mandala Asset'}</span>
+                  </div>
+                </div>
+                
+                <div className="asset-right" style={{ textAlign: 'right' }}>
+                  <div className="asset-price" style={{ fontWeight: 800, color: '#FFFFFF', fontSize: '14px' }}>{lastPrice.toLocaleString('id-ID')}</div>
+                  <div className="asset-change" style={{ fontSize: '10px', fontWeight: 700, color: isGainer ? '#10B981' : '#EF4444' }}>
+                    {priceChange >= 0 ? `+${priceChange.toLocaleString('id-ID')}` : priceChange.toLocaleString('id-ID')} ({priceChangePercent >= 0 ? `+${priceChangePercent.toFixed(2)}%` : `${priceChangePercent.toFixed(2)}%`})
+                  </div>
+                </div>
+              </div>
+
+              {/* SEGMENTED TABS (Order Type) */}
+              <div className="order-modal-tabs" style={{ display: 'flex', borderBottom: '1px solid #21262D', gap: '1.5rem' }}>
+                <button 
+                  type="button"
+                  onClick={() => setOrderType('limit')} 
+                  className={`modal-tab-btn ${orderType === 'limit' ? 'active' : ''}`}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    paddingBottom: '8px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    letterSpacing: '0.05em',
+                    color: orderType === 'limit' ? (tradeSide === 'BUY' ? '#10B981' : '#EF4444') : '#8B949E',
+                    borderBottom: '2px solid',
+                    borderBottomColor: orderType === 'limit' ? (tradeSide === 'BUY' ? '#10B981' : '#EF4444') : 'transparent'
+                  }}
+                >
+                  LIMIT
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setOrderType('market');
+                    setLimitPrice(String(lastPrice));
+                  }} 
+                  className={`modal-tab-btn ${orderType === 'market' ? 'active' : ''}`}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    paddingBottom: '8px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    letterSpacing: '0.05em',
+                    color: orderType === 'market' ? (tradeSide === 'BUY' ? '#10B981' : '#EF4444') : '#8B949E',
+                    borderBottom: '2px solid',
+                    borderBottomColor: orderType === 'market' ? (tradeSide === 'BUY' ? '#10B981' : '#EF4444') : 'transparent'
+                  }}
+                >
+                  MARKET
+                </button>
+              </div>
+
+              {/* BALANCE AND SLIDER CONTROLLER */}
+              <div className="order-modal-balance-box">
+                <div className="balance-info-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#8B949E' }}>
+                  <Wallet size={12} className="text-secondary" />
+                  {tradeSide === 'BUY' ? (
+                    <>
+                      <span>Trading Power:</span>
+                      <span className="balance-val" style={{ fontWeight: 800, color: '#FFFFFF', marginLeft: 'auto' }}>Rp {buyingPower.toLocaleString('id-ID')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Kepemilikan Saham:</span>
+                      <span className="balance-val" style={{ fontWeight: 800, color: '#FFFFFF', marginLeft: 'auto' }}>{ownedQtyLots.toLocaleString('id-ID')} Lot</span>
+                    </>
+                  )}
+                </div>
+
+                {/* Range Slider */}
+                <div className="slider-container" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+                  <div className="slider-wrapper" style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      value={currentUsedPercentage} 
+                      onChange={(e) => handleSliderChange(Number(e.target.value))}
+                      className="modal-range-slider"
+                      style={{
+                        ['--slider-progress' as any]: `${currentUsedPercentage}%`,
+                        ['--slider-color' as any]: tradeSide === 'BUY' ? '#10B981' : '#EF4444'
+                      }}
+                    />
+                  </div>
+                  <span className="slider-percentage-text" style={{ fontSize: '11px', fontWeight: 800, color: '#FFFFFF', width: '28px', textAlign: 'right' }}>{currentUsedPercentage}%</span>
+                </div>
+                
+                {/* Quick Percent Buttons */}
+                <div className="quick-percent-buttons" style={{ display: 'flex', gap: '6px', justifyContent: 'space-between' }}>
+                  {[0, 25, 50, 75, 100].map(pct => (
+                    <button 
+                      key={`pct-${pct}`}
+                      type="button"
+                      onClick={() => handleSliderChange(pct)}
+                      className={`btn-pct-quick ${currentUsedPercentage === pct ? 'active' : ''}`}
+                      style={{
+                        flex: 1,
+                        background: '#161B22',
+                        border: '1px solid',
+                        borderColor: currentUsedPercentage === pct ? (tradeSide === 'BUY' ? '#10B981' : '#EF4444') : '#21262D',
+                        borderRadius: '8px',
+                        padding: '6px 0',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        color: currentUsedPercentage === pct ? '#FFFFFF' : '#8B949E'
+                      }}
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* PRICE & LOT STEPPERS */}
+              <div className="stepper-group-fields" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* PRICE STEPPER */}
+                <div className="stepper-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="stepper-label" style={{ fontSize: '12px', fontWeight: 700, color: '#8B949E' }}>Price</span>
+                  <div className="stepper-control-box">
+                    <button 
+                      type="button"
+                      onClick={() => adjustPrice('down')} 
+                      disabled={orderType === 'market'}
+                      className="stepper-btn"
+                    >
+                      -
+                    </button>
+                    <input 
+                      type="text" 
+                      value={orderType === 'market' ? 'Market Price' : limitPrice.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} 
+                      onChange={(e) => handlePriceChange(e.target.value)}
+                      disabled={orderType === 'market'}
+                      className="stepper-input"
+                      placeholder="0"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => adjustPrice('up')} 
+                      disabled={orderType === 'market'}
+                      className="stepper-btn"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* LOT STEPPER */}
+                <div className="stepper-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="stepper-label" style={{ fontSize: '12px', fontWeight: 700, color: '#8B949E' }}>{tradeSide === 'BUY' ? 'Buy Lot' : 'Sell Lot'}</span>
+                  <div className="stepper-control-box">
+                    <button 
+                      type="button"
+                      onClick={() => setQtyLots(Math.max(1, qtyLots - 1))} 
+                      className="stepper-btn"
+                    >
+                      -
+                    </button>
+                    <input 
+                      type="text" 
+                      value={qtyLots.toLocaleString('id-ID')} 
+                      onChange={(e) => handleLotChange(e.target.value)}
+                      className="stepper-input"
+                      placeholder="1"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setQtyLots(qtyLots + 1)} 
+                      className="stepper-btn"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ARA ARB LIMIT READOUT */}
+              {araArbValues && orderType === 'limit' && (
+                <div className="ara-arb-readout" style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid #21262D', padding: '8px 12px', borderRadius: '10px' }}>
+                  <div className="ara-arb-col" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span className="tag-label" style={{ fontSize: '9px', color: '#8B949E', textTransform: 'uppercase', fontWeight: 600 }}>Batas ARA</span>
+                    <span className="tag-val text-success" style={{ fontSize: '11px', fontWeight: 800, color: '#10B981' }}>Rp {araArbValues.ara.toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="ara-arb-col" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span className="tag-label" style={{ fontSize: '9px', color: '#8B949E', textTransform: 'uppercase', fontWeight: 600 }}>Batas ARB</span>
+                    <span className="tag-val text-danger" style={{ fontSize: '11px', fontWeight: 800, color: '#EF4444' }}>Rp {araArbValues.arb.toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* TOTAL INVESTMENT */}
+              <div className="total-investment-box" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #21262D', paddingTop: '12px' }}>
+                <div className="investment-header" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span className="title" style={{ fontSize: '12px', fontWeight: 800, color: '#FFFFFF' }}>Total {tradeSide === 'BUY' ? 'Investasi' : 'Penerimaan'}</span>
+                  <span className="subtitle" style={{ fontSize: '9px', color: '#8B949E' }}>(Termasuk Fee Estimasi)</span>
+                </div>
+                <div className="investment-value" style={{ fontSize: '18px', fontWeight: 800, color: '#F59E0B', letterSpacing: '-0.02em' }}>
+                  Rp {Math.round(totalBill).toLocaleString('id-ID')}
+                </div>
+              </div>
+
+              {/* SUBMIT BUTTON */}
+              <button 
+                type="button"
+                onClick={handleExecuteTrade}
+                disabled={orderActionLoading || isSuspended || !isMarketOpen}
+                className="modal-submit-btn"
+                style={{
+                  width: '100%',
+                  border: 'none',
+                  borderRadius: '14px',
+                  padding: '14px 0',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: (orderActionLoading || isSuspended || !isMarketOpen) ? 'not-allowed' : 'pointer',
+                  backgroundColor: isSuspended || !isMarketOpen ? '#21262D' : (tradeSide === 'BUY' ? '#10B981' : '#EF4444'),
+                  color: '#FFFFFF',
+                  transition: 'opacity 0.2s, transform 0.1s'
+                }}
+              >
+                {orderActionLoading ? 'Memproses...' : (!isMarketOpen ? closedButtonLabel : (tradeSide === 'BUY' ? 'Kirim Order Beli' : 'Kirim Order Jual'))}
+              </button>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   );
