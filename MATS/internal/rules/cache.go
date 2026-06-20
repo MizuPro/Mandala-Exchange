@@ -206,7 +206,11 @@ func (c *Cache) ValidatePlace(req PlaceValidationRequest) string {
 	if !validTick(req.Price, profile.TickSizeRules) {
 		return "price_not_valid_tick"
 	}
-	if !validPriceBand(req.Price, int64(security.ReferencePrice), profile.PriceBandRules) {
+	refPrice := int64(security.ReferencePrice)
+	if refPrice <= 0 {
+		refPrice = int64(security.PreviousClose)
+	}
+	if !validPriceBand(req.Price, refPrice, profile.PriceBandRules) {
 		return "price_outside_price_band"
 	}
 	if !validAutoRejection(req.Quantity, lotSize, int64(security.SharesOutstanding), profile.AutoRejectionRules) {
