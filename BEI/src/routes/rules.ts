@@ -365,6 +365,11 @@ export async function registerRuleRoutes(app: FastifyInstance) {
       }
     }
 
+    await publishMarketUpdate("session_status_changed", {
+      sessionId: body.sessionId,
+      status: body.status,
+    });
+
     return updated;
   });
 

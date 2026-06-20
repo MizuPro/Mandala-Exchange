@@ -6,6 +6,7 @@ import { issuerAnnouncements, issuers, listedSecurities, specialNotations } from
 import { actorFromRequest, correlationIdFromRequest, writeAudit } from "../lib/audit.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { announcementTypes, boardTypes, listingStatuses, marketMechanisms, notationTypes } from "../types/enums.js";
+import { publishMarketUpdate } from "../lib/redis.js";
 
 const issuerBody = z.object({
   code: z.string().min(2).max(12).transform((value) => value.toUpperCase()),
@@ -182,6 +183,7 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
       after: created,
       correlationId: correlationIdFromRequest(request)
     });
+    await publishMarketUpdate("security_created", { symbol: created.symbol });
     return created;
   });
 
@@ -219,6 +221,7 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
       after: updated,
       correlationId: correlationIdFromRequest(request)
     });
+    await publishMarketUpdate("security_updated", { symbol: updated.symbol });
     return updated;
   });
 
@@ -381,6 +384,7 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
       reason: body.reason,
       correlationId: correlationIdFromRequest(request)
     });
+    await publishMarketUpdate("suspend_symbol", { symbol: updated.symbol, reason: body.reason });
     return updated;
   });
 
@@ -403,6 +407,7 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
       after: updated,
       correlationId: correlationIdFromRequest(request)
     });
+    await publishMarketUpdate("resume_symbol", { symbol: updated.symbol });
     return updated;
   });
 }
