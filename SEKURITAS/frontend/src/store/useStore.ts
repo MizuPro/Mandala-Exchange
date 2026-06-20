@@ -46,6 +46,7 @@ export interface MarketState {
   suspendedSymbols: string[];
   lastPrices: Record<string, number>;
   depth: Record<string, { bids: any[]; asks: any[] }>;
+  summaries: Record<string, any>;
   trades: any[];
 }
 
@@ -184,7 +185,7 @@ export const useStore = create<AppState>((set, get) => ({
   tradeHistory: [],
   leaderboard: null,
   notifications: [],
-  market: { connected: false, sessionStatus: "", marketHalt: false, suspendedSymbols: [], lastPrices: {}, depth: {}, trades: [] },
+  market: { connected: false, sessionStatus: "", marketHalt: false, suspendedSymbols: [], lastPrices: {}, depth: {}, summaries: {}, trades: [] },
   portfolioLoading: false,
   ordersLoading: false,
   orderActionLoading: false,
@@ -284,10 +285,23 @@ export const useStore = create<AppState>((set, get) => ({
         fetchApi('/market/session').catch(() => null),
       ]);
       const sessionStatus = normalizeSessionStatus(activeSession?.status || activeSession?.session_status);
+      const securitiesList = Array.isArray(securities) ? securities : [];
+      const initialLastPrices = securitiesList.reduce<Record<string, number>>((acc, security: any) => {
+        const symbol = String(security.symbol || security.code || '').toUpperCase();
+        if (!symbol) return acc;
+        const price = Number(security.last || security.last_price || security.reference_price || security.previous_close || 0);
+        if (price > 0) acc[symbol] = price;
+        return acc;
+      }, {});
+      const currentMarket = get().market;
       set({
-        securities: Array.isArray(securities) ? securities : [],
+        securities: securitiesList,
         feeSchedule,
-        market: sessionStatus ? { ...get().market, sessionStatus } : get().market,
+        market: {
+          ...currentMarket,
+          lastPrices: { ...initialLastPrices, ...currentMarket.lastPrices },
+          ...(sessionStatus ? { sessionStatus } : {}),
+        },
         marketLoading: false,
       });
     } catch (err: any) {
@@ -526,7 +540,12 @@ export const useStore = create<AppState>((set, get) => ({
       const market = { ...state.market, connected: isConnected };
       
       if (event.type === 'session_state') {
-        market.sessionStatus = normalizeSessionStatus(event.payload?.status || event.payload?.session_status);
+        const status = normalizeSessionStatus(event.payload?.status || event.payload?.session_status);
+        market.sessionStatus = status;
+        if (status === 'closed' || status === 'pre_open') {
+          market.depth = {};
+          market.summaries = {};
+        }
       }
       if (event.type === 'session_timer') {
         market.timeRemainingSeconds = event.payload?.time_remaining_seconds;
@@ -554,6 +573,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (event.type === 'depth_snapshot' && event.symbol) {
         market.depth = { ...market.depth, [event.symbol]: { bids: event.payload?.bids || [], asks: event.payload?.asks || [] } };
+      }
+      if (event.type === 'market_summary' && event.symbol) {
+        market.summaries = { ...market.summaries, [event.symbol]: event.payload };
       }
       if (event.type === 'trade_tape') {
         market.trades = [event.payload, ...market.trades].filter(Boolean).slice(0, 20);
