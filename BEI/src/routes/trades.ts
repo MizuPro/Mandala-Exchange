@@ -116,7 +116,7 @@ export async function registerTradeRoutes(app: FastifyInstance) {
     return result.rows;
   });
 
-  app.get("/securities/:symbol/candles", async (request, reply) => {
+  app.get("/public/securities/:symbol/candles", async (request, reply) => {
     const params = z.object({ symbol: z.string().transform(s => s.toUpperCase()) }).parse(request.params);
     const query = z.object({
       resolution: z.enum(["1m", "1h", "1d", "1s"]).default("1m")
@@ -131,6 +131,7 @@ export async function registerTradeRoutes(app: FastifyInstance) {
     } else if (query.resolution === "1d") {
       timeBucket = "day";
     } else if (query.resolution === "1s") {
+      timeBucket = "second";
       // 1 Session: ambil session_id terbaru dari trade terakhir
       const lastTradeRes = await pool.query(
         "SELECT session_id FROM trades WHERE symbol = $1 ORDER BY occurred_at DESC LIMIT 1",

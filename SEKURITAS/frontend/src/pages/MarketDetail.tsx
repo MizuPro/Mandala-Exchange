@@ -304,7 +304,10 @@ export default function MarketDetail() {
       const { resolveApiBase } = await import('../config/endpoints');
       const apiBase = resolveApiBase();
       // Menggunakan sessionId aktif (jika ada trades berjalan)
-      const lastTradeRes = await fetch(`${apiBase}/portfolio/fills`);
+      const token = localStorage.getItem("token");
+      const lastTradeRes = await fetch(`${apiBase}/portfolio/fills`, {
+        headers: token ? { "Authorization": `Bearer ${token}` } : {}
+      });
       if (lastTradeRes.ok) {
         const data = await lastTradeRes.json();
         if (Array.isArray(data)) {
@@ -730,9 +733,7 @@ export default function MarketDetail() {
   const avgPrice = activeSummary?.volume > 0 ? (activeSummary.value / activeSummary.volume) : prevClose;
   const freqValue = activeSummary?.frequency || 0;
 
-  // Foreign simulated
-  const fBuy = valVolume * 0.38;
-  const fSell = valVolume * 0.24;
+
 
   return (
     <div className="market-detail-premium-container animate-fade-in">
@@ -2227,36 +2228,20 @@ export default function MarketDetail() {
                 </div>
 
                 {/* Baris 4 */}
-                <div className="ob-stat-cell border-r border-b">
+                <div className="ob-stat-cell border-r">
                   <span className="ob-stat-label">Freq</span>
                   <span className="ob-stat-val text-white">{freqValue.toLocaleString('id-ID')}</span>
                 </div>
-                <div className="ob-stat-cell border-r border-b">
-                  <span className="ob-stat-label">F Buy</span>
-                  <span className="ob-stat-val text-white">{formatCompactNumber(fBuy)}</span>
-                </div>
-                <div className="ob-stat-cell border-b">
-                  <span className="ob-stat-label">F Sell</span>
-                  <span className="ob-stat-val text-white">{formatCompactNumber(fSell)}</span>
-                </div>
-
-                {/* Baris 5 */}
                 <div className="ob-stat-cell border-r">
                   <span className="ob-stat-label">ARA</span>
                   <span className="ob-stat-val text-success" style={{ color: '#10B981' }}>
                     {araArbValues ? araArbValues.ara.toLocaleString('id-ID') : '-'}
                   </span>
                 </div>
-                <div className="ob-stat-cell border-r">
+                <div className="ob-stat-cell">
                   <span className="ob-stat-label">ARB</span>
                   <span className="ob-stat-val text-danger" style={{ color: '#EF4444' }}>
                     {araArbValues ? araArbValues.arb.toLocaleString('id-ID') : '-'}
-                  </span>
-                </div>
-                <div className="ob-stat-cell">
-                  <span className="ob-stat-label">Board</span>
-                  <span className="ob-stat-val text-white" style={{ fontSize: '10px', textTransform: 'uppercase' }}>
-                    {(activeSecurity as any)?.board || 'Main'}
                   </span>
                 </div>
               </div>
