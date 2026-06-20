@@ -9,14 +9,17 @@ if /I "%MODE%"=="tunnel" set "MODE=production"
 if /I "%MODE%"=="prod" set "MODE=production"
 
 if /I "%MODE%"=="development" (
-  set "FRONTEND_BUILD=build -- --mode development"
-  set "FRONTEND_PREVIEW_PORT=4173"
+  set "FRONTEND_COMMAND=dev -- --host 127.0.0.1 --port 5173"
+  set "FRONTEND_URL=http://localhost:5173"
+  set "FRONTEND_NEEDS_BUILD=false"
   set "START_TUNNEL=false"
   set "COMPOSE_PROJECT_SUFFIX=dev"
 ) else (
   if /I "%MODE%"=="production" (
     set "FRONTEND_BUILD=build -- --mode production"
-    set "FRONTEND_PREVIEW_PORT=4174"
+    set "FRONTEND_COMMAND=preview -- --host 127.0.0.1 --port 4174"
+    set "FRONTEND_URL=http://localhost:4174"
+    set "FRONTEND_NEEDS_BUILD=true"
     set "START_TUNNEL=true"
     set "COMPOSE_PROJECT_SUFFIX=prod"
   ) else (
@@ -67,15 +70,19 @@ call npm run db:migrate
 if errorlevel 1 echo [WARN] Migration gagal untuk SEKURITAS, melanjutkan...
 popd
 
-echo [3/4] Building Frontend Preview...
-pushd SEKURITAS\frontend
-call npm run %FRONTEND_BUILD%
-if errorlevel 1 (
-  echo [ERROR] Frontend build gagal. Tidak bisa melanjutkan tanpa hasil build.
+if /I "%FRONTEND_NEEDS_BUILD%"=="true" (
+  echo [3/4] Building Frontend Preview...
+  pushd SEKURITAS\frontend
+  call npm run %FRONTEND_BUILD%
+  if errorlevel 1 (
+    echo [ERROR] Frontend build gagal. Tidak bisa melanjutkan tanpa hasil build.
+    popd
+    exit /b 1
+  )
   popd
-  exit /b 1
+) else (
+  echo [3/4] Skipping frontend build in development mode. Vite dev server will hot reload changes.
 )
-popd
 
 echo [4/4] Launching Services...
 
@@ -91,8 +98,12 @@ start "MATS Service %MODE%" cmd /k "cd MATS && set MANDALA_ENV_FILE=.env.%MODE%&
 echo Starting Sekuritas Backend...
 start "Sekuritas Backend %MODE%" cmd /k "cd SEKURITAS\backend && set DOTENV_CONFIG_PATH=.env.%MODE%&& set APP_ENV=%MODE%&& npm run dev"
 
-echo Starting Sekuritas Frontend Preview...
-start "Sekuritas Frontend %MODE%" cmd /k "cd SEKURITAS\frontend && npm run preview -- --host 127.0.0.1 --port %FRONTEND_PREVIEW_PORT%"
+if /I "%MODE%"=="development" (
+  echo Starting Sekuritas Frontend Dev Server...
+) else (
+  echo Starting Sekuritas Frontend Preview...
+)
+start "Sekuritas Frontend %MODE%" cmd /k "cd SEKURITAS\frontend && npm run %FRONTEND_COMMAND%"
 
 if /I "%START_TUNNEL%"=="true" (
   echo Starting Cloudflare Tunnel...
@@ -112,12 +123,12 @@ if /I "%START_TUNNEL%"=="true" (
 echo.
 echo All services have been launched in separate windows!
 if /I "%MODE%"=="development" (
-  echo - Sekuritas Frontend preview: http://localhost:4173
+  echo - Sekuritas Frontend dev server: %FRONTEND_URL%
   echo - Sekuritas Backend: http://localhost:3002
   echo - MATS Service: http://localhost:8082
   echo - BEI Service: http://localhost:4100
 ) else (
-  echo - Sekuritas Frontend preview: http://localhost:4174
+  echo - Sekuritas Frontend preview: %FRONTEND_URL%
   echo - Sekuritas Backend: http://localhost:3003
   echo - MATS Service: http://localhost:8083
   echo - BEI Service: http://localhost:4101
