@@ -452,6 +452,10 @@ export default function MarketDetail() {
     const currentCandles = [...candlesDataRef.current];
     const lastBar = currentCandles[currentCandles.length - 1];
 
+    if (lastBar && timeBucket < lastBar.time) {
+      timeBucket = lastBar.time;
+    }
+
     let updatedBar: any;
     if (lastBar && lastBar.time === timeBucket) {
       // Update bar berjalan

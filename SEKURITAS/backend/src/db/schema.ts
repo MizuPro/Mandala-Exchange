@@ -225,3 +225,14 @@ export const notifications = pgTable("notifications", {
   accountCreatedIdx: index("notifications_account_created_idx").on(table.broker_account_id, table.created_at),
   userReadIdx: index("notifications_user_read_idx").on(table.user_id, table.read_at),
 }));
+
+export const withdrawal_requests = pgTable("withdrawal_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  amount: numeric("amount").notNull(),
+  status: text("status").notNull().default("pending"), // pending, processing, completed, failed
+  bank_mandala_tx_id: text("bank_mandala_tx_id"),
+  error_message: text("error_message"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});

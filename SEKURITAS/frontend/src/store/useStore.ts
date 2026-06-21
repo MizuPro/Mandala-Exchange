@@ -146,6 +146,7 @@ interface AppState {
   cancelOrder: (id: string) => Promise<void>;
   applyMarketEvent: (event: any) => void;
   setMarketConnected: (connected: boolean) => void;
+  applyUserEvent: (event: any) => void;
 }
 
 function readStoredUser() {
@@ -581,6 +582,28 @@ export const useStore = create<AppState>((set, get) => ({
         market.trades = [event.payload, ...market.trades].filter(Boolean).slice(0, 20);
       }
       return { market };
+    });
+  },
+
+  applyUserEvent: (event) => {
+    if (!event || typeof event !== 'object') return;
+    set((state) => {
+      if (event.type === 'order_updated') {
+        const payload = event.data;
+        const newOrders = state.orders.map(o => {
+          if (o.id === payload.order_id) {
+            return {
+              ...o,
+              status: payload.status,
+              filled_quantity: payload.filled_quantity ?? o.filled_quantity,
+              remaining_quantity: payload.remaining_quantity ?? o.remaining_quantity
+            };
+          }
+          return o;
+        });
+        return { orders: newOrders };
+      }
+      return state;
     });
   }
 }));

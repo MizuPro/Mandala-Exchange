@@ -1,0 +1,11 @@
+tunnel: 9e27056d-55cf-42b7-9da6-8fb8c2c341e7
+credentials-file: C:\Users\micha\.cloudflared\9e27056d-55cf-42b7-9da6-8fb8c2c341e7.json
+
+ingress:
+  - hostname: mandala-sekuritas.michaelk.fun
+    service: http://localhost:4174
+
+  - hostname: api-mandala-sekuritas.michaelk.fun
+    service: http://localhost:3003
+
+  - service: http_status:404

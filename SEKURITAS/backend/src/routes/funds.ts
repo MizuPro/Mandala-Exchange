@@ -4,13 +4,17 @@ import { env } from "../config/env.js";
 import { authenticateActiveUser } from "../lib/auth.js";
 import { depositSimulatorFunds, withdrawSimulatorFunds } from "../services/funds-simulator-service.js";
 import { rdnIntegrationPending } from "../services/rdn-service.js";
+import { requestWithdrawal } from "../services/withdrawal-service.js";
+import { db } from "../db/db.js";
+import { broker_accounts } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 
 const fundsSchema = z.object({
   amount: z.coerce.number().finite().positive().max(1_000_000_000_000),
 });
 
 export function isSimulatorFundsEnabled(config = env) {
-  return config.isSimulatorFinance && !config.isProduction;
+  return config.financeMode !== "rdn" || !config.isProduction;
 }
 
 export default async function fundsRoutes(app: FastifyInstance) {
@@ -48,15 +52,25 @@ export default async function fundsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid withdraw payload" });
     }
 
-    if (!isSimulatorFundsEnabled()) {
-      return reply.status(501).send(rdnIntegrationPending());
-    }
+    if (isSimulatorFundsEnabled()) {
+      try {
+        const result = await withdrawSimulatorFunds(request.user_id, parsed.data.amount);
+        return reply.send({ success: true, mode: "simulator", ...result });
+      } catch (error: any) {
+        return reply.status(error.statusCode || 500).send({ error: error.message || "Withdraw failed" });
+      }
+    } else {
+      try {
+        const [account] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, request.user_id)).limit(1);
+        if (!account) {
+          return reply.status(404).send({ error: "Broker account not found" });
+        }
 
-    try {
-      const result = await withdrawSimulatorFunds(request.user_id, parsed.data.amount);
-      return reply.send({ success: true, mode: "simulator", ...result });
-    } catch (error: any) {
-      return reply.status(error.statusCode || 500).send({ error: error.message || "Withdraw failed" });
+        const result = await requestWithdrawal(account.id, parsed.data.amount);
+        return reply.send({ success: true, mode: "rdn", withdrawal: result });
+      } catch (error: any) {
+        return reply.status(500).send({ error: error.message || "Withdrawal failed" });
+      }
     }
   });
 }

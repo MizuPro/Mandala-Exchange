@@ -4,7 +4,61 @@ import { users, broker_accounts, sid_references, sre_references, rdn_references,
 import crypto from "crypto";
 import { env } from "../config/env.js";
 
-export async function createBrokerAccount(userId: string, accountType: "HUMAN" | "BOT" = "HUMAN") {
+export async function setupRDNForUser(email: string, accountType: "HUMAN" | "BOT" = "HUMAN") {
+  const sidSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
+  const sreSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
+  const sid = `IDD${sidSuffix}`;
+  const sre = `SRE${sreSuffix}`;
+  let rdnNumber = "";
+
+  if (accountType === "HUMAN" && env.financeMode === "rdn" && env.bankMandalaUrl && env.bankMandalaApiKey) {
+    // 1. Fetch kependudukan data
+    const kepRes = await fetch(`${env.bankMandalaUrl}/api/b2b/kependudukan?email=${encodeURIComponent(email)}`, {
+      headers: { "x-api-key": env.bankMandalaApiKey }
+    });
+
+    if (!kepRes.ok) {
+      throw new Error(`Data kependudukan tidak ditemukan atau belum terverifikasi di Bank Mandala CB untuk email ${email}. Silakan verifikasi KYC di aplikasi Bank Mandala terlebih dahulu.`);
+    }
+
+    const kepData = (await kepRes.json()).data;
+
+    // 2. Register RDN
+    const rdnRes = await fetch(`${env.bankMandalaUrl}/api/b2b/accounts/rdn`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        "x-api-key": env.bankMandalaApiKey
+      },
+      body: JSON.stringify({
+        userId: kepData.userId,
+        name: kepData.fullName,
+        nik: kepData.nik,
+        sid,
+        sre
+      })
+    });
+
+    if (!rdnRes.ok) {
+      throw new Error("Gagal membuat rekening RDN di Bank Mandala CB.");
+    }
+
+    const rdnData = (await rdnRes.json()).data;
+    rdnNumber = rdnData.accountNumber;
+  } else {
+    // Simulator mode or BOT
+    const rdnSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
+    rdnNumber = `RDN${rdnSuffix}`;
+  }
+
+  return { rdnNumber, sid, sre };
+}
+
+export async function createBrokerAccount(
+  userId: string, 
+  rdnData: { rdnNumber: string, sid: string, sre: string }, 
+  accountType: "HUMAN" | "BOT" = "HUMAN"
+) {
   return await db.transaction(async (tx) => {
     // Create broker account
     const [account] = await tx.insert(broker_accounts).values({
@@ -13,27 +67,20 @@ export async function createBrokerAccount(userId: string, accountType: "HUMAN" |
       status: "ACTIVE"
     }).returning();
 
-    // Generate random simulation refs
-    const sidSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
-    const sreSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
-    const rdnSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
-
     await tx.insert(sid_references).values({
       broker_account_id: account.id,
-      sid: `IDD${sidSuffix}`
+      sid: rdnData.sid
     });
 
     await tx.insert(sre_references).values({
       broker_account_id: account.id,
-      sre: `SRE${sreSuffix}`
+      sre: rdnData.sre
     });
 
-    if (env.isSimulatorFinance) {
-      await tx.insert(rdn_references).values({
-        broker_account_id: account.id,
-        rdn: `RDN${rdnSuffix}`
-      });
-    }
+    await tx.insert(rdn_references).values({
+      broker_account_id: account.id,
+      rdn: rdnData.rdnNumber
+    });
 
     // Initialize cash balance
     await tx.insert(cash_balances).values({

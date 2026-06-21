@@ -141,7 +141,7 @@ func (e *Engine) Amend(ctx context.Context, orderID string, price *int64, quanti
 	return order.Clone(), trades, updatedResting, nil
 }
 
-func (e *Engine) Cancel(orderID string) (*domain.Order, error) {
+func (e *Engine) Cancel(orderID string, sequenceNumber int64) (*domain.Order, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	order, ok := e.orders[orderID]
@@ -154,6 +154,7 @@ func (e *Engine) Cancel(orderID string) (*domain.Order, error) {
 	e.book(order.Symbol).Remove(order.ID)
 	order.RemainingQuantity = 0
 	order.Status = domain.OrderStatusCancelled
+	order.SequenceNumber = sequenceNumber
 	order.UpdatedAt = time.Now().UTC()
 	return order.Clone(), nil
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, Link, Outlet } from 'react-router-dom';
 import { formatMarketSessionLabel, isOrderEntrySessionStatus, normalizeSessionStatus, useStore } from '../store/useStore';
-import { resolveMarketWsUrl } from '../config/endpoints';
+import { resolveMarketWsUrl, resolveUserWsUrl } from '../config/endpoints';
 import { 
   LogOut, 
   Wallet, 
@@ -34,6 +34,7 @@ export default function Dashboard() {
   const fetchAccountProfile = useStore(state => state.fetchAccountProfile);
   const placeOrder = useStore(state => state.placeOrder);
   const applyMarketEvent = useStore(state => state.applyMarketEvent);
+  const applyUserEvent = useStore(state => state.applyUserEvent);
   const depositFunds = useStore(state => state.depositFunds);
   const withdrawFunds = useStore(state => state.withdrawFunds);
   const setMarketConnected = useStore(state => state.setMarketConnected);
@@ -54,6 +55,7 @@ export default function Dashboard() {
 
   // WebSocket state & references
   const socketRef = useRef<WebSocket | null>(null);
+  const userSocketRef = useRef<WebSocket | null>(null);
   const mountedRef = useRef(true);
 
   // --- Toast helper ---
@@ -148,6 +150,54 @@ export default function Dashboard() {
     };
   }, [applyMarketEvent, setMarketConnected]);
 
+  // --- WebSocket Connection for User Updates ---
+  useEffect(() => {
+    const token = useStore.getState().token;
+    if (!token) return;
+
+    let delay = 1000;
+    const MAX_DELAY = 30000;
+
+    function connectUser() {
+      if (!mountedRef.current) return;
+      const wsUrl = `${resolveUserWsUrl()}?token=${token}`;
+      const socket = new WebSocket(wsUrl);
+      userSocketRef.current = socket;
+
+      socket.onmessage = (event) => {
+        try {
+          applyUserEvent(JSON.parse(event.data));
+        } catch {
+          // Ignore parse errors
+        }
+      };
+
+      socket.onopen = () => { delay = 1000; };
+      socket.onerror = (err) => { socket.close(); };
+      socket.onclose = () => {
+        if (!mountedRef.current) return;
+        setTimeout(() => {
+          delay = Math.min(delay * 2, MAX_DELAY);
+          connectUser();
+        }, delay);
+      };
+    }
+
+    connectUser();
+
+    return () => {
+      const socket = userSocketRef.current;
+      if (socket) {
+        socket.onmessage = null;
+        if (socket.readyState === WebSocket.CONNECTING) {
+          socket.onopen = () => socket.close();
+        } else {
+          socket.close();
+        }
+      }
+    };
+  }, [applyUserEvent]);
+
   // --- Deposit & Withdraw Local State Handlers ---
   const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +210,8 @@ export default function Dashboard() {
       await depositFunds(amount);
       setDepositAmount('');
       setModalType(null);
-      showToast(`Berhasil deposit Rp ${amount.toLocaleString('id-ID')} (Simulasi)`, 'success');
+      const simulasiText = import.meta.env.PROD ? '' : ' (Simulasi)';
+      showToast(`Berhasil deposit Rp ${amount.toLocaleString('id-ID')}${simulasiText}`, 'success');
     } catch (err: any) {
       showToast(err.message || 'Deposit belum tersedia', 'error');
     }
@@ -181,7 +232,8 @@ export default function Dashboard() {
       await withdrawFunds(amount);
       setWithdrawAmount('');
       setModalType(null);
-      showToast(`Berhasil penarikan Rp ${amount.toLocaleString('id-ID')} (Simulasi)`, 'success');
+      const simulasiText = import.meta.env.PROD ? '' : ' (Simulasi)';
+      showToast(`Berhasil penarikan Rp ${amount.toLocaleString('id-ID')}${simulasiText}`, 'success');
     } catch (err: any) {
       showToast(err.message || 'Penarikan belum tersedia', 'error');
     }
@@ -549,44 +601,72 @@ export default function Dashboard() {
             </div>
             <p className="text-xs text-[#8B949E] mb-4">Suntik dana secara instan untuk memperluas Buying Power akun Mandala Sekuritas Anda.</p>
             
-            <form onSubmit={handleDepositSubmit} className="space-y-4">
-              <div>
-                <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Pilih Bank Asal</label>
-                <select className="w-full bg-[#0D1117] border border-[#21262D] rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-[#E62225]">
-                  <option>Mandiri Virtual Account - 8903 0192 1002</option>
-                  <option>BCA Virtual Account - 1002 9182 221</option>
-                  <option>Permata Virtual Account - 7192 112 001</option>
-                </select>
+            {import.meta.env.PROD ? (
+              <div className="space-y-4 mt-4">
+                <div className="p-4 rounded-lg text-center" style={{ backgroundColor: '#0D1117', border: '1px solid #21262D' }}>
+                  <p className="text-xs text-[#8B949E] mb-2 uppercase font-bold tracking-wider">Rekening Dana Nasabah (RDN)</p>
+                  <p className="text-xl text-white font-mono font-bold mb-1 tracking-wider">
+                    {accountProfile?.references?.rdn || 'Memproses...'}
+                  </p>
+                  <p className="text-xs text-white">Bank Mandala CB</p>
+                </div>
+                <p className="text-xs text-[#8B949E] text-center mb-4">
+                  Silakan lakukan transfer dari rekening bank pribadi Anda ke nomor RDN di atas. Saldo akan otomatis bertambah setelah transfer berhasil.
+                </p>
+                <div className="flex pt-2">
+                  <button 
+                    onClick={() => {
+                      if (accountProfile?.references?.rdn) {
+                        navigator.clipboard.writeText(accountProfile.references.rdn);
+                        showToast('Nomor RDN disalin ke clipboard', 'success');
+                      }
+                    }}
+                    className="flex-grow btn-secondary-dark py-2.5 rounded-lg text-xs"
+                  >
+                    Salin Nomor RDN
+                  </button>
+                </div>
               </div>
+            ) : (
+              <form onSubmit={handleDepositSubmit} className="space-y-4">
+                <div>
+                  <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Pilih Bank Asal</label>
+                  <select className="w-full bg-[#0D1117] border border-[#21262D] rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-[#E62225]">
+                    <option>Mandiri Virtual Account - 8903 0192 1002</option>
+                    <option>BCA Virtual Account - 1002 9182 221</option>
+                    <option>Permata Virtual Account - 7192 112 001</option>
+                  </select>
+                </div>
 
-              <div>
-                <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Nominal Deposit (IDR)</label>
-                <input 
-                  type="number" 
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
-                  placeholder="Contoh: 10000000"
-                  className="w-full bg-[#0D1117] border border-[#21262D] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#E62225] font-mono"
-                  required
-                />
-              </div>
+                <div>
+                  <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Nominal Deposit (IDR)</label>
+                  <input 
+                    type="number" 
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    placeholder="Contoh: 10000000"
+                    className="w-full bg-[#0D1117] border border-[#21262D] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#E62225] font-mono"
+                    required
+                  />
+                </div>
 
-              <div className="flex gap-3 pt-2">
-                <button 
-                  type="button" 
-                  onClick={() => setModalType(null)}
-                  className="flex-grow btn-secondary-dark py-2.5 rounded-lg text-xs"
-                >
-                  Batal
-                </button>
-                <button 
-                  type="submit" 
-                  className="flex-grow btn-primary-red text-xs py-2.5 rounded-lg"
-                >
-                  Konfirmasi Transfer
-                </button>
-              </div>
-            </form>
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setModalType(null)}
+                    className="flex-grow btn-secondary-dark py-2.5 rounded-lg text-xs"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="flex-grow btn-primary-red text-xs py-2.5 rounded-lg"
+                  >
+                    Konfirmasi Transfer
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -615,12 +695,9 @@ export default function Dashboard() {
             </div>
 
             <form onSubmit={handleWithdrawSubmit} className="space-y-4">
-              <div>
-                <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Bank Penerima</label>
-                <div className="p-2.5 text-xs text-slate-300 rounded-lg" style={{ backgroundColor: '#0D1117', border: '1px solid #21262D' }}>
-                  <span className="font-bold block text-white">BCA (AKUN TERDAFTAR)</span>
-                  <span className="text-[10px] text-[#8B949E]">No Rekening: **** *** 9811 a/n Mandala User</span>
-                </div>
+              <div className="p-2.5 text-xs text-slate-300 rounded-lg mb-4" style={{ backgroundColor: '#0D1117', border: '1px solid #21262D' }}>
+                <span className="font-bold block text-white">KE REKENING TERDAFTAR</span>
+                <span className="text-[10px] text-[#8B949E]">Dana akan ditransfer otomatis ke rekening induk utama Anda di Bank Mandala CB.</span>
               </div>
 
               <div>

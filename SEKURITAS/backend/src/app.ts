@@ -30,7 +30,8 @@ export async function createApp() {
       }
       callback(null, allowedOrigins.has(origin));
     },
-    credentials: true
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
   });
 
   await app.register(helmet);
@@ -50,6 +51,8 @@ export async function createApp() {
   await app.register(leaderboardRoutes, { prefix: "/api/v1/leaderboard" });
   await app.register(notificationRoutes, { prefix: "/api/v1/notifications" });
   await app.register(fundsRoutes, { prefix: "/api/v1/funds" });
+  await app.register((await import("./routes/user-ws.js")).default, { prefix: "/api/v1/user" });
+  await app.register((await import("./routes/rdn-webhooks.js")).default, { prefix: "/api/v1/webhooks" });
 
   let reconcileInProgress = false;
   const reconcileInterval = setInterval(async () => {

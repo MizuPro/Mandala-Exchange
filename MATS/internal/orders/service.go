@@ -332,7 +332,11 @@ func (s *Service) Cancel(ctx context.Context, req CancelRequest) (Response, erro
 		}
 		return Response{}, errors.New(rejectReason)
 	}
-	order, err := s.engine.Cancel(req.OrderID)
+	sequenceNumber, err := s.seq.Next(ctx)
+	if err != nil {
+		return Response{}, err
+	}
+	order, err := s.engine.Cancel(req.OrderID, sequenceNumber)
 	if err != nil {
 		return Response{}, err
 	}

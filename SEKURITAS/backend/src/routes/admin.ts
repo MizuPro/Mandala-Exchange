@@ -5,7 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAdminToken, signUserToken } from "../lib/auth.js";
 import { hashPassword } from "../lib/password.js";
-import { createBrokerAccount } from "../services/account-service.js";
+import { createBrokerAccount, setupRDNForUser } from "../services/account-service.js";
 import { reconcileSubmitUnknownOrders } from "../services/order-service.js";
 import { env } from "../config/env.js";
 import crypto from "crypto";
@@ -163,7 +163,8 @@ export default async function adminRoutes(app: FastifyInstance) {
       status: "verified",
     }).returning();
 
-    const brokerAccount = await createBrokerAccount(user.id, "BOT");
+    const rdnData = await setupRDNForUser(email, "BOT");
+    const brokerAccount = await createBrokerAccount(user.id, rdnData, "BOT");
 
     return {
       token: signUserToken(user.id),

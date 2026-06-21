@@ -1,13 +1,14 @@
 import { FastifyInstance } from "fastify";
 import { db } from "../db/db.js";
 import { users, email_verifications } from "../db/schema.js";
-import { createBrokerAccount } from "../services/account-service.js";
+import { createBrokerAccount, setupRDNForUser } from "../services/account-service.js";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
 import { authenticateUser, signUserToken } from "../lib/auth.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { env } from "../config/env.js";
+import { sendVerificationOTP } from "../services/email-service.js";
 
 const authBodySchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase().trim()),
@@ -40,6 +41,15 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(409).send({ error: "Email already registered" });
     }
 
+    // Call Bank API to verify KYC and setup RDN BEFORE saving user to DB
+    let rdnData;
+    try {
+      rdnData = await setupRDNForUser(email, "HUMAN");
+    } catch (error: any) {
+      // Return 400 Bad Request to indicate validation failed, so user doesn't get saved
+      return reply.status(400).send({ error: error.message || "Gagal verifikasi kependudukan" });
+    }
+
     const password_hash = hashPassword(password);
     const status = "unverified";
 
@@ -50,15 +60,17 @@ export default async function authRoutes(app: FastifyInstance) {
     }).returning();
 
     // Create broker account automatically
-    await createBrokerAccount(user.id, "HUMAN");
+    await createBrokerAccount(user.id, rdnData, "HUMAN");
 
-    const token = crypto.randomBytes(16).toString("hex");
+    const token = Math.floor(100000 + Math.random() * 900000).toString();
     const expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await db.insert(email_verifications).values({
       user_id: user.id,
       token,
       expires_at
     });
+
+    await sendVerificationOTP(email, token);
 
     return {
       token: signUserToken(user.id),

@@ -759,7 +759,7 @@ export default function Portfolio() {
                     className="w-full btn-primary-red uppercase tracking-wider text-xs flex items-center justify-center gap-2"
                     style={{ padding: '0.85rem 1rem', background: '#E62225', color: '#fff', borderRadius: '8px', cursor: 'pointer' }}
                   >
-                    <Plus size={14} /> Deposit Dana (Simulasi)
+                    <Plus size={14} /> Deposit Dana{import.meta.env.PROD ? '' : ' (Simulasi)'}
                   </button>
                   <button 
                     onClick={onOpenWithdraw}

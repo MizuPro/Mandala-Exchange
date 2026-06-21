@@ -566,6 +566,20 @@ export async function handleWebhookUpdate(payload: any) {
           remaining_quantity: remainingQuantity,
         },
       });
+
+      const [acc] = await tx.select({ userId: broker_accounts.user_id }).from(broker_accounts).where(eq(broker_accounts.id, order.broker_account_id)).limit(1);
+      if (acc?.userId) {
+        setTimeout(() => {
+          import("./user-ws-service.js").then(({ broadcastUserEvent }) => {
+            broadcastUserEvent(acc.userId, "order_updated", {
+              order_id: order.id,
+              status,
+              filled_quantity: filledQuantity,
+              remaining_quantity: remainingQuantity
+            });
+          }).catch(console.error);
+        }, 0);
+      }
     }
   });
 
@@ -598,7 +612,6 @@ export async function amendOrder(userId: string, orderId: string, price?: number
   
   const reserveDelta = nextReservedAmount - previousReservedAmount;
   const qtyDelta = nextRemainingQuantity - previousRemainingQuantity;
-  const amendIdempotencyKey = idempotencyKey(`amend-${order.client_order_id}`);
   let amendmentId = "";
 
   await db.transaction(async (tx) => {
@@ -619,6 +632,7 @@ export async function amendOrder(userId: string, orderId: string, price?: number
   });
 
   try {
+    const amendIdempotencyKey = idempotencyKey(`amend-${order.client_order_id}-${amendmentId}`);
     const matsRes = await matsClient.amendOrder(order.mats_order_id, {
       ...(price !== undefined ? { price } : {}),
       ...(quantity !== undefined ? { quantity } : {}),

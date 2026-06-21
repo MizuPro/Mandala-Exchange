@@ -129,6 +129,10 @@ export default function ActivityOrder() {
       showToast('Kuantitas Lot harus bernilai positif', 'error');
       return;
     }
+    if (finalQty < (selectedOrderForAmend.filled_quantity || 0)) {
+      showToast(`Kuantitas baru tidak boleh kurang dari jumlah yang sudah terisi (${(selectedOrderForAmend.filled_quantity || 0) / LOT_SIZE} Lot)`, 'error');
+      return;
+    }
 
     try {
       await amendOrder(selectedOrderForAmend.id, { 

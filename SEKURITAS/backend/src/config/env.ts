@@ -43,6 +43,11 @@ const envSchema = z.object({
   BEI_SERVICE_TOKEN: z.string().optional(),
   BEI_TO_SEKURITAS_TOKEN: z.string().optional(),
   ALLOW_INSECURE_LOCAL_TOKENS: z.enum(["true", "false"]).default("false"),
+  BANK_MANDALA_URL: z.string().url().optional(),
+  BANK_MANDALA_API_KEY: z.string().optional(),
+  WEBHOOK_SECRET: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default("onboarding@resend.dev"),
 });
 
 export function parseSekuritasEnv(input: NodeJS.ProcessEnv) {
@@ -76,6 +81,16 @@ export function parseSekuritasEnv(input: NodeJS.ProcessEnv) {
     }
   }
 
+  if (parsed.FINANCE_MODE === "rdn") {
+    const rdnErrors: string[] = [];
+    if (!parsed.BANK_MANDALA_URL) rdnErrors.push("BANK_MANDALA_URL is required when FINANCE_MODE=rdn");
+    if (!parsed.BANK_MANDALA_API_KEY) rdnErrors.push("BANK_MANDALA_API_KEY is required when FINANCE_MODE=rdn");
+    if (!parsed.WEBHOOK_SECRET) rdnErrors.push("WEBHOOK_SECRET is required when FINANCE_MODE=rdn");
+    if (rdnErrors.length > 0) {
+      throw new Error(`Invalid RDN environment configuration:\n- ${rdnErrors.join("\n- ")}`);
+    }
+  }
+
   return {
     appEnv: parsed.APP_ENV,
     nodeEnv: parsed.NODE_ENV,
@@ -99,6 +114,11 @@ export function parseSekuritasEnv(input: NodeJS.ProcessEnv) {
     beiServiceToken: parsed.BEI_SERVICE_TOKEN || "",
     beiToSekuritasToken: parsed.BEI_TO_SEKURITAS_TOKEN,
     allowInsecureLocalTokens: parsed.ALLOW_INSECURE_LOCAL_TOKENS === "true",
+    bankMandalaUrl: parsed.BANK_MANDALA_URL,
+    bankMandalaApiKey: parsed.BANK_MANDALA_API_KEY,
+    webhookSecret: parsed.WEBHOOK_SECRET,
+    resendApiKey: parsed.RESEND_API_KEY,
+    emailFrom: parsed.EMAIL_FROM,
   };
 }
 

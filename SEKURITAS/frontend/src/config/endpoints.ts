@@ -36,3 +36,10 @@ export function resolveMarketWsUrl() {
 
   return LOCAL_MARKET_WS_URL;
 }
+
+export function resolveUserWsUrl() {
+  const base = resolveApiBase();
+  // Convert http/https to ws/wss
+  const wsBase = base.replace(/^http/, 'ws');
+  return `${wsBase}/user/ws`;
+}

@@ -30,6 +30,10 @@ export default function OrderList() {
       alert(`Price must be a positive integer and quantity must be a multiple of ${LOT_SIZE} shares.`);
       return;
     }
+    if (quantity < (order.filled_quantity || 0)) {
+      alert(`Amended quantity cannot be below the already filled quantity (${order.filled_quantity} shares).`);
+      return;
+    }
     try {
       await amendOrder(order.id, { price, quantity });
       alert('Amend request sent!');

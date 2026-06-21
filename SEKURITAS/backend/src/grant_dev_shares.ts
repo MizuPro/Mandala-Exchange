@@ -1,7 +1,7 @@
 import { db } from "./db/db.js";
 import { users, broker_accounts, securities_positions, ledger_movements } from "./db/schema.js";
 import { eq, and } from "drizzle-orm";
-import { createBrokerAccount } from "./services/account-service.js";
+import { createBrokerAccount, setupRDNForUser } from "./services/account-service.js";
 import { beiClient } from "./services/bei-client.js";
 import * as dotenv from "dotenv";
 
@@ -49,7 +49,8 @@ async function main() {
   let [account] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, user.id)).limit(1);
   if (!account) {
     console.log("Broker account not found. Creating broker account...");
-    account = await createBrokerAccount(user.id, "HUMAN");
+    const rdnData = await setupRDNForUser(email, "HUMAN");
+    account = await createBrokerAccount(user.id, rdnData, "HUMAN");
     console.log(`Broker account created with ID: ${account.id}`);
   } else {
     console.log(`Broker account found with ID: ${account.id}`);
