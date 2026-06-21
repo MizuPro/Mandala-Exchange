@@ -1,8 +1,22 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/db.js";
-import { users, broker_accounts, sid_references, sre_references, rdn_references, cash_balances, email_verifications } from "../db/schema.js";
+import { users, broker_accounts, sid_references, sre_references, rdn_references, cash_balances, email_verifications, withdrawal_bank_accounts } from "../db/schema.js";
 import crypto from "crypto";
 import { env } from "../config/env.js";
+
+type PrimaryBankAccount = {
+  bankCode?: string | null;
+  bankName?: string | null;
+  accountNumber?: string | null;
+  accountHolderName?: string | null;
+};
+
+type BrokerSetupData = {
+  rdnNumber: string;
+  sid: string;
+  sre: string;
+  primaryBankAccount?: PrimaryBankAccount | null;
+};
 
 export async function setupRDNForUser(email: string, accountType: "HUMAN" | "BOT" = "HUMAN") {
   const sidSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -10,6 +24,7 @@ export async function setupRDNForUser(email: string, accountType: "HUMAN" | "BOT
   const sid = `IDD${sidSuffix}`;
   const sre = `SRE${sreSuffix}`;
   let rdnNumber = "";
+  let primaryBankAccount: PrimaryBankAccount | null = null;
 
   if (accountType === "HUMAN" && env.financeMode === "rdn" && env.bankMandalaUrl && env.bankMandalaApiKey) {
     // 1. Fetch kependudukan data
@@ -22,6 +37,7 @@ export async function setupRDNForUser(email: string, accountType: "HUMAN" | "BOT
     }
 
     const kepData = (await kepRes.json()).data;
+    primaryBankAccount = kepData?.primaryBankAccount || null;
 
     // 2. Register RDN
     const rdnRes = await fetch(`${env.bankMandalaUrl}/api/b2b/accounts/rdn`, {
@@ -51,12 +67,12 @@ export async function setupRDNForUser(email: string, accountType: "HUMAN" | "BOT
     rdnNumber = `RDN${rdnSuffix}`;
   }
 
-  return { rdnNumber, sid, sre };
+  return { rdnNumber, sid, sre, primaryBankAccount };
 }
 
 export async function createBrokerAccount(
   userId: string, 
-  rdnData: { rdnNumber: string, sid: string, sre: string }, 
+  rdnData: BrokerSetupData, 
   accountType: "HUMAN" | "BOT" = "HUMAN"
 ) {
   return await db.transaction(async (tx) => {
@@ -81,6 +97,20 @@ export async function createBrokerAccount(
       broker_account_id: account.id,
       rdn: rdnData.rdnNumber
     });
+
+    const bankAccount = rdnData.primaryBankAccount;
+    if (bankAccount?.accountNumber && bankAccount?.accountHolderName) {
+      await tx.insert(withdrawal_bank_accounts).values({
+        broker_account_id: account.id,
+        bank_code: bankAccount.bankCode || "MANDALA",
+        bank_name: bankAccount.bankName || "Bank Mandala",
+        account_number: String(bankAccount.accountNumber).replace(/\D/g, ""),
+        account_holder_name: bankAccount.accountHolderName,
+        status: "verified",
+        source: "bank_mandala",
+        is_primary: true,
+      });
+    }
 
     // Initialize cash balance
     await tx.insert(cash_balances).values({

@@ -7,19 +7,55 @@ import {
   sid_references,
   sre_references,
   rdn_references,
+  withdrawal_bank_accounts,
   trade_fills,
   orders,
 } from "../db/schema.js";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { authenticateActiveUser } from "../lib/auth.js";
 import { beiClient } from "../services/bei-client.js";
 import { env } from "../config/env.js";
+import { z } from "zod";
 
 const BROKER_CODE = env.brokerCode;
 
 async function getBrokerAccount(userId: string) {
   const [brokerAcc] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, userId)).limit(1);
   return brokerAcc;
+}
+
+const withdrawalBankAccountSchema = z.object({
+  bankCode: z.string().trim().min(2).max(20).optional().default("MANDALA"),
+  bankName: z.string().trim().min(2).max(80),
+  accountNumber: z.string().trim().regex(/^\d{6,32}$/, "Nomor rekening harus 6-32 digit angka"),
+  accountHolderName: z.string().trim().min(2).max(120),
+});
+
+async function getPrimaryWithdrawalBankAccount(brokerAccountId: string) {
+  const [bankAccount] = await db
+    .select()
+    .from(withdrawal_bank_accounts)
+    .where(and(
+      eq(withdrawal_bank_accounts.broker_account_id, brokerAccountId),
+      eq(withdrawal_bank_accounts.is_primary, true)
+    ))
+    .limit(1);
+  return bankAccount;
+}
+
+function publicWithdrawalBankAccount(bankAccount: typeof withdrawal_bank_accounts.$inferSelect | undefined) {
+  if (!bankAccount) return null;
+  return {
+    id: bankAccount.id,
+    bankCode: bankAccount.bank_code,
+    bankName: bankAccount.bank_name,
+    accountNumber: bankAccount.account_number,
+    accountHolderName: bankAccount.account_holder_name,
+    status: bankAccount.status,
+    source: bankAccount.source,
+    isPrimary: bankAccount.is_primary,
+    updatedAt: bankAccount.updated_at,
+  };
 }
 
 export default async function portfolioRoutes(app: FastifyInstance) {
@@ -54,6 +90,7 @@ export default async function portfolioRoutes(app: FastifyInstance) {
     const [sid] = await db.select().from(sid_references).where(eq(sid_references.broker_account_id, brokerAcc.id)).limit(1);
     const [sre] = await db.select().from(sre_references).where(eq(sre_references.broker_account_id, brokerAcc.id)).limit(1);
     const [rdn] = await db.select().from(rdn_references).where(eq(rdn_references.broker_account_id, brokerAcc.id)).limit(1);
+    const bankAccount = await getPrimaryWithdrawalBankAccount(brokerAcc.id);
 
     return {
       account: {
@@ -67,7 +104,41 @@ export default async function portfolioRoutes(app: FastifyInstance) {
         sre: sre?.sre || null,
         rdn: rdn?.rdn || null,
       },
+      withdrawalBankAccount: publicWithdrawalBankAccount(bankAccount),
     };
+  });
+
+  app.put("/withdrawal-bank-account", async (request: any, reply: FastifyReply) => {
+    const parsed = withdrawalBankAccountSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid bank account payload" });
+    }
+
+    const brokerAcc = await getBrokerAccount(request.user_id);
+    if (!brokerAcc) return reply.status(404).send({ error: "Broker account not found" });
+
+    const existing = await getPrimaryWithdrawalBankAccount(brokerAcc.id);
+    const values = {
+      bank_code: parsed.data.bankCode,
+      bank_name: parsed.data.bankName,
+      account_number: parsed.data.accountNumber,
+      account_holder_name: parsed.data.accountHolderName,
+      status: "verified",
+      source: "manual",
+      is_primary: true,
+      updated_at: new Date(),
+    };
+
+    const [bankAccount] = existing
+      ? await db.update(withdrawal_bank_accounts)
+        .set(values)
+        .where(eq(withdrawal_bank_accounts.id, existing.id))
+        .returning()
+      : await db.insert(withdrawal_bank_accounts)
+        .values({ ...values, broker_account_id: brokerAcc.id })
+        .returning();
+
+    return { withdrawalBankAccount: publicWithdrawalBankAccount(bankAccount) };
   });
 
   app.get("/detail", async (request: any, reply: FastifyReply) => {
@@ -79,6 +150,7 @@ export default async function portfolioRoutes(app: FastifyInstance) {
     const [sid] = await db.select().from(sid_references).where(eq(sid_references.broker_account_id, brokerAcc.id)).limit(1);
     const [sre] = await db.select().from(sre_references).where(eq(sre_references.broker_account_id, brokerAcc.id)).limit(1);
     const [rdn] = await db.select().from(rdn_references).where(eq(rdn_references.broker_account_id, brokerAcc.id)).limit(1);
+    const bankAccount = await getPrimaryWithdrawalBankAccount(brokerAcc.id);
 
     return {
       summary: {
@@ -97,6 +169,7 @@ export default async function portfolioRoutes(app: FastifyInstance) {
           sre: sre?.sre || null,
           rdn: rdn?.rdn || null,
         },
+        withdrawalBankAccount: publicWithdrawalBankAccount(bankAccount),
       },
     };
   });
@@ -156,7 +229,10 @@ export default async function portfolioRoutes(app: FastifyInstance) {
       const data = await beiClient.getCustodySummary(BROKER_CODE, brokerAcc.id);
       return reply.send(data);
     } catch (error: any) {
-      return reply.status(500).send({ error: error.message || "Failed to fetch custody summary from BEI" });
+      // Jika BEI belum siap atau broker belum terdaftar, return null agar frontend
+      // bisa menampilkan state kosong daripada crash dengan error 500.
+      console.warn(`[Portfolio] Failed to fetch custody summary from BEI: ${error.message}`);
+      return reply.send(null);
     }
   });
 
@@ -167,7 +243,9 @@ export default async function portfolioRoutes(app: FastifyInstance) {
       const data = await beiClient.getReconciliation(BROKER_CODE, brokerAcc.id);
       return reply.send(data);
     } catch (error: any) {
-      return reply.status(500).send({ error: error.message || "Failed to fetch reconciliation from BEI" });
+      // Sama seperti /custody/summary, return null daripada 500.
+      console.warn(`[Portfolio] Failed to fetch reconciliation from BEI: ${error.message}`);
+      return reply.send(null);
     }
   });
 }
