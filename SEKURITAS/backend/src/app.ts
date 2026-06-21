@@ -14,6 +14,7 @@ import notificationRoutes from "./routes/notifications.js";
 import fundsRoutes from "./routes/funds.js";
 import { reconcileSubmitUnknownOrders } from "./services/order-service.js";
 import { closeMarketWsProxy } from "./services/market-ws-proxy.js";
+import { reconcileAllUsers } from "./services/reconciliation-service.js";
 import { env } from "./config/env.js";
 
 export async function createApp() {
@@ -66,8 +67,24 @@ export async function createApp() {
       reconcileInProgress = false;
     }
   }, 30000);
+
+  // Reconciliation interval untuk saldo RDN Bank Mandala (berjalan setiap 10 menit)
+  let rdnReconcileInProgress = false;
+  const rdnReconcileInterval = setInterval(async () => {
+    if (rdnReconcileInProgress) return;
+    rdnReconcileInProgress = true;
+    try {
+      await reconcileAllUsers();
+    } catch (err) {
+      console.error("Auto-reconcile RDN balances failed", err);
+    } finally {
+      rdnReconcileInProgress = false;
+    }
+  }, 600000); // 10 menit
+
   app.addHook("onClose", async () => {
     clearInterval(reconcileInterval);
+    clearInterval(rdnReconcileInterval);
     closeMarketWsProxy();
   });
 

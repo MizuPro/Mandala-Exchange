@@ -12,6 +12,9 @@ const strongBase = {
   MATS_TO_SEKURITAS_TOKEN: "prod-mats-webhook-1234567890abcdef123456",
   BEI_SERVICE_TOKEN: "prod-bei-service-1234567890abcdef1234567",
   BEI_TO_SEKURITAS_TOKEN: "prod-bei-webhook-1234567890abcdef1234567",
+  BANK_MANDALA_URL: "https://bankmandala-api.example.com",
+  BANK_MANDALA_API_KEY: "prod-bank-mandala-api-key-1234567890",
+  WEBHOOK_SECRET: "prod-webhook-secret-1234567890abcdef",
 } as NodeJS.ProcessEnv;
 
 describe("Sekuritas environment validation", () => {

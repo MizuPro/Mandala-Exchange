@@ -8,6 +8,7 @@ import { requestWithdrawal } from "../services/withdrawal-service.js";
 import { db } from "../db/db.js";
 import { broker_accounts } from "../db/schema.js";
 import { eq } from "drizzle-orm";
+import { reconcileUserBalance } from "../services/reconciliation-service.js";
 
 const fundsSchema = z.object({
   amount: z.coerce.number().finite().positive().max(1_000_000_000_000),
@@ -69,8 +70,27 @@ export default async function fundsRoutes(app: FastifyInstance) {
         const result = await requestWithdrawal(account.id, parsed.data.amount);
         return reply.send({ success: true, mode: "rdn", withdrawal: result });
       } catch (error: any) {
-        return reply.status(500).send({ error: error.message || "Withdrawal failed" });
+        return reply.status(error.statusCode || 500).send({
+          error: error.message || "Withdrawal failed",
+          code: error.code,
+        });
       }
+    }
+  });
+
+  app.post("/sync-balance", async (request: any, reply) => {
+    try {
+      const [account] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, request.user_id)).limit(1);
+      if (!account) {
+        return reply.status(404).send({ error: "Broker account not found" });
+      }
+
+      await reconcileUserBalance(account.id);
+      return reply.send({ success: true });
+    } catch (error: any) {
+      return reply.status(error.statusCode || 500).send({
+        error: error.message || "Failed to sync balance",
+      });
     }
   });
 }
