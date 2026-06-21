@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BEI Service - Admin Dashboard</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    body {
+      background-color: #0B0F17;
+      color: #C9D1D9;
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0B0F17;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #21262D;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #30363D;
+    }
+  </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- ==================== LOGIN SCREEN ==================== -->
+  <div id="login-screen" class="flex-grow flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-[#161B22] border border-[#30363D] rounded-xl p-8 shadow-2xl space-y-6">
+      <div class="text-center space-y-2">
+        <div class="inline-flex p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+        </div>
+        <h1 class="text-xl font-bold text-white tracking-tight">BEI Admin Console</h1>
+        <p class="text-xs text-[#8B949E]">Masukkan token administrasi untuk mengakses sistem bursa.</p>
+      </div>
+      
+      <form onsubmit="handleLogin(event)" class="space-y-4">
+        <div class="space-y-1">
+          <label class="text-[11px] font-bold text-[#8B949E] uppercase tracking-wider block">Admin Service Token</label>
+          <input type="password" id="admin-token-input" placeholder="dev-admin-service-token-change-me" required
+            class="w-full px-4 py-2.5 bg-[#0D1117] border border-[#30363D] rounded-lg text-sm text-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors font-mono">
+        </div>
+        
+        <button type="submit"
+          class="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold text-sm rounded-lg transition-colors shadow-lg shadow-red-900/10">
+          Masuk Ke Konsol
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN DASHBOARD ==================== -->
+  <div id="main-dashboard" class="hidden flex-grow flex flex-col md:flex-row h-screen overflow-hidden">
+    
+    <!-- Sidebar -->
+    <aside class="w-full md:w-64 bg-[#161B22] border-r border-[#30363D] flex flex-col justify-between flex-shrink-0">
+      <div class="flex flex-col overflow-y-auto">
+        <!-- Logo / Brand -->
+        <div class="p-6 border-b border-[#30363D] flex items-center gap-3">
+          <span class="w-3 h-3 rounded-full bg-red-600 animate-pulse"></span>
+          <div>
+            <h2 class="text-sm font-bold text-white tracking-wider uppercase">BEI Simulator</h2>
+            <span class="text-[10px] text-green-500 font-bold font-mono">CONNECTED TO BEI API</span>
+          </div>
+        </div>
+        
+        <!-- Navigation Tabs -->
+        <nav class="p-4 space-y-1">
+          <button onclick="switchTab('issuers')" id="tab-btn-issuers"
+            class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-left transition-all bg-red-600/10 text-red-500 border border-red-500/15">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+            Emiten & Saham
+          </button>
+          
+          <button onclick="switchTab('ipo')" id="tab-btn-ipo"
+            class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-left transition-all text-[#8B949E] hover:text-white hover:bg-[#21262D]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.003 9.003 0 1020.945 13H11V3.055z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
+            Initial Public Offering (IPO)
+          </button>
+          
+          <button onclick="switchTab('settlement')" id="tab-btn-settlement"
+            class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-left transition-all text-[#8B949E] hover:text-white hover:bg-[#21262D]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            Settlement & Surveillance
+          </button>
+          
+          <button onclick="switchTab('reports')" id="tab-btn-reports"
+            class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-left transition-all text-[#8B949E] hover:text-white hover:bg-[#21262D]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Laporan & Log
+          </button>
+        </nav>
+      </div>
+      
+      <!-- User profile & Logout -->
+      <div class="p-4 border-t border-[#30363D] bg-[#0D1117] flex items-center justify-between">
+        <div class="overflow-hidden truncate pr-2">
+          <p class="text-xs font-bold text-white">Administrator</p>
+          <p class="text-[10px] text-[#8B949E] font-mono truncate" id="admin-token-display"></p>
+        </div>
+        <button onclick="handleLogout()" title="Keluar"
+          class="p-2 text-[#8B949E] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+        </button>
+      </div>
+    </aside>
+    
+    <!-- Main Content Area -->
+    <main class="flex-grow overflow-y-auto p-8 relative">
+      
+      <!-- ==================== TAB 1: EMITEN & SAHAM ==================== -->
+      <div id="content-issuers" class="space-y-6">
+        <div class="flex justify-between items-center pb-4 border-b border-[#30363D]">
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Master Data Emiten & Saham</h1>
+            <p class="text-xs text-[#8B949E]">Kelola penerbitan perusahaan tercatat baru, suspend/resume, serta notasi pengawasan khusus.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <!-- Forms Column -->
+          <div class="xl:col-span-1 space-y-6">
+            <!-- Create Issuer Form -->
+            <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-5 space-y-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                Daftarkan Emiten Baru
+              </h3>
+              <form onsubmit="createIssuer(event)" class="space-y-3">
+                <div class="grid grid-cols-3 gap-3">
+                  <div class="col-span-1 space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Kode</label>
+                    <input type="text" id="issuer-code" placeholder="TEST" required maxlength="8"
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white uppercase font-mono">
+                  </div>
+                  <div class="col-span-2 space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Nama Perusahaan</label>
+                    <input type="text" id="issuer-name" placeholder="PT Test Tbk" required
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                  </div>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Sektor Industri</label>
+                  <input type="text" id="issuer-sector" placeholder="Technology" required
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Ringkasan Bisnis</label>
+                  <textarea id="issuer-summary" placeholder="Metrik ringkasan bisnis..." rows="2"
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white"></textarea>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Deskripsi Detail</label>
+                  <textarea id="issuer-desc" placeholder="Detail profil..." rows="2"
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white"></textarea>
+                </div>
+                <button type="submit"
+                  class="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider">
+                  Daftarkan Emiten
+                </button>
+              </form>
+            </div>
+
+            <!-- Create Listed Security Form -->
+            <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-5 space-y-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                Daftarkan Saham Baru (Security)
+              </h3>
+              <form onsubmit="createSecurity(event)" class="space-y-3">
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Pilih Emiten</label>
+                  <select id="sec-issuer-id" required
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                    <option value="">-- Pilih Emiten --</option>
+                  </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Kode Saham (Ticker)</label>
+                    <input type="text" id="sec-symbol" placeholder="TEST" required maxlength="8"
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white uppercase font-mono">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Nama Saham</label>
+                    <input type="text" id="sec-name" placeholder="Test Tbk" required
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Papan Pencatatan</label>
+                    <select id="sec-board" required
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                      <option value="main">Main (Utama)</option>
+                      <option value="development">Development (Pengembangan)</option>
+                      <option value="acceleration">Acceleration (Akselerasi)</option>
+                      <option value="new_economy">New Economy</option>
+                      <option value="watchlist">Watchlist (Pemantauan)</option>
+                    </select>
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Mekanisme Pasar</label>
+                    <select id="sec-mechanism" required
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                      <option value="regular">Regular Trading</option>
+                      <option value="call_auction">Periodic Call Auction</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Sektor Industri</label>
+                  <input type="text" id="sec-sector" placeholder="Technology" required
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Saham Beredar (Lembar)</label>
+                  <input type="number" id="sec-shares" placeholder="1000000000" required min="1"
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-[#8B949E] uppercase tracking-wider block">Harga IPO</label>
+                    <input type="number" id="sec-ipo-price" placeholder="200" required min="1"
+                      class="w-full px-2 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-[#8B949E] uppercase tracking-wider block">Harga Acuan</label>
+                    <input type="number" id="sec-ref-price" placeholder="200" required min="1"
+                      class="w-full px-2 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-[#8B949E] uppercase tracking-wider block">Prev Close</label>
+                    <input type="number" id="sec-prev-close" placeholder="200" min="1"
+                      class="w-full px-2 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  </div>
+                </div>
+                <button type="submit"
+                  class="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider">
+                  Daftarkan Saham
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- List Column -->
+          <div class="xl:col-span-2 space-y-6">
+            <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-5 space-y-4">
+              <div class="flex justify-between items-center">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                  Daftar Efek Terdaftar Resmi (BEI Board)
+                </h3>
+                <button onclick="refreshSecurities()" class="text-xs text-[#8B949E] hover:text-white flex items-center gap-1 font-semibold">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" /></svg>
+                  Segarkan
+                </button>
+              </div>
+
+              <div class="overflow-x-auto border border-[#21262D] rounded-lg">
+                <table class="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr class="bg-[#0D1117] text-[#8B949E] uppercase text-[10px] font-bold border-b border-[#30363D]">
+                      <th class="p-3">Ticker</th>
+                      <th class="p-3">Nama Saham</th>
+                      <th class="p-3 text-right">Harga IPO / Acuan</th>
+                      <th class="p-3">Papan</th>
+                      <th class="p-3">Status</th>
+                      <th class="p-3 text-center">Tindakan Administratif</th>
+                    </tr>
+                  </thead>
+                  <tbody id="securities-table-body" class="divide-y divide-[#21262D] font-mono">
+                    <tr>
+                      <td colspan="6" class="p-8 text-center text-[#8B949E]">Mengambil data...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== TAB 2: INITIAL PUBLIC OFFERING (IPO) ==================== -->
+      <div id="content-ipo" class="hidden space-y-6">
+        <div class="flex justify-between items-center pb-4 border-b border-[#30363D]">
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Pengelolaan e-IPO</h1>
+            <p class="text-xs text-[#8B949E]">Daftarkan event IPO perusahaan baru, catat pesanan investor, dan jalankan kalkulasi penjatahan / alokasi saham.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <!-- Forms Column -->
+          <div class="xl:col-span-1 space-y-6">
+            <!-- Create IPO Form -->
+            <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-5 space-y-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                Buat Event IPO Baru
+              </h3>
+              <form onsubmit="createIpoEvent(event)" class="space-y-3">
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Pilih Saham</label>
+                  <select id="ipo-security-id" required
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                    <option value="">-- Pilih Saham --</option>
+                  </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Saham Ditawarkan</label>
+                    <input type="number" id="ipo-offered-shares" placeholder="200000000" required min="1"
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Harga Penawaran</label>
+                    <input type="number" id="ipo-offering-price" placeholder="200" required min="1"
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Mulai Bookbuilding <span class="text-[#8B949E] normal-case font-normal">(opsional)</span></label>
+                    <input type="datetime-local" id="ipo-bb-start"
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Selesai Bookbuilding <span class="text-[#8B949E] normal-case font-normal">(opsional)</span></label>
+                    <input type="datetime-local" id="ipo-bb-end"
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Mulai Subscription <span class="text-[#8B949E] normal-case font-normal">(opsional)</span></label>
+                    <input type="datetime-local" id="ipo-sub-start"
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Selesai Subscription <span class="text-[#8B949E] normal-case font-normal">(opsional)</span></label>
+                    <input type="datetime-local" id="ipo-sub-end"
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Tanggal Listing</label>
+                    <input type="date" id="ipo-listing-date" required
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Status Awal</label>
+                    <select id="ipo-status" required
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                      <option value="draft">Draft</option>
+                      <option value="bookbuilding">Bookbuilding</option>
+                      <option value="subscription" selected>Subscription (Active)</option>
+                      <option value="allocation">Allocation (Masa Alokasi)</option>
+                      <option value="listed">Listed (Tercatat)</option>
+                    </select>
+                  </div>
+                </div>
+                <button type="submit"
+                  class="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider">
+                  Buat Event IPO
+                </button>
+              </form>
+            </div>
+
+            <!-- Submit Subscription Form -->
+            <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-5 space-y-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                Pemesanan IPO Saham (Submit Interest)
+              </h3>
+              <form onsubmit="submitIpoSubscription(event)" class="space-y-3">
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Pilih Event IPO</label>
+                  <select id="sub-ipo-id" required
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white">
+                    <option value="">-- Pilih Event IPO --</option>
+                  </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Kode Broker</label>
+                    <input type="text" id="sub-broker-code" placeholder="MANDALA" value="MANDALA" required
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono uppercase">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">ID Broker Account Investor</label>
+                    <input type="text" id="sub-investor-id" placeholder="UUID Account" required
+                      class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  </div>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Jumlah Saham Dipesan (Lembar)</label>
+                  <input type="number" id="sub-qty" placeholder="50000" required min="1"
+                    class="w-full px-3 py-1.5 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                </div>
+                <button type="submit"
+                  class="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider font-mono">
+                  Kirim Pemesanan
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- List Column -->
+          <div class="xl:col-span-2 space-y-6">
+            <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-5 space-y-4">
+              <div class="flex justify-between items-center">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                  Daftar Penawaran IPO Aktif
+                </h3>
+                <button onclick="refreshIpoEvents()" class="text-xs text-[#8B949E] hover:text-white flex items-center gap-1 font-semibold">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" /></svg>
+                  Segarkan
+                </button>
+              </div>
+
+              <div class="overflow-x-auto border border-[#21262D] rounded-lg">
+                <table class="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr class="bg-[#0D1117] text-[#8B949E] uppercase text-[10px] font-bold border-b border-[#30363D]">
+                      <th class="p-3">Detail IPO</th>
+                      <th class="p-3 text-right">Volume Saham</th>
+                      <th class="p-3 text-right">Harga</th>
+                      <th class="p-3">Jadwal Listing</th>
+                      <th class="p-3">Status</th>
+                      <th class="p-3 text-center">Aksi Penjatahan</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ipo-table-body" class="divide-y divide-[#21262D] font-mono">
+                    <tr>
+                      <td colspan="6" class="p-8 text-center text-[#8B949E]">Mengambil data...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== TAB 3: SETTLEMENT & SURVEILLANCE ==================== -->
+      <div id="content-settlement" class="hidden space-y-6">
+        <div class="flex justify-between items-center pb-4 border-b border-[#30363D]">
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Settlement & Market Surveillance</h1>
+            <p class="text-xs text-[#8B949E]">Jalankan batch kliring dana dan efek (DVP/RVP) di akhir sesi, serta lakukan audit surveillance deteksi pola transaksi tidak wajar.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Settlement Card -->
+          <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-6 space-y-6 shadow-xl">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-white border-b border-[#30363D] pb-3 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+              Penyelesaian Transaksi (DVP/RVP Clearing)
+            </h3>
+            
+            <div class="space-y-4">
+              <div class="bg-[#0D1117] border border-[#30363D] rounded-lg p-4 space-y-3">
+                <h4 class="text-xs font-bold text-[#8B949E]">1. BUAT BATCH SETTLEMENT</h4>
+                <p class="text-[11px] text-[#8B949E]">Grup seluruh transaksi matched yang terjadi di sesi ini ke dalam satu batch instruksi transfer.</p>
+                <div class="flex gap-2">
+                  <input type="text" id="settle-session-id" placeholder="SESSION-1 (Contoh: ID Sesi)" required
+                    class="flex-grow px-3 py-1.5 bg-[#161B22] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  <button onclick="createSettlementBatch()"
+                    class="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider">
+                    Buat Batch
+                  </button>
+                </div>
+              </div>
+
+              <div class="bg-[#0D1117] border border-[#30363D] rounded-lg p-4 space-y-3">
+                <h4 class="text-xs font-bold text-[#8B949E]">2. PROSES & EKSEKUSI BATCH SETTLEMENT</h4>
+                <p class="text-[11px] text-[#8B949E]">Eksekusi perpindahan efek di custody ledger BEI dan picu webhook saldo ke database Sekuritas.</p>
+                <div class="flex gap-2">
+                  <input type="text" id="settle-batch-id" placeholder="UUID Batch Settlement" required
+                    class="flex-grow px-3 py-1.5 bg-[#161B22] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  <button onclick="processSettlementBatch()"
+                    class="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider">
+                    Eksekusi Settle
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Surveillance Card -->
+          <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-6 space-y-6 shadow-xl">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-white border-b border-[#30363D] pb-3 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              Pengawasan Pasar (Market Surveillance)
+            </h3>
+            
+            <div class="space-y-4">
+              <div class="bg-[#0D1117] border border-[#30363D] rounded-lg p-4 space-y-3">
+                <h4 class="text-xs font-bold text-[#8B949E]">JALANKAN PEMINDAIAN POLA TIDAK WAJAR (SCAN)</h4>
+                <p class="text-[11px] text-[#8B949E]">Analisis sesi perdagangan aktif untuk melacak wash trade, bot dominance, manipulasi volume, dan ARA/ARB berulang.</p>
+                <div class="flex gap-2">
+                  <input type="text" id="scan-session-id" placeholder="SESSION-1 (Contoh: ID Sesi)" required
+                    class="flex-grow px-3 py-1.5 bg-[#161B22] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono">
+                  <button onclick="runSurveillanceScan()"
+                    class="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider">
+                    Mulai Scan
+                  </button>
+                </div>
+              </div>
+
+              <!-- List Alerts -->
+              <div class="bg-[#0D1117] border border-[#30363D] rounded-lg p-4 space-y-3 flex-grow flex flex-col justify-between" style="min-height: 160px;">
+                <div class="flex justify-between items-center">
+                  <h4 class="text-xs font-bold text-[#8B949E]">DAFTAR ALARM PENGAWASAN AKTIF</h4>
+                  <button onclick="refreshSurveillanceAlerts()" class="text-[10px] text-[#8B949E] hover:text-white">Refresh</button>
+                </div>
+                <div class="overflow-y-auto max-h-48 border border-[#30363D] rounded p-2 bg-[#161B22]">
+                  <ul id="surveillance-alerts-list" class="divide-y divide-[#30363D] space-y-2 text-[11px]">
+                    <li class="py-2 text-center text-[#8B949E]">Tidak ada alarm terdeteksi.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== TAB 4: LAPORAN & LOG ==================== -->
+      <div id="content-reports" class="hidden space-y-6">
+        <div class="flex justify-between items-center pb-4 border-b border-[#30363D]">
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Laporan & Audit Log Kustodian</h1>
+            <p class="text-xs text-[#8B949E]">Lihat rangkuman mutasi saldo, pencatatan biaya transaksi, rincian detail bursa, dan log audit dari database bursa.</p>
+          </div>
+        </div>
+
+        <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-6 space-y-6">
+          <div class="flex flex-wrap gap-4 items-end">
+            <div class="space-y-1">
+              <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Pilih Jenis Laporan</label>
+              <select id="report-type"
+                class="px-3 py-2 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white w-56">
+                <option value="trades">Official Trades (Transaksi Resmi)</option>
+                <option value="settlements">Settlement Instructions (Instruksi Kliring)</option>
+                <option value="custody-movements">Custody Movements (Mutasi Saldo Efek)</option>
+                <option value="fee-tax">Fee & Tax Breakdown (Biaya & Pajak)</option>
+                <option value="market-summary">Market Session Summary (Ikhtisar Sesi)</option>
+              </select>
+            </div>
+            
+            <div class="space-y-1" id="report-session-container">
+              <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">ID Sesi Perdagangan</label>
+              <input type="text" id="report-session-id" placeholder="SESSION-1" value="SESSION-1"
+                class="px-3 py-2 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono w-40">
+            </div>
+
+            <button onclick="fetchReportData()"
+              class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider">
+              Tampilkan Laporan
+            </button>
+          </div>
+
+          <div class="bg-[#0D1117] border border-[#30363D] rounded-lg p-4">
+            <div class="flex justify-between items-center mb-3">
+              <span class="text-xs font-bold text-[#8B949E] uppercase font-mono" id="report-title-display">LAPORAN DATA: TRADES</span>
+              <span class="text-[10px] text-[#8B949E] font-mono" id="report-status-display">Belum ditarik</span>
+            </div>
+            
+            <div class="overflow-x-auto max-h-[60vh]">
+              <pre id="report-json-display" class="text-[11px] font-mono text-green-400 bg-[#0B0F17] p-4 rounded-md border border-[#21262D] overflow-auto whitespace-pre">[]</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Toast Notification Wrapper -->
+  <div id="toast-wrapper" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2"></div>
+
+  <!-- ==================== JAVASCRIPT ==================== -->
+  <script>
+    // Global State
+    let adminToken = '';
+    let currentTab = 'issuers';
+    let issuersCache = [];
+    let securitiesCache = [];
+    let ipoEventsCache = [];
+
+    // On Load
+    window.addEventListener('DOMContentLoaded', () => {
+      // Cek localStorage
+      const savedToken = localStorage.getItem('bei_admin_token');
+      if (savedToken) {
+        adminToken = savedToken;
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('main-dashboard').classList.remove('hidden');
+        document.getElementById('admin-token-display').innerText = adminToken;
+        initDashboard();
+      }
+    });
+
+    // Handle Login
+    function handleLogin(e) {
+      e.preventDefault();
+      const val = document.getElementById('admin-token-input').value.trim();
+      if (!val) return;
+      
+      adminToken = val;
+      localStorage.setItem('bei_admin_token', adminToken);
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('main-dashboard').classList.remove('hidden');
+      document.getElementById('admin-token-display').innerText = adminToken;
+      showToast('Otentikasi sukses!', 'success');
+      initDashboard();
+    }
+
+    // Handle Logout
+    function handleLogout() {
+      if (confirm('Apakah Anda yakin ingin keluar dari konsol admin?')) {
+        adminToken = '';
+        localStorage.removeItem('bei_admin_token');
+        document.getElementById('main-dashboard').classList.add('hidden');
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('admin-token-input').value = '';
+        showToast('Berhasil logout.', 'info');
+      }
+    }
+
+    // Switch tabs
+    function switchTab(tabId) {
+      // Hide all content divisions
+      document.getElementById('content-issuers').classList.add('hidden');
+      document.getElementById('content-ipo').classList.add('hidden');
+      document.getElementById('content-settlement').classList.add('hidden');
+      document.getElementById('content-reports').classList.add('hidden');
+
+      // Reset all tab button styles
+      const tabs = ['issuers', 'ipo', 'settlement', 'reports'];
+      tabs.forEach(t => {
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (btn) {
+          btn.className = "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-left transition-all text-[#8B949E] hover:text-white hover:bg-[#21262D]";
+        }
+      });
+
+      // Show targeted content
+      document.getElementById(`content-${tabId}`).classList.remove('hidden');
+      // Set active button style
+      document.getElementById(`tab-btn-${tabId}`).className = "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-left transition-all bg-red-600/10 text-red-500 border border-red-500/15";
+      
+      currentTab = tabId;
+      onTabOpen(tabId);
+    }
+
+    function onTabOpen(tabId) {
+      if (tabId === 'issuers') {
+        refreshIssuers();
+        refreshSecurities();
+      } else if (tabId === 'ipo') {
+        refreshIpoEvents();
+        refreshSecurities();
+        refreshIssuers();
+      } else if (tabId === 'settlement') {
+        refreshSurveillanceAlerts();
+      }
+    }
+
+    // Fetch Helper
+    async function apiRequest(path, options = {}) {
+      const headers = {
+        'x-service-token': adminToken,
+        'content-type': 'application/json',
+        ...(options.headers || {})
+      };
+
+      const res = await fetch(path, { ...options, headers });
+      if (!res.ok) {
+        let errMessage = `HTTP ${res.status} ${res.statusText}`;
+        try {
+          const body = await res.json();
+          errMessage = body.message || body.error || errMessage;
+        } catch {}
+        throw new Error(errMessage);
+      }
+      return res.json().catch(() => null);
+    }
+
+    // Init Dashboard
+    function initDashboard() {
+      onTabOpen('issuers');
+    }
+
+    // ==================== TABS LOGIC ====================
+
+    // EMITEN & SAHAM LOGIC
+    async function refreshIssuers() {
+      try {
+        const data = await apiRequest('/v1/issuers');
+        issuersCache = data || [];
+        
+        // Update security form select option
+        const select = document.getElementById('sec-issuer-id');
+        select.innerHTML = '<option value="">-- Pilih Emiten --</option>';
+        issuersCache.forEach(issuer => {
+          select.innerHTML += `<option value="${issuer.id}">${issuer.code} - ${issuer.name}</option>`;
+        });
+      } catch (err) {
+        showToast(`Gagal memuat emiten: ${err.message}`, 'error');
+      }
+    }
+
+    async function refreshSecurities() {
+      try {
+        const data = await apiRequest('/v1/public/securities');
+        securitiesCache = data || [];
+        renderSecuritiesTable(securitiesCache);
+        
+        // Update IPO security select
+        const select = document.getElementById('ipo-security-id');
+        if (select) {
+          select.innerHTML = '<option value="">-- Pilih Saham --</option>';
+          securitiesCache.forEach(s => {
+            select.innerHTML += `<option value="${s.id}">${s.symbol} - ${s.name}</option>`;
+          });
+        }
+      } catch (err) {
+        showToast(`Gagal memuat efek: ${err.message}`, 'error');
+      }
+    }
+
+    function renderSecuritiesTable(securities) {
+      const tbody = document.getElementById('securities-table-body');
+      if (!tbody) return;
+      if (securities.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-[#8B949E]">Belum ada efek terdaftar.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = '';
+      securities.forEach(s => {
+        const isSuspended = s.status === 'suspended';
+        const actionBtn = isSuspended
+          ? `<button onclick="resumeSecurity('${s.symbol}')" class="px-2 py-1 bg-green-600/10 hover:bg-green-600/20 text-green-500 rounded border border-green-500/20">Resume</button>`
+          : `<button onclick="suspendSecurity('${s.symbol}')" class="px-2 py-1 bg-yellow-600/10 hover:bg-yellow-600/20 text-yellow-500 rounded border border-yellow-500/20">Suspend</button>`;
+
+        tbody.innerHTML += `
+          <tr class="border-b border-[#21262D]/60 hover:bg-slate-900/10">
+            <td class="p-3 font-bold text-white">${s.symbol}</td>
+            <td class="p-3">${s.name}</td>
+            <td class="p-3 text-right">Rp ${Number(s.ipo_price || 0).toLocaleString('id-ID')} / Rp ${Number(s.reference_price).toLocaleString('id-ID')}</td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-sans uppercase font-bold">${s.board.replace('_', ' ')}</span></td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded text-[10px] font-sans font-bold ${isSuspended ? 'bg-red-500/15 text-red-500' : 'bg-green-500/15 text-green-500'}">
+                ${s.status.toUpperCase()}
+              </span>
+            </td>
+            <td class="p-3">
+              <div class="flex justify-center gap-2">
+                ${actionBtn}
+                <button onclick="addSpecialNotation('${s.symbol}')" class="px-2 py-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 rounded border border-blue-500/20">Notasi</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function createIssuer(e) {
+      e.preventDefault();
+      const code = document.getElementById('issuer-code').value.trim();
+      const name = document.getElementById('issuer-name').value.trim();
+      const sector = document.getElementById('issuer-sector').value.trim();
+      const summary = document.getElementById('issuer-summary').value.trim();
+      const businessDescription = document.getElementById('issuer-desc').value.trim();
+
+      try {
+        await apiRequest('/v1/issuers', {
+          method: 'POST',
+          body: JSON.stringify({ code, name, sector, summary, businessDescription })
+        });
+        showToast(`Emiten ${code} berhasil didaftarkan!`, 'success');
+        e.target.reset();
+        refreshIssuers();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function createSecurity(e) {
+      e.preventDefault();
+      const issuerId = document.getElementById('sec-issuer-id').value;
+      const symbol = document.getElementById('sec-symbol').value.trim();
+      const name = document.getElementById('sec-name').value.trim();
+      const board = document.getElementById('sec-board').value;
+      const sector = document.getElementById('sec-sector').value.trim();
+      const sharesOutstanding = document.getElementById('sec-shares').value;
+      const ipoPrice = document.getElementById('sec-ipo-price').value;
+      const referencePrice = document.getElementById('sec-ref-price').value;
+      const previousClose = document.getElementById('sec-prev-close').value;
+      const marketMechanism = document.getElementById('sec-mechanism').value;
+
+      try {
+        const payload = {
+          issuerId, symbol, name, board, sector,
+          sharesOutstanding: Number(sharesOutstanding),
+          referencePrice: Number(referencePrice),
+          ipoPrice: ipoPrice ? Number(ipoPrice) : undefined,
+          previousClose: previousClose ? Number(previousClose) : undefined,
+          marketMechanism
+        };
+
+        await apiRequest('/v1/securities', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        showToast(`Saham ${symbol} berhasil didaftarkan di bursa!`, 'success');
+        e.target.reset();
+        refreshSecurities();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function suspendSecurity(symbol) {
+      const reason = prompt(`Masukkan alasan suspensi saham ${symbol}:`, 'Kondisi volatilitas transaksi tidak wajar.');
+      if (reason === null) return;
+      if (!reason.trim()) {
+        showToast('Alasan suspensi wajib diisi.', 'error');
+        return;
+      }
+      try {
+        await apiRequest(`/v1/securities/${symbol}/suspend`, {
+          method: 'POST',
+          body: JSON.stringify({ reason })
+        });
+        showToast(`Saham ${symbol} berhasil disuspensi.`, 'success');
+        refreshSecurities();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function resumeSecurity(symbol) {
+      if (!confirm(`Apakah Anda ingin membuka kembali suspensi saham ${symbol}?`)) return;
+      try {
+        await apiRequest(`/v1/securities/${symbol}/resume`, {
+          method: 'POST'
+        });
+        showToast(`Saham ${symbol} berhasil diperdagangkan kembali.`, 'success');
+        refreshSecurities();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function addSpecialNotation(symbol) {
+      const type = prompt(`Masukkan jenis notasi (Contoh: special_monitoring, delisting_risk):`, 'special_monitoring');
+      if (!type) return;
+      const note = prompt(`Masukkan catatan notasi khusus untuk ${symbol}:`);
+      if (!note) return;
+
+      try {
+        await apiRequest(`/v1/securities/${symbol}/notations`, {
+          method: 'POST',
+          body: JSON.stringify({ type, note })
+        });
+        showToast(`Notasi khusus ditambahkan pada saham ${symbol}.`, 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+
+    // INITIAL PUBLIC OFFERING (IPO) LOGIC
+    async function refreshIpoEvents() {
+      try {
+        const data = await apiRequest('/v1/ipo-events');
+        ipoEventsCache = data || [];
+        renderIpoEventsTable(ipoEventsCache);
+
+        // Update Subscription Event Dropdown select
+        const select = document.getElementById('sub-ipo-id');
+        if (select) {
+          select.innerHTML = '<option value="">-- Pilih Event IPO --</option>';
+          ipoEventsCache.forEach(event => {
+            const stockSymbol = securitiesCache.find(s => s.id === event.securityId)?.symbol || 'N/A';
+            if (event.status === 'subscription') {
+              select.innerHTML += `<option value="${event.id}">Saham ${stockSymbol} @ Rp ${Number(event.offeringPrice).toLocaleString('id-ID')}</option>`;
+            }
+          });
+        }
+      } catch (err) {
+        showToast(`Gagal memuat IPO: ${err.message}`, 'error');
+      }
+    }
+
+    function renderIpoEventsTable(events) {
+      const tbody = document.getElementById('ipo-table-body');
+      if (!tbody) return;
+      if (events.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-[#8B949E]">Belum ada penawaran IPO terdaftar.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = '';
+      events.forEach(e => {
+        const security = securitiesCache.find(s => s.id === e.securityId);
+        const symbol = security?.symbol || 'N/A';
+        const name = security?.name || 'N/A';
+        
+        tbody.innerHTML += `
+          <tr class="border-b border-[#21262D]/60 hover:bg-slate-900/10">
+            <td class="p-3">
+              <span class="font-bold text-white block">${symbol}</span>
+              <span class="text-[10px] text-[#8B949E] font-sans truncate block max-w-[150px]">${name}</span>
+            </td>
+            <td class="p-3 text-right">${Number(e.offeredShares).toLocaleString('id-ID')} lbr</td>
+            <td class="p-3 text-right">Rp ${Number(e.offeringPrice).toLocaleString('id-ID')}</td>
+            <td class="p-3">${e.listingDate ? new Date(e.listingDate).toLocaleDateString('id-ID') : 'Segera'}</td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded text-[10px] font-sans font-bold uppercase ${e.status === 'subscription' ? 'bg-green-500/15 text-green-500 animate-pulse' : 'bg-slate-800 text-slate-400'}">
+                ${e.status}
+              </span>
+            </td>
+            <td class="p-3 text-center">
+              <button onclick="allocateIpo('${e.id}')" ${e.status !== 'subscription' && e.status !== 'allocation' ? 'disabled' : ''}
+                class="px-2.5 py-1 text-[11px] font-sans uppercase font-bold rounded ${e.status !== 'subscription' && e.status !== 'allocation' ? 'bg-slate-800/40 text-slate-500 border border-transparent cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white shadow'}">
+                Jatah (Allocate)
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function createIpoEvent(e) {
+      e.preventDefault();
+      const securityId = document.getElementById('ipo-security-id').value;
+      const offeredShares = document.getElementById('ipo-offered-shares').value;
+      const offeringPrice = document.getElementById('ipo-offering-price').value;
+      const bbStart = document.getElementById('ipo-bb-start').value;
+      const bbEnd = document.getElementById('ipo-bb-end').value;
+      const subStart = document.getElementById('ipo-sub-start').value;
+      const subEnd = document.getElementById('ipo-sub-end').value;
+      const listingDate = document.getElementById('ipo-listing-date').value;
+      const status = document.getElementById('ipo-status').value;
+
+      const security = securitiesCache.find(s => s.id === securityId);
+      if (!security) return;
+
+      try {
+        const payload = {
+          issuerId: security.issuerId,
+          securityId,
+          offeredShares: Number(offeredShares),
+          offeringPrice: Number(offeringPrice),
+          bookbuildingStart: bbStart ? new Date(bbStart).toISOString() : undefined,
+          bookbuildingEnd: bbEnd ? new Date(bbEnd).toISOString() : undefined,
+          subscriptionStart: subStart ? new Date(subStart).toISOString() : undefined,
+          subscriptionEnd: subEnd ? new Date(subEnd).toISOString() : undefined,
+          listingDate,
+          status,
+          metadata: {}
+        };
+
+        await apiRequest('/v1/ipo-events', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        showToast('Event IPO baru berhasil dijadwalkan!', 'success');
+        e.target.reset();
+        refreshIpoEvents();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function submitIpoSubscription(e) {
+      e.preventDefault();
+      const eventId = document.getElementById('sub-ipo-id').value;
+      const brokerCode = document.getElementById('sub-broker-code').value.trim();
+      const investorId = document.getElementById('sub-investor-id').value.trim();
+      const requestedShares = document.getElementById('sub-qty').value;
+
+      try {
+        const payload = {
+          brokerCode,
+          investorId,
+          requestedShares: Number(requestedShares),
+          idempotencyKey: `sub:ipo:admin:${investorId.slice(0, 8)}:${Date.now()}`
+        };
+
+        await apiRequest(`/v1/ipo-events/${eventId}/subscriptions`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        showToast('Pemesanan saham IPO investor berhasil didaftarkan!', 'success');
+        e.target.reset();
+        refreshIpoEvents();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function allocateIpo(eventId) {
+      const ratioStr = prompt('Masukkan rasio penjatahan alokasi saham (0.0 sampai 1.0):', '1.0');
+      if (ratioStr === null) return;
+      const allocationRatio = parseFloat(ratioStr);
+      if (isNaN(allocationRatio) || allocationRatio < 0 || allocationRatio > 1) {
+        showToast('Rasio alokasi harus berupa desimal antara 0 dan 1.', 'error');
+        return;
+      }
+
+      try {
+        const data = await apiRequest(`/v1/ipo-events/${eventId}/allocate`, {
+          method: 'POST',
+          body: JSON.stringify({ allocationRatio })
+        });
+        showToast(`Penjatahan IPO sukses diproses! ${data.allocations?.length || 0} alokasi terdistribusi secara sinkron ke Sekuritas.`, 'success');
+        refreshIpoEvents();
+      } catch (err) {
+        showToast(`Alokasi gagal: ${err.message}`, 'error');
+      }
+    }
+
+
+    // SETTLEMENT & SURVEILLANCE LOGIC
+    async function createSettlementBatch() {
+      const sessionId = document.getElementById('settle-session-id').value.trim();
+      if (!sessionId) {
+        showToast('Session ID harus diisi.', 'error');
+        return;
+      }
+      try {
+        const data = await apiRequest('/v1/settlement/batches', {
+          method: 'POST',
+          body: JSON.stringify({ sessionId })
+        });
+        showToast(`Batch kliring berhasil dibentuk! Trade terdeteksi: ${data.tradeCount || 0}`, 'success');
+        if (data.batch?.id) {
+          document.getElementById('settle-batch-id').value = data.batch.id;
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function processSettlementBatch() {
+      const batchId = document.getElementById('settle-batch-id').value.trim();
+      if (!batchId) {
+        showToast('Batch ID harus diisi.', 'error');
+        return;
+      }
+      try {
+        const data = await apiRequest(`/v1/settlement/batches/${batchId}/process`, {
+          method: 'POST'
+        });
+        showToast(`Kliring batch berhasil dieksekusi! Status: ${data.status || 'Success'}`, 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function runSurveillanceScan() {
+      const sessionId = document.getElementById('scan-session-id').value.trim();
+      if (!sessionId) {
+        showToast('Session ID untuk scan wajib diisi.', 'error');
+        return;
+      }
+      try {
+        const data = await apiRequest(`/v1/surveillance/scan/${sessionId}`, {
+          method: 'POST'
+        });
+        showToast(`Scan pengawasan selesai! Alarm baru dipicu: ${data.generated?.length || 0}`, 'success');
+        refreshSurveillanceAlerts();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function refreshSurveillanceAlerts() {
+      try {
+        const data = await apiRequest('/v1/surveillance/alerts');
+        const list = document.getElementById('surveillance-alerts-list');
+        if (!list) return;
+        if (!data || data.length === 0) {
+          list.innerHTML = `<li class="py-2 text-center text-[#8B949E]">Tidak ada alarm terdeteksi.</li>`;
+          return;
+        }
+        list.innerHTML = '';
+        data.slice(0, 10).forEach(alert => {
+          const badgeColor = alert.severity === 'high' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20';
+          list.innerHTML += `
+            <tr class="border-b border-[#30363D]/40">
+              <div class="py-2 flex items-center justify-between font-mono">
+                <div>
+                  <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold ${badgeColor}">${alert.severity}</span>
+                  <span class="text-white font-semibold ml-2">${alert.type}</span>
+                  <p class="text-[10px] text-[#8B949E] mt-1">${alert.message}</p>
+                </div>
+                <span class="text-[#8B949E] text-[10px]">${alert.sessionId || 'SYSTEM'}</span>
+              </div>
+            </tr>
+          `;
+        });
+      } catch (err) {
+        showToast(`Gagal memuat alert surveillance: ${err.message}`, 'error');
+      }
+    }
+
+
+    // REPORTS & LOGS TAB LOGIC
+    async function fetchReportData() {
+      const type = document.getElementById('report-type').value;
+      const sessionId = document.getElementById('report-session-id').value.trim();
+      const titleDisplay = document.getElementById('report-title-display');
+      const statusDisplay = document.getElementById('report-status-display');
+      const jsonDisplay = document.getElementById('report-json-display');
+
+      let endpoint = '';
+      if (type === 'trades') {
+        endpoint = `/v1/reports/trades/${sessionId}`;
+      } else if (type === 'settlements') {
+        endpoint = `/v1/reports/settlements/${sessionId}`;
+      } else if (type === 'custody-movements') {
+        endpoint = `/v1/reports/custody-movements?limit=100`;
+      } else if (type === 'fee-tax') {
+        endpoint = `/v1/reports/fee-tax/${sessionId}`;
+      } else if (type === 'market-summary') {
+        endpoint = `/v1/reports/market-summary/${sessionId}`;
+      }
+
+      titleDisplay.innerText = `LAPORAN DATA: ${type.toUpperCase()}`;
+      statusDisplay.innerText = 'Mengambil data...';
+      jsonDisplay.innerText = '[]';
+
+      try {
+        const data = await apiRequest(endpoint);
+        statusDisplay.innerText = `Matched: ${Array.isArray(data) ? data.length : 1} baris`;
+        jsonDisplay.innerText = JSON.stringify(data, null, 2);
+      } catch (err) {
+        statusDisplay.innerText = 'Gagal';
+        showToast(`Gagal memuat laporan: ${err.message}`, 'error');
+        jsonDisplay.innerText = JSON.stringify({ error: err.message }, null, 2);
+      }
+    }
+
+
+    // ==================== GLOBAL TOAST UTILITIES ====================
+    function showToast(message, type = 'info') {
+      const wrapper = document.getElementById('toast-wrapper');
+      if (!wrapper) return;
+
+      const toast = document.createElement('div');
+      let borderColor = 'border-blue-500';
+      if (type === 'success') borderColor = 'border-green-500';
+      if (type === 'error') borderColor = 'border-red-500';
+      if (type === 'warning') borderColor = 'border-amber-500';
+
+      toast.className = `bg-[#161B22] border-l-4 ${borderColor} p-4 rounded-lg shadow-2xl flex items-center justify-between gap-4 border border-[#30363D] w-80 animate-fade-in transition-all duration-300`;
+      toast.innerHTML = `
+        <div class="flex-1">
+          <p class="text-xs font-semibold text-white">${message}</p>
+        </div>
+        <button class="text-xs text-[#8B949E] hover:text-white" onclick="this.parentElement.remove()">✕</button>
+      `;
+
+      wrapper.appendChild(toast);
+      
+      // Auto dismiss
+      setTimeout(() => {
+        toast.remove();
+      }, 5000);
+    }
+  </script>
+</body>
+</html>

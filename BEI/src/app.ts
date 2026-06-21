@@ -3,6 +3,7 @@ import helmet from "@fastify/helmet";
 import Fastify from "fastify";
 import { registerAuth } from "./lib/auth.js";
 import { sendError } from "./lib/errors.js";
+import { registerAdminFrontendRoutes } from "./routes/admin-frontend.js";
 import { registerBrokerRoutes } from "./routes/brokers.js";
 import { registerCorporateActionRoutes } from "./routes/corporate-actions.js";
 import { registerFundamentalRoutes } from "./routes/fundamentals.js";
@@ -22,11 +23,24 @@ export async function createApp() {
     }
   });
 
-  await app.register(helmet);
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com"],
+        scriptSrcAttr: ["'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+      }
+    }
+  });
   await app.register(cors, { origin: true });
   await registerAuth(app);
 
   await app.register(registerHealthRoutes);
+  await app.register(registerAdminFrontendRoutes);
   await app.register(registerIssuerRoutes, { prefix: "/v1" });
   await app.register(registerFundamentalRoutes, { prefix: "/v1" });
   await app.register(registerRuleRoutes, { prefix: "/v1" });

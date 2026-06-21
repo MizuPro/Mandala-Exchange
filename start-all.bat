@@ -127,11 +127,13 @@ if /I "%MODE%"=="development" (
   echo - Sekuritas Backend: http://localhost:3002
   echo - MATS Service: http://localhost:8082
   echo - BEI Service: http://localhost:4100
+  echo - BEI Admin Console: http://localhost:4100/admin
 ) else (
   echo - Sekuritas Frontend preview: %FRONTEND_URL%
   echo - Sekuritas Backend: http://localhost:3003
   echo - MATS Service: http://localhost:8083
   echo - BEI Service: http://localhost:4101
+  echo - BEI Admin Console: http://localhost:4101/admin
   echo - Public Frontend: https://mandala-sekuritas.michaelk.fun
   echo - Public API: https://api-mandala-sekuritas.michaelk.fun
 )
