@@ -18,7 +18,7 @@ Dapatkan visualisasi real-time pasar saham dan antarmuka premium Mandala Exchang
 
 | Landing Page | Dashboard Utama | Pasar Saham |
 | :---: | :---: | :---: |
-| ![Landing Page](./landing.png) | ![Dashboard](./dashboard.png) | ![Pasar Saham](./pasar_saham.png) |
+| ![Landing Page](./docs/images/landing.png) | ![Dashboard](./docs/images/dashboard.png) | ![Pasar Saham](./docs/images/pasar_saham.png) |
 
 ---
 
