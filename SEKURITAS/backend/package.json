@@ -6,11 +6,14 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "set APP_ENV=development&& set FINANCE_MODE=simulator&& vitest run src",
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:migrate:withdrawal-bank-accounts": "tsx src/scripts/apply-withdrawal-bank-account-migration.ts",
+    "backfill:withdrawal-bank-accounts": "tsx src/scripts/backfill-withdrawal-bank-accounts.ts",
+    "repair:failed-withdrawal-refunds": "tsx src/scripts/repair-failed-withdrawal-refunds.ts"
   },
   "repository": {
     "type": "git",

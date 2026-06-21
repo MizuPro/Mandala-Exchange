@@ -46,6 +46,22 @@ export const rdn_references = pgTable("rdn_references", {
   created_at: timestamp("created_at").defaultNow(),
 });
 
+export const withdrawal_bank_accounts = pgTable("withdrawal_bank_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  bank_code: text("bank_code").notNull().default("MANDALA"),
+  bank_name: text("bank_name").notNull(),
+  account_number: text("account_number").notNull(),
+  account_holder_name: text("account_holder_name").notNull(),
+  status: text("status").notNull().default("verified"), // verified, pending_verification, rejected
+  source: text("source").notNull().default("manual"), // bank_mandala, manual
+  is_primary: boolean("is_primary").notNull().default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  brokerAccountIdx: index("withdrawal_bank_accounts_broker_account_idx").on(table.broker_account_id),
+}));
+
 export const cash_balances = pgTable("cash_balances", {
   id: uuid("id").primaryKey().defaultRandom(),
   broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
@@ -231,6 +247,9 @@ export const withdrawal_requests = pgTable("withdrawal_requests", {
   broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
   amount: numeric("amount").notNull(),
   status: text("status").notNull().default("pending"), // pending, processing, completed, failed
+  destination_bank_name: text("destination_bank_name"),
+  destination_account_number: text("destination_account_number"),
+  destination_account_holder_name: text("destination_account_holder_name"),
   bank_mandala_tx_id: text("bank_mandala_tx_id"),
   error_message: text("error_message"),
   created_at: timestamp("created_at").defaultNow(),
