@@ -16,7 +16,8 @@ type SupportedActionType =
   | "reverse_split"
   | "bonus_share"
   | "rights_issue"
-  | "warrant";
+  | "warrant"
+  | "ipo_allocation";
 
 type CorporateActionEntitlement = {
   broker_account_id?: string;
@@ -74,6 +75,7 @@ function normalizeActionType(value: string): SupportedActionType {
     "bonus_share",
     "rights_issue",
     "warrant",
+    "ipo_allocation",
   ]);
   if (!supported.has(normalized)) {
     throw new Error(`Unsupported corporate action type: ${value}`);
@@ -110,6 +112,7 @@ function titleFor(actionType: SupportedActionType, symbol: string) {
     bonus_share: "Bonus shares received",
     rights_issue: "Rights entitlement received",
     warrant: "Warrant entitlement received",
+    ipo_allocation: "IPO allocation shares received",
   };
   return `${labels[actionType]}: ${symbol}`;
 }
@@ -155,7 +158,8 @@ async function applySecurityMovement(
   symbol: string,
   quantityDelta: number,
   referenceId: string,
-  actionType: SupportedActionType
+  actionType: SupportedActionType,
+  payload?: CorporateActionWebhookPayload
 ) {
   const delta = Math.trunc(quantityDelta);
   if (delta === 0) return null;
@@ -182,6 +186,10 @@ async function applySecurityMovement(
     if (actionType === "rights_issue" || actionType === "warrant") {
       nextAverage = 0;
     }
+    if (actionType === "ipo_allocation") {
+      const buyPrice = toNumber(payload?.details?.offering_price || payload?.details?.ipo_price || 0);
+      nextAverage = newAvailable > 0 ? ((oldAverage * oldAvailable) + (buyPrice * delta)) / newAvailable : 0;
+    }
 
     [updated] = await tx
       .update(securities_positions)
@@ -194,6 +202,7 @@ async function applySecurityMovement(
       .returning();
   } else {
     if (delta < 0) throw new Error(`Position not found for ${symbol}`);
+    const ipoPrice = toNumber(payload?.details?.offering_price || payload?.details?.ipo_price || 0);
     [updated] = await tx
       .insert(securities_positions)
       .values({
@@ -202,7 +211,7 @@ async function applySecurityMovement(
         available: delta,
         reserved: 0,
         pending: 0,
-        average_price: "0",
+        average_price: sqlNumeric(ipoPrice),
         realized_pl: "0",
         unrealized_pl: "0",
       })
@@ -261,7 +270,7 @@ async function processExplicitEntitlements(
     }
 
     const targetSymbol = entitlementSymbol(symbol, actionType, entitlement, payload);
-    await applySecurityMovement(tx, account.id, targetSymbol, quantity, referenceId, actionType);
+    await applySecurityMovement(tx, account.id, targetSymbol, quantity, referenceId, actionType, payload);
     processed++;
   }
   return processed;
@@ -293,21 +302,21 @@ async function processLocalPositionFallback(
 
     if (actionType === "stock_split" || actionType === "reverse_split") {
       const adjusted = Math.trunc(totalShares * (numerator / denominator));
-      await applySecurityMovement(tx, position.broker_account_id, symbol, adjusted - totalShares, referenceId, actionType);
+      await applySecurityMovement(tx, position.broker_account_id, symbol, adjusted - totalShares, referenceId, actionType, payload);
       processed++;
       continue;
     }
 
     if (actionType === "bonus_share") {
       const bonus = Math.trunc(totalShares * (numerator / denominator));
-      await applySecurityMovement(tx, position.broker_account_id, symbol, bonus, referenceId, actionType);
+      await applySecurityMovement(tx, position.broker_account_id, symbol, bonus, referenceId, actionType, payload);
       processed++;
       continue;
     }
 
     const targetSymbol = entitlementSymbol(symbol, actionType, {}, payload);
     const entitlement = Math.trunc(totalShares * (numerator / denominator));
-    await applySecurityMovement(tx, position.broker_account_id, targetSymbol, entitlement, referenceId, actionType);
+    await applySecurityMovement(tx, position.broker_account_id, targetSymbol, entitlement, referenceId, actionType, payload);
     processed++;
   }
   return processed;

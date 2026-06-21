@@ -323,8 +323,13 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
     if (!event) throw notFound("IPO event not found");
     if (!event.securityId) throw badRequest("IPO event must have securityId before allocation");
 
+    const [security] = await db.select().from(listedSecurities).where(eq(listedSecurities.id, event.securityId));
+    const symbol = security?.symbol || "N/A";
+
     const subscriptions = await db.select().from(ipoSubscriptions).where(eq(ipoSubscriptions.ipoEventId, event.id));
     const generated = [];
+    const entitlements = [];
+
     for (const subscription of subscriptions) {
       const allocatedShares = Math.floor(toNumber(subscription.requestedShares) * body.allocationRatio);
       const allocationValue = allocatedShares * toNumber(event.offeringPrice);
@@ -360,10 +365,41 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
           idempotencyKey: `ledger:ipo:${allocation.id}`
         })
         .onConflictDoNothing();
+
       generated.push(allocation);
+
+      entitlements.push({
+        broker_account_id: subscription.investorId,
+        investor_id: subscription.investorId,
+        broker_code: broker.code,
+        symbol: symbol,
+        asset_type: "security",
+        quantity: allocatedShares,
+        idempotency_key: `ledger:ipo:${allocation.id}`
+      });
     }
 
     await db.update(ipoEvents).set({ status: "allocation", updatedAt: new Date() }).where(eq(ipoEvents.id, event.id));
+
+    if (generated.length > 0) {
+      try {
+        await postSekuritasWebhook("corporate_action", {
+          event_id: `bei:ipo-allocation:${event.id}:completed`,
+          idempotency_key: `bei:ipo-allocation:${event.id}:completed`,
+          corporate_action_id: event.id,
+          action_type: "ipo_allocation",
+          symbol,
+          title: `IPO Allocation: ${symbol}`,
+          details: {
+            offering_price: toNumber(event.offeringPrice)
+          },
+          entitlements
+        });
+      } catch (err: any) {
+        request.log.error(err, "Failed to send IPO allocation webhook to Sekuritas");
+      }
+    }
+
     return { allocations: generated };
   });
 
