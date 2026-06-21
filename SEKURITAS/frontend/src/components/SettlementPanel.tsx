@@ -17,10 +17,10 @@ export default function SettlementPanel() {
   const fetchTradeHistory = useStore(state => state.fetchTradeHistory);
 
   useEffect(() => {
-    fetchCustodySummary();
-    fetchReconciliation();
-    fetchTradeHistory();
-  }, [fetchCustodySummary, fetchReconciliation, fetchTradeHistory]);
+    fetchCustodySummary().catch(() => {});
+    fetchReconciliation().catch(() => {});
+    fetchTradeHistory().catch(() => {});
+  }, []);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();

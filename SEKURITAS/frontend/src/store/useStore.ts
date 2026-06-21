@@ -75,6 +75,17 @@ export function formatMarketSessionLabel(status?: string | null) {
 export interface AccountProfile {
   account: { id: string; account_type: string; status: string; created_at: string };
   references: { sid: string | null; sre: string | null; rdn: string | null };
+  withdrawalBankAccount: {
+    id: string;
+    bankCode: string;
+    bankName: string;
+    accountNumber: string;
+    accountHolderName: string;
+    status: string;
+    source: string;
+    isPrimary: boolean;
+    updatedAt?: string | null;
+  } | null;
 }
 
 export interface CompanyState {
@@ -129,6 +140,12 @@ interface AppState {
   fetchMarketData: () => Promise<void>;
   fetchMarketSession: () => Promise<void>;
   fetchAccountProfile: () => Promise<void>;
+  updateWithdrawalBankAccount: (payload: {
+    bankCode?: string;
+    bankName: string;
+    accountNumber: string;
+    accountHolderName: string;
+  }) => Promise<AccountProfile["withdrawalBankAccount"]>;
   fetchCompany: (symbol: string) => Promise<void>;
   fetchCorporateActions: () => Promise<void>;
   fetchIpoEvents: () => Promise<void>;
@@ -141,6 +158,7 @@ interface AppState {
   markNotificationRead: (id: string) => Promise<void>;
   depositFunds: (amount: number) => Promise<any>;
   withdrawFunds: (amount: number) => Promise<any>;
+  syncBalance: () => Promise<any>;
   placeOrder: (symbol: string, side: "buy" | "sell", price: number | undefined, quantity: number, orderType?: "limit" | "market") => Promise<any>;
   amendOrder: (id: string, payload: { price?: number; quantity?: number }) => Promise<void>;
   cancelOrder: (id: string) => Promise<void>;
@@ -333,6 +351,35 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  updateWithdrawalBankAccount: async (payload) => {
+    try {
+      set({ isLoading: true, error: null });
+      const data = await fetchApi('/portfolio/withdrawal-bank-account', {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      const current = get().accountProfile;
+      if (current) {
+        set({
+          accountProfile: {
+            ...current,
+            withdrawalBankAccount: data.withdrawalBankAccount
+          },
+          isLoading: false,
+          error: null
+        });
+      } else {
+        await get().fetchAccountProfile();
+        set({ isLoading: false, error: null });
+      }
+      return data.withdrawalBankAccount;
+    } catch (err: any) {
+      if (isUnauthorized(err)) get().logout();
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
   fetchCompany: async (symbol) => {
     const cleanSymbol = symbol.trim().toUpperCase();
     if (!cleanSymbol) return;
@@ -463,6 +510,22 @@ export const useStore = create<AppState>((set, get) => ({
       const result = await fetchApi('/funds/withdraw', {
         method: 'POST',
         body: JSON.stringify({ amount })
+      });
+      await get().fetchPortfolio();
+      set({ isLoading: false });
+      return result;
+    } catch (err: any) {
+      if (isUnauthorized(err)) get().logout();
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
+  syncBalance: async () => {
+    try {
+      set({ isLoading: true, error: null });
+      const result = await fetchApi('/funds/sync-balance', {
+        method: 'POST'
       });
       await get().fetchPortfolio();
       set({ isLoading: false });

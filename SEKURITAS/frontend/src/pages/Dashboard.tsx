@@ -6,8 +6,12 @@ import {
   LogOut, 
   Wallet, 
   X,
-  Plus
+  Plus,
+  AlertTriangle,
+  Building2,
+  Save
 } from 'lucide-react';
+import { ApiError } from '../api/client';
 
 const LOT_SIZE = 100;
 
@@ -37,6 +41,7 @@ export default function Dashboard() {
   const applyUserEvent = useStore(state => state.applyUserEvent);
   const depositFunds = useStore(state => state.depositFunds);
   const withdrawFunds = useStore(state => state.withdrawFunds);
+  const updateWithdrawalBankAccount = useStore(state => state.updateWithdrawalBankAccount);
   const setMarketConnected = useStore(state => state.setMarketConnected);
 
   // --- Local States ---
@@ -44,7 +49,7 @@ export default function Dashboard() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Modals
-  const [modalType, setModalType] = useState<'deposit' | 'withdraw' | 'trade' | null>(null);
+  const [modalType, setModalType] = useState<'deposit' | 'withdraw' | 'trade' | 'bankAccount' | null>(null);
   const [selectedStockForTrade, setSelectedStockForTrade] = useState<any>(null);
   const [tradeType, setTradeType] = useState<'BUY' | 'SELL'>('BUY');
   const [tradeOrderType, setTradeOrderType] = useState<'limit' | 'market'>('limit');
@@ -52,6 +57,10 @@ export default function Dashboard() {
   const [tradePrice, setTradePrice] = useState<string>(''); // string input
   const [depositAmount, setDepositAmount] = useState<string>('');
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
+  const [bankCode, setBankCode] = useState<string>('MANDALA');
+  const [bankName, setBankName] = useState<string>('Bank Mandala');
+  const [bankAccountNumber, setBankAccountNumber] = useState<string>('');
+  const [bankAccountHolderName, setBankAccountHolderName] = useState<string>('');
 
   // WebSocket state & references
   const socketRef = useRef<WebSocket | null>(null);
@@ -63,6 +72,42 @@ export default function Dashboard() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  // --- Banner dismiss states ---
+  const [isBannerDismissed, setIsBannerDismissed] = useState<boolean>(false);
+  const [lastVerifiedStatus, setLastVerifiedStatus] = useState<boolean | null>(null);
+
+  const withdrawalBankAccount = accountProfile?.withdrawalBankAccount || null;
+  const isProductionBuild = import.meta.env.PROD;
+  const hasVerifiedWithdrawalBankAccount = withdrawalBankAccount?.status === 'verified' && Boolean(withdrawalBankAccount.accountNumber);
+
+  useEffect(() => {
+    if (lastVerifiedStatus !== null && lastVerifiedStatus !== hasVerifiedWithdrawalBankAccount) {
+      setIsBannerDismissed(false);
+    }
+    setLastVerifiedStatus(hasVerifiedWithdrawalBankAccount);
+  }, [hasVerifiedWithdrawalBankAccount, lastVerifiedStatus]);
+
+  const shouldShowBankAccountBanner = 
+    isProductionBuild && 
+    Boolean(accountProfile) && 
+    !isBannerDismissed && 
+    !(hasVerifiedWithdrawalBankAccount && localStorage.getItem('bankBannerDismissed') === 'true');
+
+  const handleCloseBanner = () => {
+    setIsBannerDismissed(true);
+    if (hasVerifiedWithdrawalBankAccount) {
+      localStorage.setItem('bankBannerDismissed', 'true');
+    }
+  };
+
+  useEffect(() => {
+    if (!withdrawalBankAccount) return;
+    setBankCode(withdrawalBankAccount.bankCode || 'MANDALA');
+    setBankName(withdrawalBankAccount.bankName || 'Bank Mandala');
+    setBankAccountNumber(withdrawalBankAccount.accountNumber || '');
+    setBankAccountHolderName(withdrawalBankAccount.accountHolderName || '');
+  }, [withdrawalBankAccount]);
 
   // --- Fetch Initial Data ---
   useEffect(() => {
@@ -219,6 +264,11 @@ export default function Dashboard() {
 
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isProductionBuild && !hasVerifiedWithdrawalBankAccount) {
+      setModalType('bankAccount');
+      showToast('Lengkapi rekening penarikan terlebih dahulu', 'error');
+      return;
+    }
     const amount = parseFloat(withdrawAmount);
     if (isNaN(amount) || amount <= 0) {
       showToast('Masukkan jumlah penarikan yang valid', 'error');
@@ -235,7 +285,35 @@ export default function Dashboard() {
       const simulasiText = import.meta.env.PROD ? '' : ' (Simulasi)';
       showToast(`Berhasil penarikan Rp ${amount.toLocaleString('id-ID')}${simulasiText}`, 'success');
     } catch (err: any) {
+      if (err instanceof ApiError && err.code === 'bank_account_required') {
+        setModalType('bankAccount');
+        showToast(err.message || 'Rekening penarikan perlu diperbarui', 'error');
+        return;
+      }
       showToast(err.message || 'Penarikan belum tersedia', 'error');
+    }
+  };
+
+  const handleBankAccountSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanAccountNumber = bankAccountNumber.replace(/\D/g, '');
+    if (!bankName.trim() || !bankAccountHolderName.trim() || cleanAccountNumber.length < 6) {
+      showToast('Lengkapi nama bank, nomor rekening, dan nama pemilik rekening', 'error');
+      return;
+    }
+
+    try {
+      await updateWithdrawalBankAccount({
+        bankCode: bankCode.trim() || 'MANDALA',
+        bankName: bankName.trim(),
+        accountNumber: cleanAccountNumber,
+        accountHolderName: bankAccountHolderName.trim(),
+      });
+      await fetchAccountProfile();
+      setModalType(null);
+      showToast('Data rekening penarikan berhasil diperbarui', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Gagal menyimpan rekening penarikan', 'error');
     }
   };
 
@@ -572,6 +650,46 @@ export default function Dashboard() {
             ROUTING OUTLET (Merender sub-halaman berdasarkan route)
             ========================================== */}
         <div className="scrollable-dashboard-content">
+          {shouldShowBankAccountBanner && (
+            <div className={`data-refresh-banner ${hasVerifiedWithdrawalBankAccount ? 'is-complete' : 'is-action-required'}`}>
+              <div className="data-refresh-banner__icon">
+                {hasVerifiedWithdrawalBankAccount ? <Building2 size={18} /> : <AlertTriangle size={18} />}
+              </div>
+              <div className="data-refresh-banner__body">
+                {hasVerifiedWithdrawalBankAccount ? (
+                  <>
+                    <p className="data-refresh-banner__title">Rekening Penarikan Terhubung</p>
+                    <p className="data-refresh-banner__text">
+                      {withdrawalBankAccount?.bankName} - {withdrawalBankAccount?.accountNumber} a.n. {withdrawalBankAccount?.accountHolderName}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="data-refresh-banner__title">Pengkinian Data Rekening Penarikan</p>
+                    <p className="data-refresh-banner__text">
+                      Rekening tujuan tarik dana belum terhubung. Lengkapi data rekening agar dana RDN bisa dicairkan ke rekening pribadi Anda.
+                    </p>
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalType('bankAccount')}
+                className="data-refresh-banner__button"
+              >
+                <Building2 size={14} />
+                {hasVerifiedWithdrawalBankAccount ? 'Ubah Rekening' : 'Lengkapi Rekening'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseBanner}
+                className="data-refresh-banner__close"
+                title="Tutup Banner"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
           <Outlet context={{ 
             onOpenTrade: handleOpenTrade, 
             onOpenDeposit: () => setModalType('deposit'), 
@@ -697,7 +815,15 @@ export default function Dashboard() {
             <form onSubmit={handleWithdrawSubmit} className="space-y-4">
               <div className="p-2.5 text-xs text-slate-300 rounded-lg mb-4" style={{ backgroundColor: '#0D1117', border: '1px solid #21262D' }}>
                 <span className="font-bold block text-white">KE REKENING TERDAFTAR</span>
-                <span className="text-[10px] text-[#8B949E]">Dana akan ditransfer otomatis ke rekening induk utama Anda di Bank Mandala CB.</span>
+                {!isProductionBuild ? (
+                  <span className="text-[10px] text-[#8B949E]">Mode development memakai withdrawal simulator backend.</span>
+                ) : hasVerifiedWithdrawalBankAccount ? (
+                  <span className="text-[10px] text-[#8B949E]">
+                    {withdrawalBankAccount?.bankName} - {withdrawalBankAccount?.accountNumber} a.n. {withdrawalBankAccount?.accountHolderName}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-[#F59E0B]">Rekening penarikan belum tersedia. Lakukan pengkinian data terlebih dahulu.</span>
+                )}
               </div>
 
               <div>
@@ -724,7 +850,103 @@ export default function Dashboard() {
                   type="submit" 
                   className="flex-grow btn-primary-red text-xs py-2.5 rounded-lg"
                 >
-                  Konfirmasi Tarik Dana
+                  {!isProductionBuild || hasVerifiedWithdrawalBankAccount ? 'Konfirmasi Tarik Dana' : 'Lengkapi Rekening'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2B: PENGKINIAN DATA REKENING */}
+      {modalType === 'bankAccount' && (
+        <div className="modal-overlay">
+          <div className="modal-content-premium">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <Building2 size={18} color="#E62225" />
+                <h3 className="text-lg font-bold text-white" style={{ margin: 0 }}>Pengkinian Rekening Penarikan</h3>
+              </div>
+              <button
+                onClick={() => setModalType(null)}
+                className="text-[#8B949E] hover:text-white p-1"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-[#8B949E] mb-4">
+              Data ini dipakai sebagai rekening tujuan saat Anda menarik dana dari RDN.
+            </p>
+
+            <form onSubmit={handleBankAccountSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Kode Bank</label>
+                  <input
+                    type="text"
+                    value={bankCode}
+                    onChange={(e) => setBankCode(e.target.value.toUpperCase())}
+                    placeholder="MANDALA"
+                    className="w-full bg-[#0D1117] border border-[#21262D] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#E62225] font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Nama Bank</label>
+                  <input
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="Bank Mandala"
+                    className="w-full bg-[#0D1117] border border-[#21262D] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#E62225]"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Nomor Rekening</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={bankAccountNumber}
+                  onChange={(e) => setBankAccountNumber(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Contoh: 6806314532"
+                  className="w-full bg-[#0D1117] border border-[#21262D] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#E62225] font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-[#8B949E] uppercase font-bold tracking-wider block mb-1">Nama Pemilik Rekening</label>
+                <input
+                  type="text"
+                  value={bankAccountHolderName}
+                  onChange={(e) => setBankAccountHolderName(e.target.value)}
+                  placeholder="Sesuai data Bank Mandala"
+                  className="w-full bg-[#0D1117] border border-[#21262D] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#E62225]"
+                  required
+                />
+              </div>
+
+              <div className="p-2.5 text-[10px] text-[#8B949E] rounded-lg" style={{ backgroundColor: '#0D1117', border: '1px solid #21262D' }}>
+                Untuk user baru, data rekening akan otomatis diambil dari KYC Bank Mandala jika tersedia. Form ini menjadi fallback saat data bank belum terkirim atau perlu diperbarui.
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModalType(null)}
+                  className="flex-grow btn-secondary-dark py-2.5 rounded-lg text-xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-grow btn-primary-red text-xs py-2.5 rounded-lg flex items-center justify-center gap-2"
+                >
+                  <Save size={14} />
+                  Simpan Rekening
                 </button>
               </div>
             </form>

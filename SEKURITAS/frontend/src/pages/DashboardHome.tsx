@@ -7,7 +7,8 @@ import {
   Clock, 
   Plus, 
   Trash2, 
-  AlertTriangle 
+  AlertTriangle,
+  RefreshCw 
 } from 'lucide-react';
 
 const LOT_SIZE = 100;
@@ -34,6 +35,7 @@ export default function DashboardHome() {
   const fetchPortfolio = useStore(state => state.fetchPortfolio);
   const fetchOrders = useStore(state => state.fetchOrders);
   const cancelOrder = useStore(state => state.cancelOrder);
+  const syncBalance = useStore(state => state.syncBalance);
 
   // --- Local States ---
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -60,6 +62,20 @@ export default function DashboardHome() {
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const handleSyncBalance = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      await syncBalance();
+      showToast('Saldo RDN berhasil disinkronkan dengan Bank Mandala', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Gagal menyinkronkan saldo RDN', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // --- Fetch MDX Data ---
@@ -521,9 +537,20 @@ export default function DashboardHome() {
             </div>
             <div>
               <span className="text-[10px] text-[#8B949E] uppercase tracking-wider" style={{ display: 'block', marginBottom: '0.25rem' }}>Dana Siap Belanja (Buying Power)</span>
-              <span className="text-sm font-bold text-white font-mono" style={{ display: 'block' }}>
-                Rp {buyingPower.toLocaleString('id-ID')}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className="text-sm font-bold text-white font-mono">
+                  Rp {buyingPower.toLocaleString('id-ID')}
+                </span>
+                <button
+                  onClick={handleSyncBalance}
+                  disabled={isSyncing}
+                  className="text-[#8B949E] hover:text-white transition-colors duration-200"
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'inline-flex', padding: '0.2rem' }}
+                  title="Sinkronisasikan Saldo RDN"
+                >
+                  <RefreshCw size={12} className={isSyncing ? 'mdx-spin' : ''} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
