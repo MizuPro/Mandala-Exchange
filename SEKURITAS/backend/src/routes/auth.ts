@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { db } from "../db/db.js";
-import { users, email_verifications } from "../db/schema.js";
+import { users, email_verifications, broker_accounts } from "../db/schema.js";
 import { createBrokerAccount, setupRDNForUser } from "../services/account-service.js";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
@@ -99,7 +99,17 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: "User account suspended" });
     }
 
-    return { token: signUserToken(user.id), user: publicUser(user) };
+    // Query broker account for this user
+    const [brokerAccount] = await db.select({ id: broker_accounts.id })
+      .from(broker_accounts)
+      .where(eq(broker_accounts.user_id, user.id))
+      .limit(1);
+
+    return { 
+      token: signUserToken(user.id), 
+      user: publicUser(user),
+      broker_account: brokerAccount || null,
+    };
   });
 
   app.get("/me", { preHandler: authenticateUser }, async (request: any, reply) => {
