@@ -97,9 +97,14 @@ function entitlementRows(payload: CorporateActionWebhookPayload) {
 }
 
 function entitlementSymbol(baseSymbol: string, actionType: SupportedActionType, entitlement: CorporateActionEntitlement, payload: CorporateActionWebhookPayload) {
-  const explicit = entitlement.entitlement_symbol || entitlement.symbol || payload.details?.entitlement_symbol;
+  const explicit = entitlement.entitlement_symbol || payload.details?.entitlement_symbol;
   if (explicit) return String(explicit).toUpperCase();
-  if (actionType === "rights_issue") return `${baseSymbol}-RIGHT`;
+  
+  if (entitlement.symbol && entitlement.symbol.toUpperCase() !== baseSymbol.toUpperCase()) {
+    return entitlement.symbol.toUpperCase();
+  }
+
+  if (actionType === "rights_issue") return `${baseSymbol}-R`;
   if (actionType === "warrant") return `${baseSymbol}-W`;
   return baseSymbol;
 }

@@ -186,6 +186,17 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
           average_price: newAverage.toFixed(6),
           updated_at: new Date()
         }).where(eq(securities_positions.id, pos.id));
+      } else {
+        await tx.insert(securities_positions).values({
+          broker_account_id: order.broker_account_id,
+          symbol: order.symbol,
+          available: quantity,
+          reserved: 0,
+          pending: 0,
+          average_price: actualPrice.toFixed(6),
+          realized_pl: "0",
+          unrealized_pl: "0",
+        });
       }
     } else {
       const pendingCashToClear = pendingBasisValue - pendingBasisFee.totalFee;
