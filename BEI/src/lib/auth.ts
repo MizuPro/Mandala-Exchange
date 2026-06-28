@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
 import type { AuthScope, AuthenticatedRequest, RoutePermission, ServiceIdentity } from "../types/auth.js";
 
-const publicRoutes = new Set(["GET /health", "GET /admin"]);
+const publicRoutes = new Set(["GET /health", "GET /admin", "GET /favicon.ico"]);
 
 const routePermissions: RoutePermission[] = [
   { method: "GET", path: "/v1/public/securities", scopes: ["market:read"] },

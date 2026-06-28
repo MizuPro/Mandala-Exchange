@@ -77,3 +77,5 @@ SEKURITAS/backend/e2e_test_v2.js
 SEKURITAS/backend/src/check_users.ts
 SEKURITAS/backend/src/debug_env.ts
 SEKURITAS/frontend/public/playground.html
+
+_BOT_deprecated

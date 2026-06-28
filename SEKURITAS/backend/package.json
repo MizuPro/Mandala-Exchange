@@ -13,7 +13,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:migrate:withdrawal-bank-accounts": "tsx src/scripts/apply-withdrawal-bank-account-migration.ts",
     "backfill:withdrawal-bank-accounts": "tsx src/scripts/backfill-withdrawal-bank-accounts.ts",
-    "repair:failed-withdrawal-refunds": "tsx src/scripts/repair-failed-withdrawal-refunds.ts"
+    "repair:failed-withdrawal-refunds": "tsx src/scripts/repair-failed-withdrawal-refunds.ts",
+    "test:revisi": "set DOTENV_CONFIG_PATH=.env.development&& tsx src/scripts/run_e2e_revisi_final_test.ts"
   },
   "repository": {
     "type": "git",

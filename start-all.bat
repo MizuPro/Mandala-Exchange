@@ -98,6 +98,12 @@ start "MATS Service %MODE%" cmd /k "cd MATS && set MANDALA_ENV_FILE=.env.%MODE%&
 echo Starting Sekuritas Backend...
 start "Sekuritas Backend %MODE%" cmd /k "cd SEKURITAS\backend && set DOTENV_CONFIG_PATH=.env.%MODE%&& set APP_ENV=%MODE%&& npm run dev"
 
+echo Waiting 5 seconds for Sekuritas Backend to boot...
+timeout /t 5 /nobreak >nul
+
+:: echo Starting BOT Service...
+:: start "BOT Service %MODE%" cmd /k "cd BOT && go run main.go"
+
 if /I "%MODE%"=="development" (
   echo Starting Sekuritas Frontend Dev Server...
 ) else (
@@ -126,6 +132,7 @@ if /I "%MODE%"=="development" (
   echo - Sekuritas Frontend dev server: %FRONTEND_URL%
   echo - Sekuritas Backend: http://localhost:3002
   echo - MATS Service: http://localhost:8082
+  echo - BOT Control Panel: http://localhost:8080
   echo - BEI Service: http://localhost:4100
   echo - BEI Admin Console: http://localhost:4100/admin
 ) else (

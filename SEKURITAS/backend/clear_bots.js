@@ -1,0 +1,1 @@
+const { Client } = require('pg'); const client = new Client('postgresql://postgres:postgres@localhost:5432/mandala_sekuritas'); client.connect().then(() => client.query('DELETE FROM users WHERE email LIKE ''%@bot.mandala.local''')).then(() => {console.log('Bots cleared'); client.end()}).catch(console.error);
