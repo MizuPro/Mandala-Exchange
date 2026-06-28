@@ -1,13 +1,100 @@
 # Product Requirements Document (PRD) — Mandala Exchange Bot System
 
-**Versi**: 2.0  
-**Tanggal**: 2026-06-27  
-**Status**: Draft — Disetujui untuk perencanaan lanjutan  
+**Versi**: 3.0  
+**Tanggal**: 2026-06-29  
+**Status**: Disetujui untuk implementasi setelah seluruh prasyarat Fase 0 terpenuhi  
 **Author**: Mandala Exchange Engineering  
+
+**Dokumen pendamping normatif**:
+
+- `docs/BOT/BOT_API_CONTRACTS.md` — wire format, idempotency, event/replay, session, dan freshness.
+- `docs/BOT/BOT_STATE_MACHINES.md` — lifecycle, accounting, pause/kill, recovery, genesis, dan shutdown.
+- `docs/BOT/BOT_STRATEGY_SPEC.md` — typed strategy config dan anti-predictability baseline.
+- `docs/BOT/BOT_PERFORMANCE_TEST_PLAN.md` — workload, performance gate, soak, failure injection, dan scenario oracle.
+
+**Roadmap lanjutan**: `docs/BOT/BOT_AGENT_BASED_SIMULATION_ROADMAP.md` untuk formalisasi ABM, experiment framework, calibration, validation, emergence metrics, dan advanced predictability testing.
 
 ---
 
-## 1. Latar Belakang & 
+## 0. Kontrak Keputusan Final
+
+Bagian ini bersifat normatif. Jika ada contoh lama di dokumen ini yang bertentangan dengan bagian ini, kontrak pada Bagian 0 yang berlaku.
+
+### 0.1 Batas Implementasi
+
+- BOT Service tetap menjadi satu proses Go yang mengelola banyak bot sebagai state dan task konkuren; satu bot bukan satu proses.
+- Semua aksi order (`place`, `amend`, dan `cancel`) wajib melalui Sekuritas API menggunakan JWT akun bot. Tidak ada direct order injection ke MATS.
+- BEI menjadi sumber kebenaran untuk emiten, sesi, trading rules, fee schedule, indeks, IPO, corporate action, dan custody.
+- Sekuritas menjadi sumber kebenaran untuk akun, buying power, posisi, order milik investor, reservation, pending settlement, dan JWT.
+- MATS menjadi sumber kebenaran operasional untuk matching, order book, market data, dan status sesi yang sedang dieksekusi.
+- Database BOT hanya menyimpan registry/config bot, state strategi, checkpoint event, decision log, scenario run, dan metrik. Database BOT tidak menjadi sumber kebenaran saldo atau order resmi.
+
+### 0.2 Target Skala dan Performance Budget
+
+Target operasional dilakukan bertahap:
+
+| Tahap | Bot Aktif | Tujuan |
+|---|---:|---|
+| Proof of Concept | 10 | Validasi order, fill, cancel, expiry, dan settlement |
+| Baseline | 100 | Validasi recovery, memory leak, dan konsistensi state |
+| Default Laptop Lokal | 300–500 | Operasi normal pada Intel i5-10300H dan RAM 16 GB |
+| Extended Load Test | 1.000 | Uji sesi penuh dan burst terkontrol |
+| Maximum Stress Test | 2.000 | Batas stress test, bukan default runtime |
+
+Budget runtime:
+
+```yaml
+performance_budget:
+  bot_rss_max_mb: 500
+  bot_cpu_average_percent: 10
+  bot_cpu_peak_percent: 40
+  total_stack_ram_max_gb: 12
+  order_rate_sustained_per_minute: 300
+  order_rate_burst_capacity: 100
+  order_rate_burst_window_seconds: 10
+  order_rate_hard_limit_per_minute: 600
+  queue_wait_p95_ms: 2000
+  sekuritas_api_p95_ms: 500
+  reconciliation_interval_seconds: 60
+  decision_log_hold_sample_rate: 0.02
+```
+
+Peningkatan di atas 300 order/menit hanya boleh dilakukan setelah benchmark membuktikan Sekuritas, MATS, dan database tetap berada dalam budget.
+
+### 0.3 Source of Truth Konfigurasi
+
+Urutan precedence konfigurasi adalah:
+
+```text
+compiled defaults
+  → bots.yaml sebagai bootstrap template
+  → config persisten pada database BOT
+  → runtime override yang langsung dipersist ke database BOT
+```
+
+`bots.yaml` tidak boleh menimpa bot yang sudah ada saat restart. Perubahan massal dari YAML terhadap bot existing hanya boleh dilakukan melalui operasi reconcile eksplisit dan teraudit.
+
+### 0.4 Mode Runtime
+
+```yaml
+runtime_mode: live | deterministic_test
+```
+
+- `live`: mengejar realisme operasional dan hanya reproducible secara statistik.
+- `deterministic_test`: memakai virtual clock, input event journal, scheduler ordering, config snapshot, dan random seed untuk replay deterministik.
+
+### 0.5 Keputusan Operasional Tambahan
+
+- BEI adalah pembuat dan persistence authority `session_instance_id`; MATS mengeksekusi segment dan melanjutkan instance aktif setelah restart.
+- Account event stream memakai global monotonic sequence, delivery at-least-once, snapshot `as_of_sequence`, replay, dan explicit slow-consumer disconnect.
+- Place order memakai `client_order_id` stabil. HTTP timeout menghasilkan `submit_unknown` dan wajib direkonsiliasi; tidak boleh blind retry dengan ID baru.
+- Sekuritas menjadi coordinator genesis saga.
+- Semantics pause, pause-and-cancel, disable, kill switch, accounting, rounding, shutdown, dan restart mengikuti `BOT_STATE_MACHINES.md`.
+- Baseline anti-predictability pada `BOT_STRATEGY_SPEC.md` wajib tersedia sebelum strategi MVP dinyatakan selesai; predictor/statistical hardening lanjutan tetap berada pada roadmap ABM.
+
+---
+
+## 1. Latar Belakang & Tujuan
 
 ### 1.1 Masalah Yang Ingin Diselesaikan
 
@@ -31,6 +118,13 @@ Sistem ini harus mampu berjalan sebagai **layanan terpisah yang mandiri** (`BOT 
 4. **Diversity** — Ada banyak "kepribadian" bot: dari retail tidak rasional hingga bandar yang bergerak strategis.
 5. **Independensi** — Bot engine berjalan terpisah dari Sekuritas/MATS/BEI. Error di bot tidak boleh memengaruhi core trading engine.
 6. **Observabilitas** — Setiap keputusan bot harus dapat ditelusuri, di-audit, dan dihentikan sewaktu-waktu.
+
+### 1.4 Definisi Waktu & Hari Kerja Bursa
+> [!IMPORTANT]
+> **Penegasan Satuan Waktu**:
+> Istilah **"Hari" (Day)** atau **"Hari Kerja Bursa" (Daily)** di dalam dokumen ini **bukan berarti 24 jam real-life**. 
+> 
+> "1 Hari" dalam sistem simulasi diartikan sebagai **"1 Sesi Perdagangan / Trading Session"**. Durasi sesi continuous nyata ini dikompresi sesuai dengan konfigurasi template session yang ditentukan oleh Admin Bursa (misalnya 1 sesi selesai dalam 15 menit atau 1 jam real-time). Seluruh logika harian bot (seperti P&L harian, daily loss limit, atau fase akumulasi bandar) mengacu pada siklus trading session ini.
 
 ---
 
@@ -71,8 +165,11 @@ Bot service adalah aplikasi **Go (Golang)** yang berjalan sebagai proses terpisa
 
 #### A. Market Data Consumer (Single WebSocket)
 - Hanya melakukan **1 koneksi WebSocket** ke MATS secara internal (`ws://127.0.0.1:8082/v1/market-data/ws`) menggunakan service token dengan scope `market:read`.
-- Data yang diterima didistribusikan (*fan-out*) secara internal ke memori masing-masing 2000 bot melalui Go Channels, menghindari ribuan koneksi WebSocket.
+- Saat connect/reconnect, BOT mengirim daftar universe dan wajib memperoleh initial depth/price/summary snapshot seluruh simbol melalui WebSocket atau bulk snapshot contract sebelum readiness menjadi `ready`.
+- Market event memperbarui **shared immutable snapshot per simbol**. Bot membaca snapshot tersebut ketika scheduler mengevaluasi strategi; event tidak disalin ke channel milik masing-masing bot.
+- Signal berbasis simbol hanya dikirim kepada strategi yang memang berlangganan simbol tersebut. Desain ini mencegah fan-out ribuan alokasi per market event.
 - Menyimpan state lokal: order book snapshot per symbol, last trade price, OHLC per sesi, market depth, dll.
+- Market WebSocket hanya menjadi sumber market state, bukan sumber kebenaran portfolio atau private order state.
 
 #### B. Bot Registry & Lifecycle Manager
 - Menyimpan konfigurasi seluruh bot (dari database atau file JSON/YAML)
@@ -87,24 +184,41 @@ Bot service adalah aplikasi **Go (Golang)** yang berjalan sebagai proses terpisa
 #### D. Order Executor & Global Rate Limiter
 - Bot **tidak mengirim HTTP request secara langsung**.
 - Keputusan dari ribuan bot dimasukkan ke dalam antrean tunggal (*Order Queue*).
-- Hanya disediakan "kurir" (*worker pool*, misalnya 10-20 *worker*) yang bertugas mengambil antrean dan mengeksekusinya via HTTP ke Sekuritas Backend.
-- **Global Rate Limiter**: Dibatasi maksimal **2.000 order per menit** untuk gabungan seluruh bot guna menjaga kestabilan laptop dan backend Sekuritas.
+- Disediakan 10 worker awal yang mengambil antrean dan mengeksekusinya via HTTP connection pool ke Sekuritas Backend. Jumlah worker dapat dikonfigurasi, tetapi tidak boleh dipakai untuk melampaui global rate limit.
+- **Global Rate Limiter**: sustained rate awal adalah **300 aksi order per menit**, burst maksimal 100 aksi dalam 10 detik, dan hard breaker 600 aksi per menit untuk gabungan seluruh bot.
+- Antrean memakai prioritas: `risk/cancel` → `market/event-driven` → `normal strategy` → `market-maker refresh`.
+- TTL default: risk/cancel 15 detik, market order 3 detik, event-driven 5 detik, normal limit 15 detik, dan market-maker refresh 5 detik.
+- Keputusan stale tidak dikirim dan dicatat sebagai `expired_before_submit`.
+- Setiap place order memakai `client_order_id` stabil. Timeout response menghasilkan `submit_unknown`; worker melakukan lookup/reconciliation dan tidak melakukan blind retry.
 - Mencatat seluruh keputusan ke bot audit log.
 
 #### E. Session State Monitor
-- Membaca status sesi dari MATS/BEI secara berkala
+- Membaca `session_state` dan `session_timer` dari MATS serta melakukan snapshot/recovery melalui API sesi aktif BEI.
 - Menentukan kapan bot boleh aktif (hanya di sesi continuous, tidak saat halted)
 - Mengelola perilaku bot saat opening/closing auction
+- Menggunakan `session_instance_id` dan `virtual_day_index`, bukan tanggal kalender laptop, untuk seluruh logika daily/multi-session.
+- Freshness default: market/account heartbeat 30 detik, rules/fee 300 detik, session snapshot 10 detik, dan MDX composition 300 detik. Aksi degradation/fail-closed mengikuti `BOT_API_CONTRACTS.md`.
 
-#### F. Bot Portfolio State
-- Menyimpan posisi saham dan kas setiap bot (sinkron dari Sekuritas portfolio API)
+#### F. Bot Portfolio State (In-Memory Cache & Bulk Snapshot)
+- **Bulk Snapshot API**: Saat startup, BOT Service memuat cash, positions, open orders, dan event checkpoint seluruh akun BOT melalui internal bulk API Sekuritas. BOT Service dilarang membaca atau menulis database Sekuritas secara langsung.
+- **In-Memory Cache**: State lokal membedakan `available`, `reserved`, dan `pending` untuk kas maupun saham, sama seperti model Sekuritas.
+- **Single Internal Account Event Stream**: BOT Service membuka satu koneksi internal ke Sekuritas untuk event akun seluruh bot. Stream memiliki sequence monotonik, checkpoint, replay, dan gap detection.
+- Stream menggunakan global monotonic sequence, at-least-once delivery, retention minimal 24 jam/100.000 event, heartbeat, serta explicit disconnect untuk slow consumer. Detail mengikuti `BOT_API_CONTRACTS.md`.
+- **Recovery**: Jika sequence meloncat atau reconnect tidak dapat direplay, bot terkait di-pause, bulk snapshot diambil ulang, lalu bot baru di-resume setelah state konsisten.
+- **Staggered Reconciliation**: Rekonsiliasi berjalan setiap 60 detik dalam batch 50–100 akun. Sekuritas tetap menjadi source of truth.
 - **Corporate Action Sync**: Menerima injeksi kas (penambahan saldo) secara otomatis saat emiten membagikan dividen (Ex-Date/Payment Date), sama persis seperti akun player nyata.
 - Digunakan oleh strategy engine untuk keputusan berbasis portofolio
+
+#### G. Scheduler
+- Scheduler menggunakan min-heap/timing wheel atau scheduler shard, bukan satu `time.Ticker` permanen untuk setiap bot × simbol.
+- Strategy worker pool awal berjumlah 4–8 worker dan dibatasi agar burst evaluasi tidak menghabiskan seluruh CPU.
+- Seluruh jadwal diberi deterministic jitter agar ribuan bot tidak bangun pada milidetik yang sama.
+- Panic recovery dilakukan per task sehingga error satu strategi tidak menghentikan scheduler global.
 
 ### 2.3 Alur Data Lengkap
 
 ```
-MATS WebSocket ──► Market Data Consumer ──► State Cache (Redis/Memory)
+MATS WebSocket ──► Market Data Consumer ──► Shared Market Snapshot
                                                         │
                                                         ▼
                                           Strategy Engine (per bot)
@@ -121,8 +235,8 @@ MATS WebSocket ──► Market Data Consumer ──► State Cache (Redis/Memor
                                                   │
                                          MATS matching engine
                                                   │
-                                       WebSocket event kembali
-                                          (order update, fill)
+                               Sekuritas Internal Account Event Stream
+                             (order update, fill, settlement, corporate action)
                                                   │
                                          Bot Portfolio State update
 ```
@@ -133,12 +247,18 @@ MATS WebSocket ──► Market Data Consumer ──► State Cache (Redis/Memor
 |---|---|---|
 | **Runtime** | **Go (Golang)** | Eksekusi 2000+ goroutine sangat ringan dan ramah RAM. Konsisten dengan arsitektur MATS. |
 | **HTTP Client** | `net/http` bawaan Go | Komunikasi ke Sekuritas API dengan *connection pooling* yang efisien |
-| **WebSocket Client** | `ws` package | Subscribe ke MATS market data |
-| **Scheduler** | `node-cron` atau custom timer | Mengatur kapan bot aktif per sesi |
-| **Config** | YAML file + env override | Mudah diubah tanpa recompile |
+| **Router** | `github.com/go-chi/chi/v5` | Ringan dan konsisten dengan MATS |
+| **WebSocket Client** | `github.com/coder/websocket` | Konsisten dengan implementasi WebSocket MATS |
+| **Scheduler** | Min-heap/timing wheel + bounded worker pool | Menghindari ribuan ticker dan burst task tak terbatas |
+| **Rate Limiter** | `golang.org/x/time/rate` | Token bucket yang teruji dan mendukung burst terkontrol |
+| **Config** | `gopkg.in/yaml.v3` + env + DB override | YAML hanya bootstrap; DB menjadi source of truth setelah provisioning |
 | **State Cache** | In-memory + opsional Redis | Berbagi data antar bot instances |
-| **Database** | PostgreSQL (Docker) | Menyimpan bot registry, audit log, performance history |
-| **Admin API** | Fastify | REST API untuk kontrol bot |
+| **Database** | PostgreSQL + `pgx/v5` | Konsisten dengan MATS, efisien untuk batch insert dan explicit transaction |
+| **Migration** | `goose` | Migration berversi; tidak memakai runtime auto-migrate |
+| **Redis** | `go-redis/v9` | Event/config invalidation dan cache opsional |
+| **Admin API** | `chi` + `net/http` | REST API privat untuk kontrol bot |
+
+GORM tidak digunakan. Explicit SQL melalui `pgx/v5` dipilih agar kontrak schema, bulk operation, optimistic locking, dan migration lebih mudah diaudit.
 
 ---
 
@@ -155,7 +275,7 @@ Bot yang mensimulasikan investor retail Indonesia pada umumnya. Karakteristiknya
 - Sering bertindak terlambat (beli saat sudah naik tinggi, jual saat sudah turun jauh)
 - Bisa panik dan melakukan aksi berlebihan
 
-**Jumlah**: 50–200 bot retail aktif per sesi
+**Jumlah default runtime**: 255–425 bot retail aktif untuk konfigurasi 300–500 bot. Jumlah dapat diturunkan pada PoC atau dinaikkan bertahap saat load test.
 
 ### 3.2 Tier 2 — Institusional / Bandar Bots
 
@@ -165,38 +285,46 @@ Bot yang mensimulasikan investor besar (fund manager, sekuritas proprietary, "ba
 - Dapat membentuk (atau menghancurkan) tren harga suatu saham
 - Bergerak perlahan tapi konsisten (accumulation/distribution)
 
-**Jumlah**: 5–20 bot institusional aktif per sesi
+**Jumlah default runtime**: 45–75 bot institusional aktif untuk konfigurasi 300–500 bot.
 
-### 3.3 Distribusi Populasi Bot (Hukum 80/20)
+### 3.3 Distribusi Populasi Bot
 
 Untuk menciptakan ekosistem bursa yang serealistis mungkin (mengadopsi komposisi IHSG), pembuatan (creation) bot tidak dilakukan dengan rasio yang merata (1:1). Populasi bot akan mengikuti **Prinsip Pareto (Hukum 80/20)**, di mana mayoritas populasi adalah *Retail*, namun mayoritas modal dikendalikan oleh *Institusi*.
 
-- **Tier 1 (Retail) — ~85% hingga 90% dari total populasi bot**
-  - **~45% Noise Trader**: Mendominasi keramaian order book harian dengan keputusan acak.
-  - **~35% Momentum Trader**: Pasukan *scalper* yang selalu mengejar saham yang sedang *breakout* (FOMO).
-  - **~10% Contrarian / Dip Buyer**: Para penangkap "pisau jatuh" di ritel.
-- **Tier 2 (Institusional & Bandar) — ~10% hingga 15% dari total populasi bot**
-  - **~3-5% Market Maker**: Sedikit jumlahnya tapi selalu menjaga *spread* likuiditas.
-  - **~4% Value Investor**: Institusi yang secara pasif membeli di harga fundamental bawah.
-  - **~2% Index Tracker / Arbitrage**: Menjaga keseimbangan bobot saham gabungan/indeks.
-  - **~2% Event-Driven**: Bereaksi instan saat ada berita (aksi korporasi).
-  - **~1-2% Bandar**: Terbatas, sangat rahasia, umumnya 1 bot (atau 1 grup) hanya berfokus mendominasi 1 saham spesifik.
+- **Tier 1 (Retail) — tepat 85% dari total populasi bot**
+  - **40% Noise Trader**
+  - **30% Momentum Trader**
+  - **15% Contrarian / Dip Buyer**
+- **Tier 2 (Institusional & Bandar) — tepat 15% dari total populasi bot**
+  - **5% Market Maker**
+  - **5% Value Investor**
+  - **2% Index Tracker**
+  - **2% Event-Driven**
+  - **1% Bandar**
 - **Skenario Khusus (0% Default)**
-  - **Panic Seller**: Di-generate/diaktifkan secara paksa oleh Admin hanya saat ingin melakukan *stress test* skenario krisis (crash).
+  - **Panic Seller** bukan strategi populasi autonomous. Ia adalah *scenario actor* yang dibuat/diaktifkan hanya oleh Admin saat stress test.
+
+Dengan klasifikasi ini terdapat **8 strategi autonomous** dan 1 scenario actor. Seluruh persentase autonomous berjumlah tepat 100%.
 
 ### 3.4 Dynamic Market Discovery (Auto-Pilot)
 
 Agar sistem sepenuhnya *auto-pilot*, mayoritas bot tidak menggunakan daftar saham (simbol) yang di-*hardcode* oleh admin.
-- **GET Market Data**: Melalui koneksi internal, Bot Service akan mengambil data seluruh emiten aktif secara berkala dari BEI/MATS (bersifat *Read-Only*).
+- **Listed Securities**: Bot Service mengambil emiten aktif dari `GET /v1/public/securities` BEI menggunakan read-only service token.
+- **Trading Rules**: Tick size, lot size, board, ARA/ARB, dan auto-rejection diambil dari `GET /v1/integration/mats/rules`, lalu dicache berdasarkan version/effective time.
+- **IPO Discovery**: Masa penawaran IPO dideteksi dari event IPO BEI/Sekuritas, bukan dari daftar listed securities. Subscription selalu dilakukan melalui Sekuritas menggunakan JWT bot.
 - **Dynamic Universe**: Konfigurasi parameter bot menggunakan *tag* dinamis seperti `"ALL"`, `"RANDOM_10"`, atau `"SECTOR_FINANCE"`.
 - Jika ada saham baru yang IPO, saham tersebut otomatis terdeteksi masuk ke radar (universe) milik bot *Retail/Momentum/Event-Driven* tanpa campur tangan admin sama sekali.
 - Pengecualian hanya berlaku untuk bot **Market Maker** dan **Bandar** yang secara natural di dunia nyata memang bertugas menjaga 1 saham spesifik (bisa di-*hardcode* per saham).
 
 *Catatan: Sesuai aturan fairness, Bot Service HANYA melakukan GET/Read ke layanan BEI/MATS untuk penemuan saham, namun **wajib menggunakan POST ke Sekuritas API** untuk semua aksi trading/order-nya.*
 
+Jika snapshot rule tidak tersedia atau sudah stale melewati batas konfigurasi, order baru harus dihentikan secara fail-closed sampai sinkronisasi berhasil.
+
 ---
 
 ## 4. Tipe Strategi Bot (Detail)
+
+Contoh parameter pada Bagian 4 menjelaskan intent produk. Schema machine-valid, type, unit, distribution, bounds, seed, drift, dan config-change semantics yang normatif berada pada `BOT_STRATEGY_SPEC.md`; notasi ringkas seperti `1-5` tidak boleh disalin langsung sebagai YAML runtime.
 
 ### 4.1 Noise Trader Bot
 
@@ -215,7 +343,7 @@ strategy: noise_trader
 trade_frequency: setiap 5-20 menit (random)
 order_size_lots: 1-5
 price_deviation_max: 2%   # max jarak dari best bid/ask
-cancel_probability: 0.3   # probabilitas cancel order setelah 10 menit
+cancel_probability: 0.3   # probabilitas cancel order setelah 10 menit virtual bursa (BOT Service menyimpan timestamp order untuk melacak usianya secara in-memory)
 symbols_universe: "ALL"   # dinamis: auto-detect semua saham aktif di bursa
 session_active: [continuous]
 ```
@@ -233,6 +361,7 @@ session_active: [continuous]
 - Spread diatur berdasarkan volatilitas terkini: semakin volatile → spread makin lebar
 - Inventory management: jika terlalu banyak beli (inventory +), naikkan ask dan turunkan bid agar posisi kembali netral
 - Menghitung biaya transaksi (fee + levy) dalam spread minimum yang dibutuhkan
+- **Self-Trading Prevention**: Algoritma Market Maker **wajib secara internal menjamin** bahwa harga Bid tertinggi yang dipasangnya selalu lebih rendah **minimal 1 tick/fraksi** dari harga Ask terendah miliknya sendiri. Ini bertujuan untuk mencegah bot memakan ordernya sendiri yang dapat mengakibatkan wash sales tidak produktif dan pemborosan fee transaksi.
 
 **Parameter**:
 ```yaml
@@ -355,16 +484,20 @@ strategy: bandar
 symbol: GOTO                       # satu bandar fokus di satu saham
 accumulation_target_lots: 5000
 accumulation_price_range:
-  min: 80   # tick
-  max: 120
+  min_price: 80
+  max_price: 120
 accumulation_daily_lots: 100-300   # akumulasi harian tersembunyi
-markup_trigger_days: 10            # setelah 10 hari akumulasi, mulai mark-up
+markup_trigger_sessions: 10        # setelah 10 session instance akumulasi, mulai mark-up
 markup_daily_lots: 500             # volume besar saat mendorong harga
 distribution_start_premium: 0.30  # mulai distribusi saat naik 30%
 distribution_daily_lots: 200-800
-session_active: [all]
+session_active: [pre_open, opening_auction, continuous, pre_close, closing_auction]
 multi_day: true                    # strategi multi-hari
 ```
+
+> [!IMPORTANT]
+> **Persistensi State Multi-Sesi**:
+> Karena strategi Bandar berjalan lintas-sesi (multi-session), status internal Bandar (seperti fase aktif, jumlah lot terkumpul, dan counter sesi berjalan) **wajib disimpan secara persisten di database PostgreSQL** (pada kolom `state` di tabel `bots`). Hal ini menjamin bahwa Bandar bot tidak kehilangan memori progres akumulasinya jika server/service bot di-restart di luar jam sesi.
 
 **Tujuan dalam ekosistem**: Menciptakan dinamika siklus harga yang paling realistis. Mensimulasikan kenapa saham bisa naik dan turun dalam pola yang tidak random — ada "tangan besar" di baliknya.
 
@@ -388,7 +521,8 @@ events_monitored:
   - quarterly_earnings        # reaksi: beli/jual tergantung hasil
   - stock_split               # reaksi: beli (positif sentiment)
   - rights_issue              # reaksi: umumnya jual
-  - ipo_listing               # reaksi: berebut beli/pesan (sebagai IPO Hunter) pada masa penawaran & hari pertama listing
+  - ipo_subscription          # subscription melalui Sekuritas pada masa penawaran
+  - ipo_listing               # order reguler melalui Sekuritas pada hari pertama listing
 reaction_delay_minutes: 2-30  # delay reaksi (mensimulasikan keterlambatan info)
 reaction_intensity: 0.8       # probabilitas bot bereaksi (tidak 100% reaktif)
 order_size_lots: 20-100
@@ -432,19 +566,21 @@ symbols: all_or_specific
 - Membaca komposisi dan bobot saham pada Indeks MDX.
 - Mengalokasikan dana secara proporsional mengikuti bobot masing-masing emiten di dalam indeks.
 - Melakukan **Rebalancing Berkala** (misalnya setiap sesi penutupan di hari/minggu tertentu): jika ada saham yang harganya naik tajam (bobotnya membesar), bot akan melakukan *take profit* sebagian dan membeli saham yang sedang turun (bobotnya mengecil) agar proporsinya kembali seimbang.
-- Transaksi dilakukan bertahap agar tidak merusak harga pasar.
+- Transaksi dilakukan bertahap agar tidak merusak harga pasar. **Aturan TWAP (Time-Weighted Average Price)** wajib diimplementasikan di mana order rebalancing yang bernilai besar dibagi secara otomatis menjadi potongan-potongan order kecil (*slice orders*) dan dieksekusi bertahap sepanjang durasi sesi perdagangan aktif untuk menghindari guncangan harga yang tidak wajar.
 
 **Parameter**:
 ```yaml
 strategy: index_tracker
 target_index: MDX
 tracking_error_tolerance_pct: 2.0  # toleransi deviasi bobot sebelum rebalancing
-rebalance_frequency: weekly        # dieksekusi berkala
+rebalance_frequency_sessions: 5   # 1 minggu simulasi = 5 session instance selesai
 order_size_lots: 50-200            # lot per tahap rebalance
 session_active: [continuous, pre_close]
 ```
 
 **Tujuan dalam ekosistem**: Menjaga stabilitas dan keterkaitan (*correlation*) pergerakan antar saham *bluechip* (penyusun indeks). Mensimulasikan likuiditas konstan dari institusi/reksa dana pasif yang selalu hadir di pasar nyata.
+
+Komposisi dan bobot MDX dibaca dari `GET /v1/indices/MDX/composition`. Jika endpoint atau snapshot valid belum tersedia, strategi Index Tracker dinonaktifkan tanpa memengaruhi strategi lain.
 
 ---
 
@@ -452,63 +588,73 @@ session_active: [continuous, pre_close]
 
 ### 5.1 Bot sebagai Akun Sekuritas
 
-Setiap bot didaftarkan sebagai broker account di Sekuritas dengan:
+Setiap bot didaftarkan sebagai akun `BOT` melalui internal batch provisioning Sekuritas. Field minimal yang wajib tersedia:
 
 ```typescript
 // Tabel users di Sekuritas
 {
-  id: "bot-001-market-maker-bbca",
+  id: "<uuid>",
   email: "bot.mm.bbca@mandala-internal.local",
-  account_type: "BOT",          // field baru
-  is_bot: true,                  // flag baru
-  bot_strategy: "market_maker",
-  bot_tier: "institutional",     // "retail" atau "institutional"
-  bot_display_name: "MM Alpha",  // nama publik di order book (opsional: anonymous)
-  status: "active",
-  email_verified: true,          // auto-verified, tidak butuh OTP
-  created_by: "admin_system",
+  status: "verified"
 }
 
 // Tabel broker_accounts di Sekuritas
 {
-  user_id: "bot-001-market-maker-bbca",
-  broker_code: "MANDALA",
-  initial_cash: 5_000_000_000,  // Rp 5 Miliar untuk MM Bot
-  is_bot_account: true,
+  id: "<uuid>",
+  user_id: "<uuid>",
+  external_bot_id: "bot-001-market-maker-bbca",
+  account_type: "BOT",
+  status: "ACTIVE"
 }
 ```
 
-### 5.2 Bot Credentials
+Metadata strategi, tier, display name, dan config utama tetap dimiliki database BOT. Sekuritas hanya menyimpan metadata yang diperlukan untuk account classification dan audit.
 
-- Setiap bot memiliki pasangan `email` / `password` yang hanya diketahui oleh BOT service
-- BOT service melakukan login ke Sekuritas API untuk mendapatkan JWT token
-- JWT token di-refresh secara berkala (sebelum expire)
-- Token ini digunakan untuk semua order submission
+### 5.2 Batch Provisioning & Startup Authentication
+
+Provisioning menggunakan endpoint:
+
+```http
+POST /api/v1/internal/bots/provision
+x-service-token: <bot-to-sekuritas-token>
+Idempotency-Key: <provision-run-id>
+```
+
+Request berisi batch bot dengan `external_bot_id`, email, tier, strategy, dan initial cash. Response memisahkan `created`, `existing`, dan `failed`. `external_bot_id` wajib unik agar retry tidak menghasilkan akun ganda.
+
+BOT tidak menyimpan ribuan password. JWT akun BOT diperoleh melalui:
+
+```http
+POST /api/v1/internal/bots/tokens
+x-service-token: <bot-to-sekuritas-token>
+```
+
+- JWT bersifat short-lived, default 1 jam.
+- Refresh dilakukan 5–10 menit sebelum expiry secara staggered.
+- JWT tetap dipakai pada endpoint order yang sama dengan player.
+- Token tidak boleh ditulis ke log.
+- Jika token harus dicache secara persisten, token wajib dienkripsi at-rest.
+- Kemudahan token issuance hanya berlaku pada autentikasi; validasi saldo, order, fee, dan market rules tetap identik dengan player.
 
 ### 5.3 Bot Identity Metadata
 
-```typescript
-interface BotConfig {
-  id: string;                        // unique bot ID
-  name: string;                      // nama display
-  strategy: BotStrategy;             // tipe strategi
-  tier: "retail" | "institutional";
-  
-  // Keuangan
-  initial_cash: number;              // modal awal dalam rupiah
-  allowed_symbols: string[];         // saham yang boleh diperdagangkan
-  max_order_size_lots: number;       // maks lot per order
-  max_exposure_pct: number;          // maks % dari portofolio di satu saham
-  max_daily_loss_pct: number;        // hentikan bot jika daily loss > X%
-  
-  // Risk limits
-  max_orders_per_minute: number;     // rate limit per bot
-  max_cancel_rate: number;           // maks % order yang dibatalkan
-  
-  // Operational
-  status: "active" | "paused" | "disabled" | "cooldown";
-  random_seed?: number;              // untuk reproducibility saat testing
-  strategy_params: Record<string, any>; // parameter khusus per strategi
+```go
+type BotConfig struct {
+	ID                string                 `json:"id" yaml:"id"`                                 // unique bot ID
+	Name              string                 `json:"name" yaml:"name"`                             // nama display
+	Strategy          string                 `json:"strategy" yaml:"strategy"`                     // tipe strategi
+	Tier              string                 `json:"tier" yaml:"tier"`                             // "retail" atau "institutional"
+	InitialCashIDR    int64                  `json:"initial_cash_idr" yaml:"initial_cash_idr"`      // modal awal dalam rupiah
+	AllowedSymbols    []string               `json:"allowed_symbols" yaml:"allowed_symbols"`       // saham yang boleh diperdagangkan
+	MaxOrderSizeLots  int                    `json:"max_order_size_lots" yaml:"max_order_size_lots"` // maks lot per order
+	MaxExposurePct    float64                `json:"max_exposure_pct" yaml:"max_exposure_pct"`     // maks % dari portofolio di satu saham (evaluasi preventif hanya saat order beli baru)
+	MaxDailyLossPct   float64                `json:"max_daily_loss_pct" yaml:"max_daily_loss_pct"` // hentikan bot jika daily loss > X%
+	MaxOrdersPerMin   int                    `json:"max_orders_per_minute" yaml:"max_orders_per_minute"` // rate limit per bot
+	MaxCancelRate     float64                `json:"max_cancel_rate" yaml:"max_cancel_rate"`       // maks % order yang dibatalkan
+	Status            string                 `json:"status" yaml:"status"`                         // "active" | "paused" | "disabled" | "cooldown"
+	RandomSeed        *int64                 `json:"random_seed,omitempty" yaml:"random_seed,omitempty"` // untuk reproducibility saat testing
+	ConfigVersion     int64                  `json:"config_version" yaml:"config_version"`
+	StrategyParams    map[string]interface{} `json:"strategy_params" yaml:"strategy_params"`       // parameter khusus per strategi
 }
 ```
 
@@ -516,9 +662,26 @@ interface BotConfig {
 
 Sebuah bursa yang baru berjalan (Day 1) membutuhkan likuiditas sisi jual (Ask). Jika semua bot hanya dibekali uang tunai (Cash), pasar tidak akan bisa berjalan karena tidak ada yang memiliki barang saham untuk dijual. 
 Oleh karena itu, sistem membutuhkan mekanisme **Genesis Seeding**:
-- **Market Maker & Bandar Bot**: Saat pertama kali sistem bursa dihidupkan (Day 1), *BOT Service* akan melakukan injeksi *Inventory* (lot saham) dan uang tunai ke dalam portofolio mereka secara langsung ke database Sekuritas.
+- **Market Maker & Bandar Bot**: Saat pertama kali sistem bursa dihidupkan (Day 1), *BOT Service* akan menginisiasi proses injeksi *Inventory* (lot saham) dan uang tunai ke dalam portofolio mereka.
+- **Isolasi Sistem (Boundary)**: BOT Service dilarang membaca/menulis database Sekuritas atau BEI secara langsung. Seeding dilakukan melalui `POST /api/v1/internal/bots/genesis`.
+- **Idempotency**: Setiap genesis mempunyai `genesis_run_id`, idempotency key, dan payload hash. Run yang sudah `completed` tidak boleh dieksekusi ulang.
+- **Cross-Service Consistency**: Genesis memakai pola saga/outbox untuk membentuk cash ledger Sekuritas dan custody ledger BEI. Status hanya boleh `completed` setelah keduanya konsisten.
+- **Unit Inventory**: Payload lintas layanan selalu memakai lembar saham. Nilai lot pada config dikalikan lot size aktif sebelum dikirim.
 - **Retail Bot (Noise, Momentum, dll)**: Hanya dibekali uang tunai di awal. Mereka harus membeli barang dari *Market Maker* atau *Bandar* di hari-hari pertama.
 - **Aturan Ketat (Strict Rule)**: Proses injeksi "gaib" ini **HANYA BOLEH DILAKUKAN SEKALI** pada Hari Ke-1 (Genesis). Untuk hari-hari berikutnya, jika ada emiten baru yang IPO, bot tidak boleh diberi saham secara cuma-cuma. Bot (sebagai *IPO Hunter*) wajib menggunakan uang kas mereka sendiri yang tersisa untuk memesan/membeli saham IPO sesuai prosedur asli bursa. Tidak ada lagi uang atau saham gratis dari udara setelah Day 1.
+
+Jika saga genesis gagal sebagian, scheduler BOT tetap `not_ready`; operator harus menjalankan retry idempotent atau kompensasi. BOT tidak boleh trading sebelum reconciliation membuktikan Sekuritas dan custody BEI konsisten.
+
+### 5.5 IPO Subscription Bot
+
+Bot mendeteksi IPO dari endpoint/event publik, kemudian memesan melalui:
+
+```http
+POST /api/v1/ipo-events/:id/subscriptions
+Authorization: Bearer <bot-user-jwt>
+```
+
+Sekuritas wajib melakukan validasi periode, reserve cash, meneruskan subscription ke BEI, mengubah reserved menjadi settled sesuai alokasi, me-refund selisih, dan memperbarui pending/available shares. Bot tidak boleh memanggil endpoint subscription BEI secara langsung.
 
 ---
 
@@ -568,9 +731,21 @@ Bot berperilaku berbeda tergantung fase perdagangan (sesi), dan dirancang untuk 
 3. **Closing Rush (Menjelang Pre-Close)**: Sekitar 10-20% waktu terakhir sebelum sesi `continuous` berakhir (dan masuk pre-close), aktivitas kembali melonjak. Bot momentum, contrarian, dan value investor berlomba menyesuaikan posisi sebelum pasar tutup.
 
 > [!WARNING]
-> **Peringatan Durasi Sesi Simulasi:**
-> Jangan pernah menggunakan acuan jam nyata (*real-life time*, misal jam 09:00 - 16:00) untuk perhitungan logika *Rush Hour* ini. Template sesi di *production* Mandala Exchange berjalan dengan waktu yang sangat dikompresi (misalnya simulasi 1 hari selesai hanya dalam 15 menit atau 1 jam). 
-> Logika U-Shaped Curve **harus bersifat dinamis**, dihitung berdasarkan **persentase (%) dari total durasi sesi continuous** pada saat itu (contoh: *30% dari awal durasi sesi*, bukan "sampai jam 10 pagi").
+> **Peringatan Durasi Sesi & Kompresi Waktu:**
+> 1. Jangan pernah menggunakan acuan jam nyata (*real-life time*, misal jam 09:00 - 16:00) untuk perhitungan logika *Rush Hour* ini. Sesi di *production* Mandala Exchange berjalan dengan waktu yang sangat dikompresi (misalnya simulasi 1 hari bursa selesai hanya dalam 15 menit atau 1 jam real-time). Logika U-Shaped Curve **wajib bersifat dinamis**, dihitung berdasarkan **persentase (%) dari total durasi sesi continuous** pada saat itu.
+> 2. **Kompensasi Jeda Waktu Bot**: Seluruh parameter jeda/frekuensi transaksi di file `bots.yaml` (misal: "setiap 5-20 menit") dianggap sebagai **Waktu Virtual Bursa**. BOT Service secara dinamis wajib mengonversi nilai virtual tersebut ke **Jeda Waktu Nyata** di laptop Anda dengan membaginya dengan *Rasio Kompresi Sesi* (Durasi Virtual / Durasi Nyata).
+>    *   *Rumus*: $\text{Jeda Nyata} = \frac{\text{Jeda Virtual}}{\text{Rasio Kompresi}}$
+>    *   *Contoh*: Jika sesi continuous 6 jam (360 menit) dikompresi menjadi 15 menit real-time (rasio 24x), maka jeda virtual 5–20 menit akan dieksekusi oleh Go sebagai jeda nyata **12.5 s.d. 50 detik**.
+
+**Kontrak Session Instance:**
+
+- `session_template_id` hanya mendefinisikan urutan segmen dan durasi.
+- Setiap putaran simulasi membuat `session_instance_id` UUID baru dan `virtual_day_index` monotonik.
+- Template/session snapshot menyimpan `virtual_duration_seconds` dan `real_duration_seconds` per segmen. Rasio kompresi dihitung dari dua nilai tersebut, bukan dari asumsi jam perdagangan hardcoded.
+- MATS menerbitkan `session_instance_id`, `virtual_day_index`, status, kedua durasi, dan sisa waktu nyata pada `session_state`/`session_timer`.
+- Daily reset, performance, daily loss, MA history, dan state multi-session mengacu pada session instance, bukan tanggal kalender.
+- Satu minggu simulasi didefinisikan sebagai lima session instance yang selesai.
+- Jika identitas session instance belum tersedia atau meloncat, strategi di-pause sampai snapshot sesi berhasil dipulihkan.
 
 | Sesi | Perilaku Bot |
 |---|---|
@@ -580,24 +755,27 @@ Bot berperilaku berbeda tergantung fase perdagangan (sesi), dan dirancang untuk 
 | `continuous` | **U-Shaped Curve Aktif**. Rush hour di 30% waktu awal, melandai di pertengahan, lalu melonjak lagi menjelang akhir. |
 | `pre_close` | Market maker mulai menarik spread. Contrarian mulai ambil posisi akhir. |
 | `closing_auction` | Pergerakan *low-volume*. Hanya bot value dan market maker yang aktif berpartisipasi di harga IEP penutupan. |
-| `non_cancellation` | Bot tidak bisa cancel. Bot yang tahu ini harus lebih berhati-hati memasang order. |
+| `non_cancellation` | **NCP Kepatuhan Preventif**: Bot memantau status sub-sesi NCP ini dari WebSocket MATS secara real-time. Jika masuk fase NCP, bot secara otomatis menonaktifkan *cancel logic* internal mereka agar tidak mengirim perintah cancel yang pasti ditolak bursa, guna menghemat kuota *Rate Limit* global. |
 | `halted` | Semua bot berhenti. Market maker tidak quote. |
 
-### 6.4 Portfolio Awareness
+### 6.4 Portfolio Awareness & Reserved State Tracking
 
-Bot sadar akan posisi mereka sendiri:
-- Bot tidak akan sell saham yang tidak dimilikinya (kecuali ada bug — dan ini harus tercegah di Sekuritas)
-- Bot value investor tidak akan membeli lebih dari batas eksposur per saham
-- Bot market maker akan menyesuaikan quote ketika inventory sudah mentok
+Setiap bot memiliki "kesadaran" (*awareness*) in-memory terhadap portofolio mereka sendiri untuk menghindari reject order:
+- **Pencegahan Jual Kosong (Short Selling)**: Bot tidak diperbolehkan menjual saham yang tidak dimilikinya di memori lokal.
+- **Lifecycle State**: Cache membedakan `available`, `reserved`, dan `pending`. Fill tidak otomatis membuat proceeds/efek dapat dipakai sebelum lifecycle settlement Sekuritas menyatakannya available.
+- **Reserved State Management**: Ketika bot mengirim order beli, jumlah kas yang dibutuhkan dibekukan (*Reserved Cash*). Saat bot mengirim order jual, jumlah lembar saham yang dijual dibekukan (*Reserved Shares*). Bot tidak dapat memakai state reserved/pending untuk order baru.
+- **Order Timestamp & Usia Order**: Untuk mendukung probabilitas pembatalan order (*cancel probability*), setiap order aktif bot yang disimpan in-memory wajib mencatat timestamp pembuatan order. Scheduler internal BOT Service akan secara berkala mengevaluasi usia order tersebut berdasarkan kompresi waktu sesi.
+- **Eksposur Risiko (Max Exposure)**: Bot tidak diperbolehkan membeli saham melebihi batas parameter `max_exposure_pct` terhadap total portofolio berjalan. Batasan ini dihitung secara preventif **hanya pada saat bot akan mengirimkan order beli baru** (total portofolio = kas + lot kepemilikan * 100 * Last Price). Kenaikan exposure pasif akibat apresiasi harga pasar tidak boleh mematikan bot.
+- **Inventory Management**: Bot market maker akan secara dinamis menyempitkan atau melebarkan spread ask/bid, serta memiringkan quote harga jika status inventori sahamnya mendekati kapasitas penuh (*max inventory limit*).
 
 ### 6.5 Sentiment Simulation
 
 Sistem memiliki variabel **market sentiment global** yang diupdate setiap sesi:
-```typescript
-interface MarketSentiment {
-  overall: "bearish" | "neutral" | "bullish";  // override dari admin atau computed
-  volatility_regime: "low" | "medium" | "high";
-  sector_sentiment: Record<string, "positive" | "neutral" | "negative">;
+```go
+type MarketSentiment struct {
+	Overall          string            `json:"overall"`           // bearish, neutral, bullish
+	VolatilityRegime string            `json:"volatility_regime"` // low, medium, high
+	SectorSentiment  map[string]string `json:"sector_sentiment"`  // key: nama sektor, value: positive, neutral, negative
 }
 ```
 Sentiment ini mempengaruhi:
@@ -609,19 +787,51 @@ Sentiment ini mempengaruhi:
 ### 6.6 Context & Event Awareness (Kesadaran Kondisi Pasar)
 
 Meskipun 1 bot memiliki 1 tipe strategi utama (1 Bot = 1 Tipe), seluruh bot menerima injeksi data *Global Context* secara *real-time*. Ini memungkinkan bot bereaksi terhadap *event* tanpa harus berubah kepribadian.
-- **Data Context**: Berisi status volatilitas saat ini, berita/aksi korporasi yang sedang aktif (diinjeksi oleh *Event Injector*), dan anomali pasar.
+- **Data Context**: Berisi status volatilitas, announcement/aksi korporasi yang sudah dipublikasikan, anomali pasar, status suspensi/market halt dari MATS, serta batas ARA/ARB dari versioned rule snapshot BEI.
 - **Reaksi Spesifik**: 
   - *Market Maker* membaca *context* berita (volatilitas tinggi) → bereaksi dengan memperlebar jarak *Bid-Ask* atau berhenti sementara.
   - *Value Investor* membaca *context* kepanikan (harga jatuh) akibat berita → bereaksi dengan semakin agresif membeli karena diskon besar.
 Dengan ini, sistem terhindar dari pembuatan bot hibrida yang rumit, namun tetap mempertahankan respons pasar yang sangat organik.
 
-### 6.7 [OPTIONAL] Sector Correlation & Compute Offloading
+**Fairness Event Publication:**
+
+1. Admin membuat announcement/event di BEI.
+2. BEI menetapkan `published_at` dan mempublikasikannya kepada player melalui kanal publik Sekuritas.
+3. BOT baru boleh memulai reaction delay setelah event publik diterima.
+4. Bot Control Panel hanya bertindak sebagai UI/proxy ke BEI dan tidak boleh membuat informasi privat khusus BOT.
+5. Event `simulation_only=true` hanya boleh digunakan pada stress test yang ditandai jelas, bukan permainan normal.
+
+### 6.7 Self-Trade Prevention
+
+Pre-check internal Market Maker tetap dilakukan, tetapi jaminan terakhir wajib berada pada matching engine MATS berdasarkan `account_id`.
+
+```yaml
+self_trade_prevention: cancel_newest
+```
+
+Jika incoming order akan match dengan resting order milik akun yang sama, MATS membatalkan/menolak incoming order dengan reason `self_trade_prevented` dan tidak menghasilkan trade. Pemeriksaan perbedaan best bid/best ask internal saja tidak dianggap cukup karena terdapat race antara submit, amend, dan cancel.
+
+### 6.8 Anti-Predictability Baseline
+
+Sebelum strategi MVP dinyatakan selesai, implementasi wajib memiliki:
+
+- HMAC per-session seed yang tidak diekspos ke player.
+- Bounded distribution untuk threshold, interval, order size, reaction delay, dan cooldown.
+- Rotasi 300–500 bot aktif dari registry yang lebih besar dengan target ratio tetap.
+- Bounded parameter drift per session.
+- Multi-signal confirmation agar satu large trade tidak memicu seluruh bot.
+- Hysteresis untuk mencegah keputusan bolak-balik pada threshold exact.
+- Conditional Bandar transition dalam patience window, bukan perpindahan pada counter sesi exact.
+
+Schema, bounds, dan config-change semantics mengikuti `BOT_STRATEGY_SPEC.md`. Advanced predictor dan statistical exploitability test mengikuti roadmap ABM.
+
+### 6.9 [OPTIONAL] Sector Correlation & Compute Offloading
 *(Fitur ini berstatus opsional dan ditunda pengerjaannya menunggu keputusan final)*
 
-Untuk mencapai realisme absolut di mana saham-saham dalam satu sektor bergerak beriringan (efek sektoral), sistem membutuhkan **Correlation Engine**. Mengingat beban komputasi matriks yang berat, fitur ini dirancang dengan arsitektur *Compute Offloading*:
+Untuk realisme tambahan di mana saham-saham dalam satu sektor bergerak beriringan, sistem dapat menggunakan **Correlation Engine**. Fitur ini wajib dibenchmark secara lokal terlebih dahulu; external compute hanya dipilih jika profiling membuktikan kebutuhan:
 1. **Metadata Saham yang Presisi**: Sistem harus mendefinisikan kategori sektor yang persis sama untuk setiap emiten (misal: BBCA, BMRI, BBNI wajib memiliki parameter `sector: FINANCE` di database/config). Tanpa keseragaman nama ini, korelasi tidak bisa dihitung.
-2. **External Cloud Service**: *Correlation Engine* dijalankan di *server* pihak ketiga (misal: Heroku/Cloud) yang berlangganan data WebSocket MATS lokal via *tunneling*. Server awan ini yang akan memproses perhitungan matematika berat (Korelasi Matriks).
-3. **Webhook Trigger**: Jika awan mendeteksi korelasi kuat (misal indeks sektor keuangan meroket), ia hanya menembakkan satu *webhook/signal* ringan kembali ke *BOT Service* lokal.
+2. **Local First**: Jalankan komputasi periodik berbasis snapshot/batch dan ukur CPU/RAM sebelum memindahkannya keluar laptop.
+3. **External Optional**: Jika external compute diperlukan, jangan mengekspos MATS WebSocket melalui tunnel. Kirim snapshot minimal melalui authenticated outbound channel dan terima signal dengan signature, replay protection, timeout, serta fail-safe.
 4. **Eksekusi Lokal**: *BOT Service* menerima sinyal tersebut dan menyuntikkannya ke *Global Context*, sehingga bot-bot di sektor terkait ikut bereaksi tanpa membebani CPU laptop lokal.
 ---
 
@@ -629,25 +839,27 @@ Untuk mencapai realisme absolut di mana saham-saham dalam satu sektor bergerak b
 
 ### 7.1 Simulasi Biaya Transaksi
 
-Setiap bot harus memperhitungkan biaya transaksi agar P&L tidak distorsi:
+Setiap bot harus memperhitungkan biaya transaksi agar P&L tidak distorsi. Fee schedule aktif diambil dari `GET /v1/public/fee-schedule` BEI dan dicache berdasarkan `effective_date`. Contoh rate di bawah hanya ilustrasi dan bukan konstanta runtime:
 
-```typescript
+```go
 // Menggunakan fee-service yang sama dengan player
-function calculateExpectedFee(side: "buy" | "sell", price: number, lots: number): number {
-  const value = price * lots * 100; // asumsi lot size 100 lembar
-  if (side === "buy") {
-    return value * 0.0015; // 0.15% broker buy fee
-  } else {
-    return value * (0.0015 + 0.001); // 0.15% sell + 0.1% PPh
-  }
+func CalculateExpectedFee(
+	side Side,
+	priceIDR int64,
+	quantityShares int64,
+	schedule FeeSchedule,
+) Money {
+	return schedule.Calculate(side, priceIDR, quantityShares)
 }
 ```
+
+Nilai uang persisten menggunakan `BIGINT` rupiah atau `NUMERIC` sesuai kebutuhan rate. `float64` tidak digunakan untuk saldo, fee nominal, nilai exposure, atau P&L persisten; persentase konfigurasi tetap boleh direpresentasikan sebagai floating-point.
 
 ### 7.2 Bot P&L Tracking
 
 Setiap bot memiliki:
 - `realized_pnl`: P&L dari posisi yang sudah ditutup, setelah fee
-- `unrealized_pnl`: nilai mark-to-market posisi terbuka
+- `unrealized_pnl`: nilai mark-to-market posisi terbuka (harga acuan untuk kalkulasi MTM berjalan wajib menggunakan **Last Price** yang didapatkan dari WebSocket)
 - `total_fee_paid`: akumulasi biaya transaksi
 - `win_rate`: persentase trade yang menguntungkan
 - `turnover`: total nilai transaksi
@@ -657,10 +869,20 @@ Setiap bot memiliki:
 ```yaml
 risk_control:
   max_daily_loss_pct: 5.0        # bot dimatikan jika daily loss > 5% modal
-  max_weekly_loss_pct: 15.0      # bot dimatikan jika weekly loss > 15% modal
+  max_weekly_loss_pct: 15.0      # weekly = 5 session instance selesai
   auto_disable_on_breach: true
   require_admin_reactivation: true  # butuh admin untuk aktifkan kembali
 ```
+
+### 7.4 Penanganan Kebangkrutan Bot (Out of Cash & Bangkrut Total)
+
+Untuk mensimulasikan kegagalan finansial secara realistis tanpa intervensi suntikan dana otomatis:
+1. **Fase Likuidasi Portofolio (Out of Cash)**:
+   * Jika bot kehabisan uang tunai (kas = 0 atau tidak cukup untuk membeli 1 lot saham termurah di universenya) tetapi masih memiliki *inventory* saham, bot akan secara otomatis dipaksa masuk ke mode **Likuidasi Portofolio**.
+   * Dalam mode ini, seluruh logika beli (*buy logic*) dinonaktifkan. Bot hanya akan memasang order jual (*sell limit/market*) secara bertahap pada sisa kepemilikan sahamnya sampai laku terjual untuk mengembalikan posisi kasnya.
+2. **Fase Bangkrut Total**:
+   * Jika kas bot bernilai 0 DAN bot tidak memiliki saham lagi untuk dijual di portofolionya, bot tersebut dinyatakan **Bangkrut Total**.
+   * BOT Service akan secara otomatis mematikan bot tersebut, memperbarui status bot di database PostgreSQL menjadi `"bankrupt"`, dan menonaktifkannya secara permanen dari daftar scheduler.
 
 ---
 
@@ -670,37 +892,36 @@ risk_control:
 
 Setiap keputusan bot dicatat ke database:
 
-```typescript
-interface BotDecisionLog {
-  id: string;
-  bot_id: string;
-  strategy: string;
-  timestamp: Date;
-  
-  // Konteks saat keputusan dibuat
-  symbol: string;
-  session_status: string;
-  last_price: number;
-  best_bid: number;
-  best_ask: number;
-  bot_cash: number;
-  bot_position_lots: number;
-  
-  // Keputusan
-  decision: "buy" | "sell" | "cancel" | "hold";
-  decision_reason: string;         // penjelasan singkat
-  
-  // Eksekusi
-  order_submitted: boolean;
-  sekuritas_order_id?: string;
-  order_price?: number;
-  order_lots?: number;
-  
-  // Hasil
-  order_status?: string;
-  reject_reason?: string;
+```go
+type BotDecisionLog struct {
+	ID                  uint64    `json:"id"`
+	BotID               string    `json:"bot_id"`
+	SimulationRunID     string    `json:"simulation_run_id"`
+	SessionInstanceID   string    `json:"session_instance_id"`
+	VirtualDayIndex     int64     `json:"virtual_day_index"`
+	Strategy            string    `json:"strategy"`
+	Timestamp           time.Time `json:"timestamp"`
+	Symbol              string    `json:"symbol"`
+	SessionStatus       string    `json:"session_status"`
+	Decision            string    `json:"decision"`
+	DecisionReason      string    `json:"decision_reason"`
+	ContextSnapshot     any       `json:"context_snapshot"`
+	OrderSubmitted      bool      `json:"order_submitted"`
+	SekuritasOrderID    *string   `json:"sekuritas_order_id,omitempty"`
+	OrderPriceIDR       *int64    `json:"order_price_idr,omitempty"`
+	OrderQuantityShares *int64    `json:"order_quantity_shares,omitempty"`
+	OrderStatus         *string   `json:"order_status,omitempty"`
+	RejectReason        *string   `json:"reject_reason,omitempty"`
 }
 ```
+
+Kebijakan logging:
+
+- `BUY`, `SELL`, `CANCEL`, reject, risk breach, lifecycle error, dan circuit breaker selalu dicatat.
+- Keputusan `HOLD` disampling default 2%, bukan dicatat seluruhnya.
+- Log dikumpulkan dalam batch 100–500 baris dan di-flush setiap 1–5 detik.
+- Retention default 30 session instance dan dapat dikonfigurasi.
+- Log tidak boleh memuat JWT, password, service token, atau data rahasia player.
 
 ### 8.2 Bot Performance Dashboard (Admin)
 
@@ -715,9 +936,11 @@ Admin dapat melihat:
 
 Jika bot service mengalami masalah:
 1. **Spam Order Detection**: Jika satu bot submit > `max_orders_per_minute` → bot di-cooldown otomatis selama 10 menit
-2. **Total System Breaker**: Jika seluruh bot service menghasilkan > 500 order/menit → seluruh bot service di-pause
+2. **Total System Breaker**: Jika gabungan aksi order melebihi hard limit 600/menit → seluruh strategy submission di-pause; risk/cancel queue tetap boleh diproses
 3. **Error Surge Detection**: Jika reject rate > 50% dalam 5 menit → bot di-cooldown sambil menunggu investigation
 4. **Manual Kill Switch**: Admin dapat hentikan seluruh bot dalam satu API call
+5. **Dependency Breaker**: Jika Sekuritas, MATS, BEI rule snapshot, account event stream, atau session identity tidak sehat/stale → order baru dihentikan fail-closed
+6. **Queue Pressure Breaker**: Jika queue di atas 80% kapasitas selama 10 detik → hentikan task prioritas rendah; jika mencapai 100% → drop item stale dan pause strategy producer
 
 ---
 
@@ -725,18 +948,21 @@ Jika bot service mengalami masalah:
 
 ### 9.1 Posisi dalam Startup Stack
 
-Bot service ditambahkan ke `start-all.bat` sebagai proses terakhir setelah semua service utama ready:
+Bot service ditambahkan ke `start-all.bat` setelah semua dependency utama sehat. Startup wajib menggunakan health/readiness check, bukan fixed sleep saja:
 
 ```batch
 :: Urutan startup
-1. Docker DB containers (BEI DB, MATS DB, Sekuritas DB, Redis)
-2. BEI Service
-3. MATS Engine
-4. Sekuritas Backend
-5. Sekuritas Frontend
-6. BOT Service  ← baru, berjalan paling akhir
-7. (opsional) Cloudflare Tunnel
+1. Docker DB containers (BEI DB, MATS DB, Sekuritas DB, BOT DB, Redis)
+2. Migration BEI, Sekuritas, MATS, dan BOT
+3. BEI Service → tunggu ready
+4. MATS Engine → tunggu ready dan rule sync
+5. Sekuritas Backend → tunggu ready
+6. BOT Service → provision/token/snapshot/reconciliation
+7. Sekuritas Frontend
+8. (opsional) Cloudflare Tunnel
 ```
+
+BOT tidak menjalankan strategi sampai BEI rules, MATS session/market feed, Sekuritas account event stream, JWT, dan initial portfolio reconciliation siap.
 
 ### 9.2 Konfigurasi Environment Bot Service
 
@@ -744,14 +970,19 @@ Bot service ditambahkan ke `start-all.bat` sebagai proses terakhir setelah semua
 # BOT/.env
 BOT_SERVICE_PORT=9090
 BOT_SERVICE_HOST=127.0.0.1    # privat, tidak publik
+BOT_RUNTIME_MODE=live
 
 # Sekuritas API
 SEKURITAS_API_URL=http://localhost:3002
-BOT_API_INTERNAL_KEY=<secret_key>  # untuk admin endpoint bot
+SEKURITAS_BOT_SERVICE_TOKEN=<bot_to_sekuritas_token>
 
 # MATS (untuk subscribe market data langsung)
 MATS_WS_URL=ws://127.0.0.1:8082/v1/market-data/ws
 MATS_SERVICE_TOKEN=<bot_market_read_token>   # scope: market:read saja
+
+# BEI read-only API
+BEI_API_URL=http://127.0.0.1:4100
+BEI_SERVICE_TOKEN=<bot_readonly_token>
 
 # Database Bot
 BOT_DATABASE_URL=postgres://mandala_bot:mandala_bot@localhost:5435/mandala_bot
@@ -759,55 +990,86 @@ BOT_DATABASE_URL=postgres://mandala_bot:mandala_bot@localhost:5435/mandala_bot
 # Redis (berbagi dengan MATS/BEI)
 REDIS_URL=redis://localhost:6379
 
+# Admin API privat
+BOT_API_INTERNAL_KEY=<secret_key>
+
 # Konfigurasi bot
 BOT_CONFIG_PATH=./config/bots.yaml   # file konfigurasi bot
 BOT_ENABLED=true
 BOT_MAX_GLOBAL_ORDERS_PER_MINUTE=300
+BOT_HARD_GLOBAL_ORDERS_PER_MINUTE=600
+BOT_ORDER_BURST_CAPACITY=100
+BOT_ORDER_QUEUE_CAPACITY=5000
+BOT_ORDER_WORKERS=10
+BOT_STRATEGY_WORKERS=8
+BOT_RECONCILIATION_INTERVAL_SECONDS=60
+BOT_DECISION_HOLD_SAMPLE_RATE=0.02
+BOT_DB_MAX_CONNECTIONS=15
 
 # Logging
 BOT_LOG_LEVEL=info
 BOT_AUDIT_LOG_ENABLED=true
 ```
 
+Environment dipisahkan mengikuti pola proyek:
+
+| Mode | BOT API | BOT PostgreSQL | Env Runtime | Env Docker |
+|---|---:|---:|---|---|
+| Development | 9090 | 5435 | `BOT/.env.development` | `BOT/.env.docker.development` |
+| Production | 9091 | 5535 | `BOT/.env.production` | `BOT/.env.docker.production` |
+
+Secret development dan production wajib berbeda. BOT API, BOT database, BEI, dan MATS tetap bind ke loopback dan tidak diekspos melalui Cloudflare Tunnel.
+
 ### 9.3 Struktur Direktori BOT Service
 
 ```
 BOT/
-├── src/
-│   ├── index.ts                  # entry point
-│   ├── config/
-│   │   ├── env.ts                # env loader
-│   │   └── bots.yaml             # konfigurasi seluruh bot
-│   ├── core/
-│   │   ├── market-data.ts        # WebSocket consumer MATS
-│   │   ├── session-monitor.ts    # tracking status sesi
-│   │   ├── bot-registry.ts       # lifecycle bot
-│   │   ├── order-executor.ts     # submit/cancel ke Sekuritas
-│   │   └── circuit-breaker.ts    # safety mechanisms
-│   ├── strategies/
-│   │   ├── base-strategy.ts      # abstract base class
-│   │   ├── noise-trader.ts
-│   │   ├── market-maker.ts
-│   │   ├── momentum-trader.ts
-│   │   ├── contrarian.ts
-│   │   ├── value-investor.ts
-│   │   ├── bandar.ts
-│   │   ├── event-driven.ts
-│   │   └── panic-seller.ts
-│   ├── models/
-│   │   ├── bot-config.ts
-│   │   ├── market-state.ts
-│   │   └── bot-portfolio.ts
-│   ├── admin-api/
-│   │   └── routes.ts             # endpoint kontrol admin
-│   └── db/
-│       ├── schema.ts
-│       └── migrations/
+├── cmd/
+│   └── bot/
+│       └── main.go               # entry point utama
 ├── config/
+│   ├── env.go                    # env loader
 │   └── bots.yaml                 # konfigurasi default bot
+├── core/
+│   ├── market_data.go            # WebSocket consumer MATS
+│   ├── session_monitor.go        # tracking status sesi
+│   ├── bot_registry.go           # lifecycle bot
+│   ├── order_executor.go         # submit/cancel ke Sekuritas
+│   ├── account_events.go         # sequenced event stream Sekuritas
+│   ├── portfolio_cache.go        # available/reserved/pending cache
+│   ├── reconciliation.go         # bulk snapshot/recovery
+│   ├── scheduler.go              # min-heap/sharded scheduler
+│   └── circuit_breaker.go        # safety mechanisms
+├── strategies/
+│   ├── base_strategy.go          # interface / base strategy
+│   ├── noise_trader.go
+│   ├── market_maker.go
+│   ├── momentum_trader.go
+│   ├── contrarian.go
+│   ├── value_investor.go
+│   ├── bandar.go
+│   ├── event_driven.go
+│   ├── index_tracker.go
+│   └── panic_seller.go           # scenario actor
+├── models/
+│   ├── bot_config.go
+│   ├── market_state.go
+│   └── bot_portfolio.go
+├── api/
+│   └── routes.go                 # REST API admin kontrol (chi)
+├── db/
+│   ├── store.go                  # pgx repositories
+│   └── migrations/               # Database migrations
+├── internal/
+│   ├── bei/                      # read-only BEI client
+│   ├── mats/                     # market WebSocket client
+│   └── sekuritas/                # order/provision/snapshot/event client
+├── tests/
+│   ├── integration/
+│   └── load/
 ├── docker-compose.yml            # DB bot saja
-├── package.json
-└── tsconfig.json
+├── go.mod
+└── go.sum
 ```
 
 ### 9.4 Docker Compose Bot
@@ -822,13 +1084,15 @@ services:
       POSTGRES_PASSWORD: mandala_bot
       POSTGRES_DB: mandala_bot
     ports:
-      - "5435:5432"
+      - "${BOT_DB_PORT:-5435}:5432"
     volumes:
       - bot_db_data:/var/lib/postgresql/data
 
 volumes:
   bot_db_data:
 ```
+
+Docker Compose wajib memakai project/volume berbeda untuk development dan production agar data tidak tercampur.
 
 ---
 
@@ -847,8 +1111,10 @@ Header: x-bot-admin-key: <BOT_API_INTERNAL_KEY>
 GET    /admin/bots                         # list semua bot + status
 GET    /admin/bots/:id                     # detail bot tertentu
 POST   /admin/bots/:id/pause              # pause satu bot
+POST   /admin/bots/:id/pause-and-cancel   # pause + cancel order cancellable
 POST   /admin/bots/:id/resume             # resume satu bot
 POST   /admin/bots/:id/disable            # disable permanen
+POST   /admin/bots/:id/disable-and-cancel # disable + cancel order cancellable
 POST   /admin/bots/pause-all             # hentikan semua bot (emergency)
 POST   /admin/bots/resume-all            # aktifkan semua bot
 PATCH  /admin/bots/:id/params             # update parameter bot (live)
@@ -857,11 +1123,19 @@ GET    /admin/performance                  # P&L semua bot
 GET    /admin/audit-log?bot_id=&limit=100 # audit log keputusan
 GET    /admin/market-impact               # kontribusi bot ke volume pasar
 POST   /admin/sentiment                   # set market sentiment override
+POST   /admin/scenarios                    # membuat simulation scenario
+POST   /admin/scenarios/:id/start          # mulai scenario
+POST   /admin/scenarios/:id/stop           # hentikan scenario
 GET    /admin/health                      # health check bot service
+GET    /admin/readiness                   # dependency + reconciliation readiness
 ```
 
+Update parameter memakai optimistic locking melalui `config_version`. Jika version request sudah stale, API mengembalikan `409 Conflict`.
+
+`pause` hanya menghentikan keputusan/order baru; existing order tetap aktif. `kill switch` menghentikan producer global dan mencoba cancel seluruh order cancellable, tetapi tetap mengonsumsi event/reconciliation. Semantics lengkap mengikuti `BOT_STATE_MACHINES.md`.
+
 ### 10.2 Bot Control Dashboard (Frontend UI)
-Sebagai antarmuka dari API di atas, sistem ini akan dilengkapi dengan **Frontend Web Dashboard** khusus admin ("Ruang Kendali Sutradara").
+Antarmuka BOT diintegrasikan sebagai halaman **Super Admin Sekuritas** ("Ruang Kendali Sutradara"). Tidak dibuat frontend server atau port UI terpisah. Browser memanggil proxy admin Sekuritas; secret BOT tidak disimpan di browser.
 
 **A. Fitur Observability (Yang Bisa Dilihat):**
 1. **Live Bot Demographics:** Visualisasi populasi bot yang sedang *online*, dikelompokkan berdasarkan strategi (jumlah bot aktif, error, atau paused).
@@ -871,11 +1145,11 @@ Sebagai antarmuka dari API di atas, sistem ini akan dilengkapi dengan **Frontend
 
 **B. Fitur Control Panel (Yang Bisa Diatur):**
 1. **Global Sentiment Override:** Pengubah *mood* pasar (Netral, Bullish, Bearish) yang akan memengaruhi agresivitas *Noise* dan *Momentum Trader*.
-2. **Event & News Injector:** Form untuk menyuntikkan berita/krisis pada saham tertentu untuk memicu reaksi bot *Event-Driven*.
+2. **Event & News Injector:** Form meneruskan event ke BEI agar dipublikasikan kepada player sebelum BOT bereaksi. Event stress test privat wajib ditandai `simulation_only`.
 3. **Emergency Buttons:** Tombol *Trigger Panic Seller* (untuk stress test *Flash Crash*) dan *Global Kill Switch* (*Pause/Resume* seluruh bot secara instan).
-4. **Live Parameter Tweaking:** Kemampuan mengubah parameter bot (seperti besaran lot order) saat simulasi berjalan tanpa perlu me-restart server.
+4. **Live Parameter Tweaking:** Kemampuan mengubah parameter bot (seperti besaran lot order) saat simulasi berjalan tanpa perlu me-restart server. Parameter yang diubah secara live ini akan disimpan langsung ke database PostgreSQL (tabel `bots` kolom `config`) agar perubahan bersifat persisten.
 
-**Integrasi**: Dasbor ini dapat berdiri sendiri sebagai *Bot Control Panel* atau diintegrasikan ke dalam halaman *Super Admin Dashboard* Mandala Exchange jika ada.
+Refresh agregasi dashboard default 2–5 detik. UI tidak melakukan query per bot untuk setiap market event dan tidak membuka satu WebSocket per bot.
 
 ---
 
@@ -920,14 +1194,18 @@ Dengan kombinasi bot yang ada, sistem mampu mensimulasikan:
 ### 12.1 Aturan yang Berlaku untuk Semua Bot (Tanpa Pengecualian)
 
 - ✅ Harus masuk melalui Sekuritas API (tidak ada direct inject ke MATS)
-- ✅ Tunduk pada validasi: ARA/ARB, fraksi harga, lot size, saldo/posisi
+- ✅ Tunduk pada validasi ARA/ARB, tick size, lot size, saldo, dan posisi. Helper `GetValidPriceTick` wajib memakai snapshot trading rules BEI aktif
 - ✅ Tunduk pada aturan non-cancellation period
-- ✅ Order expired di akhir sesi jika tidak matched
+- ✅ Order expired di akhir sesi jika tidak matched (proses *expire* otomatis dilakukan oleh MATS Matching Engine saat sesi masuk status `closed`, BOT Service secara pasif mendengarkan dan memperbarui status order in-memory)
 - ✅ Dikenakan broker fee, levy, dan PPh sesuai aturan
 - ✅ Tidak boleh short sell (MVP)
 - ✅ Tidak boleh margin trading (MVP)
 - ✅ Tunduk pada auto-rejection volume BEI
-- ✅ Harus berhenti saat market halt atau symbol suspend
+- ✅ Harus berhenti saat market halt atau symbol suspend (saat menerima notifikasi suspensi emiten/market halt via WebSocket MATS, BOT Service secara in-memory wajib menangguhkan strategy execution untuk emiten tersebut dan membersihkan seluruh sisa order book lokalnya secara otomatis)
+- ✅ Tick size, lot size, ARA/ARB, dan fee wajib berasal dari snapshot rule/fee BEI aktif; tidak boleh menjadi konstanta hardcoded BOT
+- ✅ MATS wajib menerapkan Self-Trade Prevention berdasarkan account ID
+- ✅ BOT dilarang memakai cash/shares berstatus `reserved` atau `pending`
+- ✅ BOT dilarang trading ketika account event sequence gap, reconciliation belum selesai, atau dependency snapshot stale
 
 ### 12.2 Informasi yang Tidak Boleh Dimiliki Bot
 
@@ -936,6 +1214,7 @@ Untuk menjaga fairness (informasi simetris):
 - ❌ Bot tidak boleh tahu session schedule sebelum player tahu
 - ❌ Bot tidak boleh membaca portfolio player lain
 - ❌ Bot tidak boleh tahu event masa depan yang belum dipublikasikan di BEI
+- ❌ Bot tidak boleh membaca private order/account event milik player manusia
 
 ### 12.3 Yang Diperbolehkan untuk Bot Institusional
 
@@ -950,75 +1229,149 @@ Untuk menjaga fairness (informasi simetris):
 ## 13. Schema Database Bot Service
 
 ```sql
--- Tabel registry bot
 CREATE TABLE bots (
   id VARCHAR(64) PRIMARY KEY,
+  external_bot_id VARCHAR(64) NOT NULL UNIQUE,
   name VARCHAR(100) NOT NULL,
   strategy VARCHAR(50) NOT NULL,
-  tier VARCHAR(20) NOT NULL,           -- 'retail' atau 'institutional'
-  sekuritas_user_id VARCHAR(64),       -- user_id di Sekuritas
-  status VARCHAR(20) DEFAULT 'active',
-  config JSONB NOT NULL,               -- semua parameter strategi
+  tier VARCHAR(20) NOT NULL,
+  sekuritas_user_id UUID,
+  sekuritas_account_id UUID,
+  status VARCHAR(20) NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active','paused','cooldown','disabled','bankrupt')),
+  config JSONB NOT NULL,
+  config_version BIGINT NOT NULL DEFAULT 1,
+  state JSONB NOT NULL DEFAULT '{}',
+  state_version BIGINT NOT NULL DEFAULT 1,
+  random_seed BIGINT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabel sesi JWT token bot
+-- Cache token bersifat opsional. Ciphertext harus dienkripsi oleh application key.
 CREATE TABLE bot_tokens (
-  bot_id VARCHAR(64) REFERENCES bots(id),
-  jwt_token TEXT NOT NULL,
+  bot_id VARCHAR(64) PRIMARY KEY REFERENCES bots(id) ON DELETE CASCADE,
+  encrypted_token BYTEA NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (bot_id)
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabel audit log keputusan
+CREATE TABLE simulation_runs (
+  id UUID PRIMARY KEY,
+  mode VARCHAR(30) NOT NULL CHECK (mode IN ('live','deterministic_test')),
+  global_seed BIGINT,
+  config_snapshot JSONB NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL,
+  ended_at TIMESTAMPTZ
+);
+
+CREATE TABLE genesis_runs (
+  id UUID PRIMARY KEY,
+  idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+  payload_hash VARCHAR(128) NOT NULL,
+  status VARCHAR(20) NOT NULL
+    CHECK (status IN ('pending','processing','completed','failed','compensating')),
+  error TEXT,
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE bot_config_versions (
+  id BIGSERIAL PRIMARY KEY,
+  bot_id VARCHAR(64) NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  version BIGINT NOT NULL,
+  config JSONB NOT NULL,
+  changed_by VARCHAR(64),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (bot_id, version)
+);
+
+CREATE TABLE bot_state_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  bot_id VARCHAR(64) NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  session_instance_id UUID,
+  state_version BIGINT NOT NULL,
+  strategy_state JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE event_checkpoints (
+  stream_name VARCHAR(64) PRIMARY KEY,
+  last_sequence BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE bot_decision_logs (
   id BIGSERIAL PRIMARY KEY,
-  bot_id VARCHAR(64) REFERENCES bots(id),
-  strategy VARCHAR(50),
+  bot_id VARCHAR(64) NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  simulation_run_id UUID REFERENCES simulation_runs(id),
+  session_instance_id UUID,
+  virtual_day_index BIGINT,
+  strategy VARCHAR(50) NOT NULL,
   symbol VARCHAR(12),
   session_status VARCHAR(30),
-  decision VARCHAR(20),
+  decision VARCHAR(30) NOT NULL,
   decision_reason TEXT,
-  context_snapshot JSONB,              -- state pasar saat keputusan
-  order_submitted BOOLEAN DEFAULT FALSE,
+  context_snapshot JSONB,
+  order_submitted BOOLEAN NOT NULL DEFAULT FALSE,
   sekuritas_order_id VARCHAR(64),
-  order_price BIGINT,
-  order_lots INT,
+  order_price_idr BIGINT,
+  order_quantity_shares BIGINT,
   order_status VARCHAR(30),
   reject_reason TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabel performance harian
-CREATE TABLE bot_daily_performance (
+CREATE INDEX bot_decision_logs_session_idx
+  ON bot_decision_logs(session_instance_id, bot_id, created_at);
+
+CREATE TABLE bot_session_performance (
   id BIGSERIAL PRIMARY KEY,
-  bot_id VARCHAR(64) REFERENCES bots(id),
-  session_date DATE NOT NULL,
-  orders_submitted INT DEFAULT 0,
-  orders_filled INT DEFAULT 0,
-  orders_rejected INT DEFAULT 0,
-  orders_cancelled INT DEFAULT 0,
-  total_buy_value BIGINT DEFAULT 0,
-  total_sell_value BIGINT DEFAULT 0,
-  total_fee_paid BIGINT DEFAULT 0,
-  realized_pnl BIGINT DEFAULT 0,
+  bot_id VARCHAR(64) NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  session_instance_id UUID NOT NULL,
+  virtual_day_index BIGINT NOT NULL,
+  orders_submitted INT NOT NULL DEFAULT 0,
+  orders_filled INT NOT NULL DEFAULT 0,
+  orders_rejected INT NOT NULL DEFAULT 0,
+  orders_cancelled INT NOT NULL DEFAULT 0,
+  total_buy_value_idr BIGINT NOT NULL DEFAULT 0,
+  total_sell_value_idr BIGINT NOT NULL DEFAULT 0,
+  total_fee_paid_idr NUMERIC(24,6) NOT NULL DEFAULT 0,
+  realized_pnl_idr NUMERIC(24,6) NOT NULL DEFAULT 0,
+  peak_unrealized_pnl_idr NUMERIC(24,6) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(bot_id, session_date)
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(bot_id, session_instance_id)
 );
 
--- Tabel market sentiment override
 CREATE TABLE market_sentiment (
-  id SERIAL PRIMARY KEY,
-  overall VARCHAR(10) NOT NULL,         -- bearish, neutral, bullish
+  id BIGSERIAL PRIMARY KEY,
+  simulation_run_id UUID REFERENCES simulation_runs(id),
+  overall VARCHAR(10) NOT NULL CHECK (overall IN ('bearish','neutral','bullish')),
   volatility_regime VARCHAR(10),
   sector_sentiment JSONB,
   set_by VARCHAR(64),
   valid_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE scenario_events (
+  id UUID PRIMARY KEY,
+  simulation_run_id UUID REFERENCES simulation_runs(id),
+  event_type VARCHAR(50) NOT NULL,
+  symbol VARCHAR(12),
+  intensity NUMERIC(8,4),
+  simulation_only BOOLEAN NOT NULL DEFAULT FALSE,
+  bei_announcement_id UUID,
+  published_at TIMESTAMPTZ,
+  status VARCHAR(20) NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
+
+Migration memakai `goose` dan harus reversible bila aman. Runtime tidak boleh memakai auto-migrate. State saldo, posisi, dan order resmi tidak disimpan sebagai source of truth pada schema ini.
 
 ---
 
@@ -1026,15 +1379,21 @@ CREATE TABLE market_sentiment (
 
 | Aspek | Requirement |
 |---|---|
-| **Throughput** | Bot service mampu submit hingga 300 order/menit ke Sekuritas tanpa timeout |
-| **Latency** | Keputusan bot (dari signal hingga order submit) < 5 detik dalam kondisi normal |
+| **Throughput** | Sustained 300 aksi order/menit, burst 100/10 detik, hard breaker 600/menit |
+| **Decision Latency** | Signal sampai masuk queue p95 < 100 ms |
+| **Queue Latency** | Waktu tunggu queue p95 < 2 detik pada kondisi normal |
+| **Execution Latency** | Keluar queue sampai response Sekuritas p95 < 500 ms; item stale tidak dikirim |
 | **Isolation** | Error satu bot tidak menghentikan bot lain atau sistem utama |
-| **Reliability** | Bot service bisa restart tanpa kehilangan state penting (ambil dari DB/API) |
-| **Reproducibility** | Mendukung `random_seed` per bot untuk memutar ulang skenario testing |
-| **Observability** | Semua keputusan tercatat; admin dashboard tersedia |
-| **Safety** | Circuit breaker aktif; kill switch tersedia; bot tidak bisa berjalan saat `MATS_STATUS=halted` |
-| **Configurable** | Semua parameter bot bisa diubah via API atau YAML tanpa restart full |
+| **Reliability** | Restart melakukan replay atau bulk snapshot tanpa kehilangan state strategi dan tanpa memakai state account stale |
+| **Reproducibility** | Deterministic test mode menyimpan run ID, virtual clock, config snapshot, seeds, input journal, dan scheduler order |
+| **Observability** | Semua aksi/material decision tercatat; HOLD disampling; metric queue, rate, error, memory, dan dependency tersedia |
+| **Safety** | Circuit breaker, queue pressure breaker, dependency breaker, STP, dan kill switch aktif |
+| **Configurable** | YAML menjadi bootstrap; DB + optimistic config version menjadi source of truth runtime |
 | **Fairness** | Informasi market yang digunakan bot sama dengan yang tersedia untuk player |
+| **Resource BOT** | Pada 2.000 bot: RSS ≤ 500 MB, CPU average ≤ 10%, CPU peak ≤ 40% pada mesin target |
+| **Resource Stack** | Total stack target ≤ 12 GB RAM agar tidak memicu paging pada laptop 16 GB |
+| **Database** | BOT DB pool default maksimum 15 koneksi; decision log menggunakan batch insert |
+| **Recovery** | Event gap terdeteksi, bot terkait di-pause, dan reconciliation selesai sebelum resume |
 
 ---
 
@@ -1042,6 +1401,12 @@ CREATE TABLE market_sentiment (
 
 ### Kriteria Minimum MVP
 
+- [ ] Setiap putaran sesi memiliki `session_instance_id` dan `virtual_day_index` unik
+- [ ] Batch provisioning dan token issuance idempotent tersedia
+- [ ] Genesis seeding konsisten antara cash/position Sekuritas dan custody BEI
+- [ ] Bulk portfolio snapshot dan sequenced account event stream tersedia
+- [ ] Snapshot `as_of_sequence` + replay tidak kehilangan event yang concurrent
+- [ ] Timeout submit diselesaikan melalui `client_order_id` tanpa duplicate order
 - [ ] Bot dapat didaftarkan sebagai akun khusus di Sekuritas tanpa jalur order bypass
 - [ ] Bot dapat submit, amend, cancel order melalui Sekuritas API sama seperti player
 - [ ] Bot terkena reject jika ARA/ARB, saldo kurang, fraksi salah, non-cancellation period
@@ -1049,17 +1414,28 @@ CREATE TABLE market_sentiment (
 - [ ] Settlement bot berjalan sama seperti player
 - [ ] Minimal 3 strategi bot berjalan bersamaan: noise trader, market maker, momentum
 - [ ] Admin dapat pause/resume bot individual melalui API
+- [ ] Pause, pause-and-cancel, disable, dan kill switch mengikuti state machine normatif
 - [ ] Bot audit log tersedia dan bisa dicari
+- [ ] Restart saat terdapat open order pulih melalui replay/snapshot tanpa double reservation
+- [ ] MATS mencegah self-trade berdasarkan account ID
+- [ ] PoC 10 bot lulus satu siklus sesi lengkap tanpa mismatch reconciliation
 
 ### Kriteria Full Feature
 
-- [ ] Semua 8 strategi bot berjalan (termasuk bandar multi-hari)
+- [ ] Semua 8 strategi autonomous berjalan; Panic Seller berjalan sebagai scenario actor
 - [ ] Herd behavior dan sentiment system aktif
 - [ ] Bot performance dashboard tersedia
 - [ ] Circuit breaker dan auto-disable loss limit berfungsi
 - [ ] Skenario pasar A–E bisa disimulasikan
 - [ ] Bot service dapat di-restart tanpa kehilangan state kritis
-- [ ] Reproduksi skenario via random seed berfungsi
+- [ ] Deterministic test run dapat direplay dengan hasil keputusan/order yang sama
+- [ ] IPO subscription bot berjalan melalui Sekuritas dengan reserve, allocation, dan refund benar
+- [ ] Event/news dipublikasikan kepada player sebelum reaction delay bot dimulai
+- [ ] Load test 500 bot memenuhi seluruh performance budget
+- [ ] Load test 1.000 dan 2.000 bot terdokumentasi; 2.000 tidak menjadi syarat default runtime
+- [ ] Scenario A–E lulus oracle dan correctness invariant pada `BOT_PERFORMANCE_TEST_PLAN.md`
+- [ ] Normal market memenuhi baseline quote ratio, empty-book duration, spread, reject, STP, dan reconciliation
+- [ ] Baseline anti-predictability pada `BOT_STRATEGY_SPEC.md` aktif sebelum full strategy release
 
 ---
 
@@ -1070,23 +1446,52 @@ CREATE TABLE market_sentiment (
 | **Deployment** | Bot berjalan sebagai proses terpisah di laptop lokal (privat, tidak publik) |
 | **Akses pasar** | Bot hanya melalui Sekuritas API `http://localhost:3002` |
 | **Market data** | Bot subscribe langsung ke MATS WebSocket secara internal (bukan via proxy Sekuritas) |
+| **Private account state** | Satu sequenced internal event stream + bulk snapshot dari Sekuritas |
 | **Modal bot** | Bot institusional boleh punya modal jauh lebih besar dari player; tidak perlu setara |
 | **Informasi** | Simetris — bot hanya boleh membaca data publik pasar yang sama dengan player |
 | **Tujuan utama** | Menghidupkan pasar semirip mungkin dengan kondisi pasar saham Indonesia di reallife |
 | **Short selling/margin** | Tidak digunakan di MVP |
-| **Email verification** | Bot di-bypass (auto-verified oleh admin/sistem) |
-| **Multi-hari** | Bandar dan value investor mendukung strategi multi-hari |
-| **Tech stack** | Node.js TypeScript, PostgreSQL terpisah (port 5435), Redis berbagi |
+| **Autentikasi** | Bot di-auto-verified saat internal provisioning dan memperoleh short-lived JWT tanpa menyimpan password |
+| **Multi-hari** | Bandar dan value investor menyimpan state berdasarkan session instance |
+| **Config source** | YAML bootstrap; database BOT menjadi source of truth runtime |
+| **Tech stack** | Go, chi, coder/websocket, pgx, goose, PostgreSQL terpisah, Redis berbagi |
+| **Default scale** | 300–500 aktif; 1.000 extended; 2.000 stress test |
+| **Dashboard** | Terintegrasi ke Super Admin Sekuritas; tidak ada port frontend BOT terpisah |
+| **Money type** | BIGINT/NUMERIC; tidak menggunakan float untuk uang persisten |
 
 ---
 
-## 17. Pertanyaan Terbuka
+## 17. Prasyarat API Lintas Layanan
 
-- Apakah `bots.yaml` menjadi konfigurasi tunggal atau ada management UI tersendiri?
-- Berapa jumlah bot maksimum yang bisa berjalan tanpa membebani laptop secara signifikan? (perlu benchmark)
-- Apakah bot perlu mekanisme "memory" antar sesi — misalnya bandar bot mengingat posisi akumulasinya dari hari kemarin?
-- Apakah perlu logging ke file (untuk debugging) selain ke database?
-- Kapan bot service mulai dieksekusi? Setelah fase core Mandala Exchange stabil?
+Seluruh keputusan terbuka sebelumnya telah ditutup oleh Bagian 0 dan Bagian 16. Implementasi BOT penuh menunggu kontrak berikut:
+
+### 17.1 BEI/MATS
+
+- `trading_session_instance` unik untuk setiap putaran simulasi.
+- `session_state`/`session_timer` membawa instance ID, virtual day, durasi, dan remaining time.
+- Endpoint existing `GET /v1/integration/mats/sessions/active` diperluas untuk snapshot instance aktif; tidak membuat path sesi baru yang duplikatif.
+- `GET /v1/indices/MDX/composition` menyediakan simbol, bobot, effective time, dan version.
+- Read-only BOT service identity memiliki scope minimal `market:read`, `rules:read`, dan `corporate-action:read`.
+- MATS menerapkan Self-Trade Prevention berdasarkan account ID.
+
+### 17.2 Sekuritas
+
+- `POST /api/v1/internal/bots/provision`
+- `POST /api/v1/internal/bots/tokens`
+- `POST /api/v1/internal/bots/genesis`
+- `POST /api/v1/internal/bots/portfolio-snapshot`
+- `GET /api/v1/internal/bots/events/ws?after_sequence=...`
+- `POST /api/v1/ipo-events/:id/subscriptions`
+- `GET /api/v1/orders/by-client-id/:clientOrderId`
+
+Seluruh internal endpoint memakai scoped service token, idempotency key untuk mutation, audit log, request limit, dan hanya bind ke jaringan internal/loopback. Wire contract dan error semantics mengikuti `BOT_API_CONTRACTS.md`.
+
+### 17.3 Logging dan Operasi
+
+- Structured log ke stdout/file dipakai untuk debugging operasional dengan rotation.
+- Decision/audit log material disimpan ke database.
+- Secret dan data player tidak boleh muncul di kedua jenis log.
+- BOT baru dieksekusi setelah seluruh task Fase 0 pada MAIN_PLAN selesai.
 
 ---
 
@@ -1096,6 +1501,6 @@ Ketika **SISTEM BOT** ini sudah diimplementasikan sepenuhnya (100%), berikut ada
 
 1. **Pasar yang Bernyawa (Alive Market):** Saat *player* manusia melakukan login, mereka akan langsung disuguhkan *Order Book* yang berkedip, *running trade* yang terus mengalir, dan grafik harga (chart) yang bergerak naik-turun seolah-olah sedang bermain di bursa saham sungguhan dengan ribuan *player* online.
 2. **Reaktivitas Natural (Cause & Effect):** Jika *player* manusia membeli saham dalam jumlah raksasa secara tiba-tiba (HAKA), sistem bot akan bereaksi secara instan: bot momentum akan ikut-ikutan membeli (fomo), harga akan melonjak, lalu bot *contrarian* / *value investor* akan mulai menjual untuk mengambil *profit*.
-3. **Likuiditas Tak Terbatas namun Rasional:** Saham-saham kasta atas (Bluechip/LQ45) tidak akan pernah mengalami "kekosongan" antrean (selalu ada bid/ask yang rapat berkat Market Maker). Sebaliknya, saham kasta bawah akan terasa sepi dan menakutkan karena *spread* yang lebar dan antrean bolong-bolong.
-4. **Zero-Maintenance (Auto-Pilot):** Admin cukup menyalakan *server* di pagi hari, dan ribuan bot ini akan otomatis menyesuaikan diri. Jika ada emiten baru (IPO), mereka otomatis meramaikannya tanpa perlu admin melakukan *coding* ulang atau mengubah konfigurasi (berkat *Dynamic Market Discovery*).
-5. **Kekuatan Stress-Test:** Sistem mampu menangani *throughput* ribuan *order* per detik/menit tanpa membuat server utama (BEI & Sekuritas) lumpuh, membuktikan ketangguhan arsitektur *Mandala Exchange*.
+3. **Likuiditas Rasional:** Saham kasta atas memiliki quote yang konsisten sesuai inventory dan risk limit Market Maker. Likuiditas tetap terbatas oleh modal, inventory, fee, dan global rate limit; saham kasta bawah tetap lebih sepi dan memiliki spread lebih lebar.
+4. **Low-Maintenance Auto-Pilot:** Admin menyalakan stack dan BOT melakukan health check, provisioning/reconciliation, serta market discovery otomatis. Emiten/IPO baru diproses melalui discovery dan workflow Sekuritas tanpa perubahan kode.
+5. **Kekuatan Stress-Test Terukur:** Sistem memenuhi performance budget pada 500 bot aktif dan memiliki hasil benchmark terdokumentasi untuk 1.000/2.000 bot tanpa menjadikan angka tersebut default runtime.

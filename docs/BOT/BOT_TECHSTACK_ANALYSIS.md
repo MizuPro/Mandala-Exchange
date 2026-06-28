@@ -1,7 +1,9 @@
-# Analisis Tech Stack & Feasibility: 500–2000 Bot di Laptop Lokal
+# Analisis Tech Stack & Feasibility: 300–2000 Bot di Laptop Lokal
+
+> **Status**: Analisis feasibility. Angka normatif, canonical workload, dan pass/fail gate mengikuti `BOT_PRD.md` serta `BOT_PERFORMANCE_TEST_PLAN.md`.
 
 **Konteks Sistem**: Intel i5-10300H (4C/8T, 2.5–4.5GHz), 16GB RAM  
-**Service yang Sudah Berjalan**: BEI (Node.js), MATS (Go), Sekuritas Backend (Node.js), Sekuritas Frontend (React/Vite), 3× PostgreSQL, Redis
+**Service yang Sudah Berjalan**: BEI (Node.js), MATS (Go), Sekuritas Backend (Node.js), Sekuritas Frontend (React/Vite), 4× PostgreSQL termasuk BOT DB, Redis, Docker/WSL, browser, dan IDE
 
 ---
 
@@ -22,7 +24,7 @@ Sebelum membahas bot, kita perlu tahu sisa resource yang tersedia di laptop Anda
 | OS + background (Windows) | 2.0–3.0 GB | 5–10% | — |
 | **TOTAL EXISTING** | **~3.5–5 GB** | **~10–25%** | — |
 
-**Tersisa untuk BOT Service**: ~11–12.5 GB RAM, dan ~75–90% CPU headroom.
+Estimasi di atas belum memasukkan seluruh overhead Docker/WSL, browser, IDE, cache database, dan peak allocation. Budget normatif total stack adalah maksimal 12 GB; sisa resource harus dibuktikan melalui environment manifest dan benchmark, bukan diasumsikan.
 
 ---
 
@@ -83,10 +85,11 @@ Shared market data cache     = ~20 MB   (order book untuk semua bot)
 HTTP & WS connection pool    = ~10 MB
 Runtime overhead (Go/Node)   = ~30–80 MB
 ───────────────────────────────────────────
-TOTAL RAM BOT SERVICE        ≈ 90–140 MB
+RAW STATE/RUNTIME MINIMUM    ≈ 90–140 MB
+OPERATIONAL BUDGET BOT       ≤ 500 MB
 ```
 
-**Kesimpulan RAM**: 2000 bot hanya butuh ~100an MB. Sangat aman untuk spek 16GB.
+**Kesimpulan RAM**: Raw state agent memang kecil, tetapi snapshot, queue, event buffer, log batch, metrics, database client, dan GC menaikkan working set. Estimasi operasional konservatif adalah 250–500 MB untuk BOT Service. Total stack tetap menjadi batas utama.
 
 ---
 
@@ -120,9 +123,9 @@ Sangat disarankan menggunakan **Go**.
 
 ## 6. Apakah Laptop Anda (i5-10300H, 16GB) Sanggup 2000 Bot?
 
-### **SANGAT SANGGUP**.
+### **MUNGKIN UNTUK STRESS TEST; BUKAN DEFAULT TANPA BENCHMARK**.
 
-Masalah yang mungkin muncul **bukan pada laptop Anda**, melainkan pada **arsitektur sistem** jika tidak dirancang dengan benar. 
+Target default adalah 300–500 bot. Skala 1.000 adalah extended test dan 2.000 adalah maximum stress test. Correctness wajib tetap lulus pada seluruh skala, sedangkan performance gate default wajib lulus pada 300–500 bot.
 
 ### Ancaman Bottleneck Sebenarnya: Sekuritas API
 Beban terberat tidak ada pada BOT Service saat "memikirkan" strategi, melainkan saat **2000 bot mengirim HTTP request secara bersamaan** ke backend Sekuritas (`POST /api/v1/orders`).
@@ -144,26 +147,27 @@ Untuk memastikan laptop Anda tetap "dingin" dan tidak hang, BOT Service (di Go) 
 Bot tidak boleh mengirim HTTP request langsung saat itu juga. Mereka menaruh pesanan di sebuah "pipa" (*channel* dalam Go), dan hanya ada beberapa "kurir" (*worker*) yang mengirimnya ke Sekuritas.
 
 ```go
-// Di Go:
-orderQueue := make(chan OrderRequest, 5000)
+orderQueue := make(chan OrderRequest, 5_000)
+limiter := rate.NewLimiter(rate.Every(200*time.Millisecond), 100) // 300/menit, burst 100
 
-// Hanya izinkan 10 worker yang memproses pengiriman ke Sekuritas
 for i := 0; i < 10; i++ {
     go func() {
         for req := range orderQueue {
-            // Worker ini mengirim order ke Sekuritas API
+            if err := limiter.Wait(ctx); err != nil {
+                return
+            }
             submitToSekuritas(req)
-            // Kasih jeda sedikit agar backend Node.js tidak dihajar
-            time.Sleep(50 * time.Millisecond)
         }
     }()
 }
 ```
 
+Implementasi final memakai priority queue, per-action TTL, hard breaker 600/menit, dan stable `client_order_id` sesuai PRD; snippet hanya memperlihatkan global limiter.
+
 ### B. Single WebSocket Connection untuk Market Data
 Jangan biarkan 2000 bot melakukan koneksi WebSocket ke MATS masing-masing! 
 - BOT Service hanya buka **1 koneksi WebSocket** ke MATS.
-- Ketika data harga terbaru datang, BOT Service membagikannya (*fan-out*) ke 2000 variabel memori bot secara internal.
+- Event memperbarui shared immutable snapshot per symbol. Bot membaca snapshot saat scheduler mengevaluasi strategi; event tidak disalin ke 2000 channel/variabel agent.
 
 ### C. Staggered Startup (Tidak Bangun Bersamaan)
 Saat menyalakan BOT Service, jangan hidupkan 2000 bot di milidetik yang sama.
@@ -177,14 +181,14 @@ Setiap keputusan bot akan disimpan ke database (`bot_decision_logs`). Jangan lak
 ## 8. Kesimpulan & Roadmap Implementasi
 
 **Tech Stack**: **Go (Golang)**. Ringan, multi-core secara otomatis, dan ramah memory.
-**Kapasitas**: Target 500–2000 bot sangat realistis untuk spek i5 10300H + 16GB RAM, dengan sisa *resource* masih sangat banyak.
+**Kapasitas**: 300–500 bot adalah target default, 1.000 extended test, dan 2.000 stress test. Kelayakan final ditentukan oleh `BOT_PERFORMANCE_TEST_PLAN.md`.
 
 ### Langkah Implementasi Bertahap:
 
 1. **Tahap 1 (Infrastruktur)**: Buat skeleton BOT Service di Go, siapkan koneksi ke MATS (WS) dan Sekuritas (HTTP).
 2. **Tahap 2 (Proof of Concept)**: Buat 10 bot dengan strategi *Noise Trader* sederhana. Validasi apakah order sukses masuk dan match.
 3. **Tahap 3 (Scaling Pertama)**: Naikkan menjadi 100 bot. Monitor penggunaan RAM dan CPU laptop Anda. Monitor kecepatan respon Sekuritas Backend.
-4. **Tahap 4 (Advanced Strategies)**: Implementasikan Market Maker, Value Investor, dan Bandar.
-5. **Tahap 5 (Massive Scale)**: Naikkan pelan-pelan ke 500, lalu 1000, lalu 2000. Terapkan Rate Limiting yang ketat.
+4. **Tahap 4 (Default Gate)**: Naikkan ke 300 lalu 500 dan lulus canonical workload, failure injection, serta soak test.
+5. **Tahap 5 (Extended/Stress)**: Naikkan ke 1.000 lalu 2.000 tanpa mengubahnya menjadi default runtime.
 
-Dengan pendekatan terstruktur ini, ekosistem Mandala Exchange akan hidup layaknya bursa asli tanpa membakar *resource* laptop Anda.
+Dengan pendekatan terstruktur ini, kapasitas aman ditetapkan dari data benchmark, bukan estimasi state agent semata.
