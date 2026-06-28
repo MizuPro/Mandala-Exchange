@@ -459,6 +459,7 @@ export const ipoEvents = pgTable("ipo_events", {
   subscriptionEnd: timestamp("subscription_end", { withTimezone: true }),
   listingDate: date("listing_date"),
   status: ipoStatusEnum("status").notNull().default("draft"),
+  underwriterBrokerId: uuid("underwriter_broker_id").references(() => brokerMembers.id),
   metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
   ...timestamps
 });

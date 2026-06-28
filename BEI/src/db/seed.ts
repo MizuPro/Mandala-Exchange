@@ -60,15 +60,66 @@ async function main() {
         ('BEI-like Main Board Regular', 'main', 'regular', true),
         ('BEI-like Development Regular', 'development', 'regular', true),
         ('BEI-like New Economy Regular', 'new_economy', 'regular', true),
-        ('Special Monitoring Call Auction Ready', 'watchlist', 'regular', true)
+        ('Special Monitoring Call Auction Ready', 'watchlist', 'regular', true),
+        ('Derivatives Board (Waran & Right Issue)', 'derivatives', 'regular', false)
       ON CONFLICT (board, market_segment) DO UPDATE SET
         name = excluded.name,
         is_default = excluded.is_default,
         updated_at = now()
     `);
 
-    const profiles = await pool.query("SELECT id, board FROM trading_rule_profiles WHERE board IN ('main','development','new_economy','watchlist')");
+    const profiles = await pool.query("SELECT id, board FROM trading_rule_profiles WHERE board IN ('main','development','new_economy','watchlist','derivatives')");
     for (const profile of profiles.rows) {
+      // === BLOK KHUSUS DERIVATIVES: lot 100, tick 1, ARA/ARB tanpa batas (~999%) ===
+      if (profile.board === 'derivatives') {
+        await pool.query(
+          `
+          INSERT INTO lot_size_rules (profile_id, instrument_type, lot_size, effective_date)
+          VALUES ($1, 'stock', 100, CURRENT_DATE)
+          ON CONFLICT (profile_id, instrument_type, effective_date) DO UPDATE SET
+            lot_size = excluded.lot_size,
+            updated_at = now()
+          `,
+          [profile.id]
+        );
+        await pool.query(
+          `
+          INSERT INTO tick_size_rules (profile_id, min_price, max_price, tick_size)
+          VALUES ($1, 1, NULL, 1)
+          ON CONFLICT (profile_id, min_price, max_price) DO UPDATE SET
+            tick_size = excluded.tick_size,
+            updated_at = now()
+          `,
+          [profile.id]
+        );
+        // ARA/ARB 9999.9999 = ~999999.99% => praktis tidak ada batas harga untuk waran/right
+        await pool.query(
+          `
+          INSERT INTO price_band_rules (profile_id, min_reference_price, max_reference_price, ara_percent, arb_percent, min_price)
+          VALUES ($1, 1, NULL, 9999.9999, 9999.9999, 1)
+          ON CONFLICT (profile_id, min_reference_price, max_reference_price) DO UPDATE SET
+            ara_percent = excluded.ara_percent,
+            arb_percent = excluded.arb_percent,
+            min_price = excluded.min_price,
+            updated_at = now()
+          `,
+          [profile.id]
+        );
+        await pool.query(
+          `
+          INSERT INTO auto_rejection_rules (profile_id, max_lots_per_order, max_listed_shares_percent)
+          VALUES ($1, 50000, NULL)
+          ON CONFLICT (profile_id) DO UPDATE SET
+            max_lots_per_order = excluded.max_lots_per_order,
+            max_listed_shares_percent = excluded.max_listed_shares_percent,
+            updated_at = now()
+          `,
+          [profile.id]
+        );
+        continue; // lewati logika loop standar untuk board lain
+      }
+      // === AKHIR BLOK KHUSUS DERIVATIVES ===
+
       await pool.query(
         `
         INSERT INTO lot_size_rules (profile_id, instrument_type, lot_size, effective_date)

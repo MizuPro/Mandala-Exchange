@@ -6,7 +6,7 @@ const { Pool } = pg;
 
 const enumStatements = [
   "CREATE TYPE listing_status AS ENUM ('listed','suspended','delisted')",
-  "CREATE TYPE board_type AS ENUM ('main','development','acceleration','new_economy','watchlist')",
+  "CREATE TYPE board_type AS ENUM ('main','development','acceleration','new_economy','watchlist','derivatives')",
   "CREATE TYPE market_mechanism AS ENUM ('regular','call_auction','cash','negotiated')",
   "CREATE TYPE notation_type AS ENUM ('watchlist','special_monitoring','suspend','delisting_risk','unusual_condition','admin_note')",
   "CREATE TYPE announcement_type AS ENUM ('financial_report','material_disclosure','news','rups','dividend','rights_issue','ipo','corporate_action')",
@@ -402,6 +402,7 @@ CREATE TABLE IF NOT EXISTS ipo_events (
   subscription_end timestamptz,
   listing_date date,
   status ipo_status NOT NULL DEFAULT 'draft',
+  underwriter_broker_id uuid REFERENCES broker_members(id),
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -577,11 +578,17 @@ async function createEnums(pool: pg.Pool) {
   }
 }
 
+// ALTER TYPE ADD VALUE harus dijalankan di luar transaksi di PostgreSQL
+async function alterEnums(pool: pg.Pool) {
+  await pool.query("ALTER TYPE board_type ADD VALUE IF NOT EXISTS 'derivatives'");
+}
+
 async function main() {
   const pool = new Pool({ connectionString: config.DATABASE_URL });
   try {
     await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
     await createEnums(pool);
+    await alterEnums(pool);
     await pool.query(tableSql);
     await pool.query(compatibilitySql);
     console.log("BEI database migration completed");
