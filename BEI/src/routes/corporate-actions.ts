@@ -30,6 +30,7 @@ const corporateActionBody = z.object({
   ratioDenominator: z.coerce.number().positive().optional(),
   cashAmountPerShare: z.coerce.number().positive().optional(),
   exercisePrice: z.coerce.number().positive().optional(),
+  entitlementSymbol: z.string().optional(),
   idempotencyKey: z.string().optional(),
   metadata: z.record(z.unknown()).default({})
 });
@@ -45,6 +46,7 @@ const ipoEventBody = z.object({
   subscriptionEnd: z.coerce.date().optional(),
   listingDate: z.string().date().optional(),
   status: z.enum(ipoStatuses).default("draft"),
+  underwriterBrokerId: z.string().uuid(),
   metadata: z.record(z.unknown()).default({})
 });
 
@@ -118,6 +120,9 @@ async function existingEntitlementsForAction(actionId: string, symbol: string) {
 }
 
 async function sendCorporateActionWebhook(action: typeof corporateActions.$inferSelect, symbol: string, entitlements: unknown[]) {
+  const metadata = action.metadata as any;
+  const entitlementSymbol = metadata?.entitlement_symbol || metadata?.entitlementSymbol;
+
   await postSekuritasWebhook("corporate_action", {
     event_id: `bei:corporate-action:${action.id}:completed`,
     idempotency_key: action.idempotencyKey || `bei:corporate-action:${action.id}:completed`,
@@ -135,6 +140,7 @@ async function sendCorporateActionWebhook(action: typeof corporateActions.$infer
       recording_date: action.recordingDate,
       execution_date: action.executionDate,
       description: action.description,
+      entitlement_symbol: entitlementSymbol,
       metadata: action.metadata
     },
     entitlements
@@ -148,6 +154,13 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
     const body = corporateActionBody.parse(request.body);
     const [security] = await db.select().from(listedSecurities).where(eq(listedSecurities.id, body.securityId));
     if (!security) throw notFound("Security not found");
+
+    const entitlementSymbol = body.entitlementSymbol || (request.body as any).entitlementSymbol;
+    const metadata = {
+      ...body.metadata,
+      ...(entitlementSymbol ? { entitlement_symbol: entitlementSymbol } : {})
+    };
+
     const [created] = await db
       .insert(corporateActions)
       .values({
@@ -155,7 +168,8 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
         ratioNumerator: body.ratioNumerator?.toString(),
         ratioDenominator: body.ratioDenominator?.toString(),
         cashAmountPerShare: body.cashAmountPerShare?.toString(),
-        exercisePrice: body.exercisePrice?.toString()
+        exercisePrice: body.exercisePrice?.toString(),
+        metadata
       })
       .returning();
     if (!created) throw badRequest("Corporate action was not created");
@@ -264,6 +278,28 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
       await db.insert(custodyLedgerEntries).values(ledgerRows).onConflictDoNothing();
     }
 
+    // POIN 2: Auto-register simbol waran/right ke listed_securities jika belum ada
+    if (action.type === "rights_issue" || action.type === "warrant") {
+      const suffix = action.type === "rights_issue" ? "-R" : "-W";
+      const derivativeSymbol = `${security.symbol}${suffix}`;
+      const derivativeName = action.type === "rights_issue"
+        ? `${security.name} - Rights Issue`
+        : `${security.name} - Warrant`;
+      const numeratorVal = toNumber(action.ratioNumerator, 1);
+      const denominatorVal = toNumber(action.ratioDenominator, 1);
+      const totalDerivativeShares = positions.reduce((sum, p) => {
+        return sum + Math.trunc(toNumber(p.quantity) * (numeratorVal / denominatorVal));
+      }, 0);
+      await pool.query(
+        `INSERT INTO listed_securities
+           (issuer_id, symbol, name, board, sector, shares_outstanding,
+            ipo_price, reference_price, previous_close, status, market_mechanism, listed_at)
+         VALUES ($1, $2, $3, 'derivatives', $4, $5, 50, 50, 50, 'listed', 'regular', CURRENT_DATE)
+         ON CONFLICT (symbol) DO NOTHING`,
+        [security.issuerId, derivativeSymbol, derivativeName, security.sector, totalDerivativeShares]
+      );
+    }
+
     const [updated] = await db
       .update(corporateActions)
       .set({ status: "completed", updatedAt: new Date() })
@@ -322,9 +358,35 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
     const [event] = await db.select().from(ipoEvents).where(eq(ipoEvents.id, params.id));
     if (!event) throw notFound("IPO event not found");
     if (!event.securityId) throw badRequest("IPO event must have securityId before allocation");
+    if (!event.underwriterBrokerId) throw badRequest("IPO event must have underwriterBrokerId before allocation");
 
     const [security] = await db.select().from(listedSecurities).where(eq(listedSecurities.id, event.securityId));
     const symbol = security?.symbol || "N/A";
+
+    const [underwriterBroker] = await db.select().from(brokerMembers).where(eq(brokerMembers.id, event.underwriterBrokerId));
+    if (!underwriterBroker) throw badRequest("Underwriter broker not found");
+    const underwriterAccount = await ensureCustodyAccount({
+      brokerId: underwriterBroker.id,
+      brokerCode: underwriterBroker.code,
+      investorId: `TREASURY_IPO_${event.id}`
+    });
+
+    // Mint initial supply to Underwriter Account
+    await db
+      .insert(custodyLedgerEntries)
+      .values({
+        custodyAccountId: underwriterAccount.id,
+        securityId: event.securityId,
+        entryType: "ipo_allocation",
+        assetType: "security",
+        quantity: event.offeredShares.toString(),
+        cashAmount: "0",
+        positionState: "settled",
+        referenceType: "ipo_allocation",
+        referenceId: event.id,
+        idempotencyKey: `ledger:ipo:mint:${event.id}`
+      })
+      .onConflictDoNothing();
 
     const subscriptions = await db.select().from(ipoSubscriptions).where(eq(ipoSubscriptions.ipoEventId, event.id));
     const generated = [];
@@ -366,6 +428,23 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
         })
         .onConflictDoNothing();
 
+      // Double-Entry: Debit Securities from Underwriter Account
+      await db
+        .insert(custodyLedgerEntries)
+        .values({
+          custodyAccountId: underwriterAccount.id,
+          securityId: event.securityId,
+          entryType: "ipo_allocation",
+          assetType: "security",
+          quantity: (-allocatedShares).toString(),
+          cashAmount: "0",
+          positionState: "settled",
+          referenceType: "ipo_allocation",
+          referenceId: allocation.id,
+          idempotencyKey: `ledger:ipo:${allocation.id}:underwriter_sec`
+        })
+        .onConflictDoNothing();
+
       generated.push(allocation);
 
       entitlements.push({
@@ -377,6 +456,54 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
         quantity: allocatedShares,
         idempotency_key: `ledger:ipo:${allocation.id}`
       });
+
+      // POIN 1: Pemotongan kas RDN senilai alokasi IPO
+      const totalCost = allocatedShares * toNumber(event.offeringPrice);
+      if (totalCost > 0) {
+        await db
+          .insert(custodyLedgerEntries)
+          .values({
+            custodyAccountId: account.id,
+            securityId: event.securityId,
+            entryType: "ipo_allocation",
+            assetType: "cash",
+            quantity: "0",
+            cashAmount: (-totalCost).toFixed(2),
+            positionState: "settled",
+            referenceType: "ipo_allocation",
+            referenceId: allocation.id,
+            idempotencyKey: `ledger:ipo:${allocation.id}:cash`
+          })
+          .onConflictDoNothing();
+
+        // Double-Entry: Credit Cash to Underwriter Account
+        await db
+          .insert(custodyLedgerEntries)
+          .values({
+            custodyAccountId: underwriterAccount.id,
+            securityId: event.securityId,
+            entryType: "ipo_allocation",
+            assetType: "cash",
+            quantity: "0",
+            cashAmount: totalCost.toFixed(2),
+            positionState: "settled",
+            referenceType: "ipo_allocation",
+            referenceId: allocation.id,
+            idempotencyKey: `ledger:ipo:${allocation.id}:underwriter_cash`
+          })
+          .onConflictDoNothing();
+
+        entitlements.push({
+          broker_account_id: subscription.investorId,
+          investor_id: subscription.investorId,
+          broker_code: broker.code,
+          symbol: symbol,
+          asset_type: "cash",
+          quantity: 0,
+          cash_amount: -totalCost,
+          idempotency_key: `ledger:ipo:${allocation.id}:cash`
+        });
+      }
     }
 
     await db.update(ipoEvents).set({ status: "allocation", updatedAt: new Date() }).where(eq(ipoEvents.id, event.id));
