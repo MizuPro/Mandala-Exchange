@@ -117,6 +117,12 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             Laporan & Log
           </button>
+          
+          <button onclick="switchTab('shareholders')" id="tab-btn-shareholders"
+            class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-left transition-all text-[#8B949E] hover:text-white hover:bg-[#21262D]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
+            Pemegang Saham
+          </button>
         </nav>
       </div>
       
@@ -607,6 +613,50 @@
         </div>
       </div>
 
+      <!-- ==================== TAB 5: PEMEGANG SAHAM ==================== -->
+      <div id="content-shareholders" class="hidden space-y-6">
+        <div class="flex justify-between items-center pb-4 border-b border-[#30363D]">
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Pemegang Saham (Shareholders)</h1>
+            <p class="text-xs text-[#8B949E]">Lihat daftar persentase kepemilikan saham dari buku besar kustodian bursa.</p>
+          </div>
+        </div>
+
+        <div class="bg-[#161B22] border border-[#30363D] rounded-xl p-6 space-y-6">
+          <div class="flex flex-wrap gap-4 items-end">
+            <div class="space-y-1">
+              <label class="text-[10px] font-bold text-[#8B949E] uppercase tracking-wider block">Kode Saham</label>
+              <input type="text" id="shareholder-symbol" placeholder="MOSE"
+                class="px-3 py-2 bg-[#0D1117] border border-[#30363D] rounded focus:outline-none focus:border-red-500 text-xs text-white font-mono w-40 uppercase">
+            </div>
+
+            <button onclick="fetchShareholders()"
+              class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded transition-colors uppercase tracking-wider">
+              Cari Data
+            </button>
+          </div>
+
+          <div class="bg-[#0D1117] border border-[#30363D] rounded-lg overflow-hidden">
+            <div class="p-4 border-b border-[#30363D] flex justify-between items-center">
+               <h3 class="text-sm font-bold text-white m-0" id="sh-symbol-display">Emiten: -</h3>
+               <span class="text-xs text-[#8B949E]" id="sh-total-display">Total Supply: 0 Lot</span>
+            </div>
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-[#161B22] border-b border-[#30363D]">
+                  <th class="p-3 text-[11px] font-bold text-[#8B949E] uppercase tracking-wider">Email / Investor ID</th>
+                  <th class="p-3 text-[11px] font-bold text-[#8B949E] uppercase tracking-wider text-right">Jumlah (Lot)</th>
+                  <th class="p-3 text-[11px] font-bold text-[#8B949E] uppercase tracking-wider text-right">Persentase</th>
+                </tr>
+              </thead>
+              <tbody id="shareholders-tbody" class="divide-y divide-[#30363D]">
+                <tr><td colspan="3" class="p-4 text-center text-xs text-[#8B949E]">Masukkan kode saham dan klik cari.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 
@@ -669,9 +719,10 @@
       document.getElementById('content-ipo').classList.add('hidden');
       document.getElementById('content-settlement').classList.add('hidden');
       document.getElementById('content-reports').classList.add('hidden');
+      document.getElementById('content-shareholders').classList.add('hidden');
 
       // Reset all tab button styles
-      const tabs = ['issuers', 'ipo', 'settlement', 'reports'];
+      const tabs = ['issuers', 'ipo', 'settlement', 'reports', 'shareholders'];
       tabs.forEach(t => {
         const btn = document.getElementById(`tab-btn-${t}`);
         if (btn) {
@@ -1178,6 +1229,36 @@
         statusDisplay.innerText = 'Gagal';
         showToast(`Gagal memuat laporan: ${err.message}`, 'error');
         jsonDisplay.innerText = JSON.stringify({ error: err.message }, null, 2);
+      }
+    }
+
+    // SHAREHOLDERS TAB LOGIC
+    async function fetchShareholders() {
+      const symbol = document.getElementById('shareholder-symbol').value.trim().toUpperCase();
+      if (!symbol) return showToast('Kode saham harus diisi', 'error');
+
+      const tbody = document.getElementById('shareholders-tbody');
+      tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-xs text-[#8B949E]">Memuat data...</td></tr>';
+      
+      try {
+        const data = await apiRequest(`/v1/reports/shareholders/${symbol}`);
+        document.getElementById('sh-symbol-display').innerText = `Emiten: ${data.symbol}`;
+        document.getElementById('sh-total-display').innerText = `Total Supply: ${(data.totalShares / 100).toLocaleString('id-ID')} Lot`;
+        
+        if (data.shareholders && data.shareholders.length > 0) {
+          tbody.innerHTML = data.shareholders.map((sh, idx) => `
+            <tr class="hover:bg-[#161B22] transition-colors ${idx === 0 ? 'bg-[#21262D]/50' : ''}">
+              <td class="p-3 text-xs ${idx === 0 ? 'text-white font-bold' : 'text-[#C9D1D9]'}">${sh.email}</td>
+              <td class="p-3 text-xs text-right font-mono ${idx === 0 ? 'text-white font-bold' : 'text-[#C9D1D9]'}">${(sh.quantity / 100).toLocaleString('id-ID')} Lot</td>
+              <td class="p-3 text-xs text-right font-mono ${idx === 0 ? 'text-white font-bold' : 'text-[#C9D1D9]'}">${sh.percentage.toFixed(4)}%</td>
+            </tr>
+          `).join('');
+        } else {
+          tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-xs text-[#8B949E]">Tidak ada data pemegang saham.</td></tr>';
+        }
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-xs text-red-500">Gagal memuat data.</td></tr>';
+        showToast(err.message, 'error');
       }
     }
 

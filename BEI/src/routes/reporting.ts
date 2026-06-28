@@ -87,4 +87,68 @@ export async function registerReportingRoutes(app: FastifyInstance) {
     `);
     return result.rows;
   });
+
+  app.get("/reports/shareholders/:symbol", async (request, reply) => {
+    const params = z.object({ symbol: z.string() }).parse(request.params);
+    const upperSymbol = params.symbol.toUpperCase();
+    
+    try {
+      const result = await pool.query(
+        `
+        SELECT 
+          ca.investor_id as email, 
+          SUM(cle.quantity) as quantity
+        FROM custody_ledger_entries cle
+        JOIN custody_accounts ca ON ca.id = cle.custody_account_id
+        JOIN listed_securities ls ON ls.id = cle.security_id
+        WHERE ls.symbol = $1
+        GROUP BY ca.investor_id
+        HAVING SUM(cle.quantity) > 0
+        ORDER BY quantity DESC
+        `,
+        [upperSymbol]
+      );
+
+      const rows = result.rows;
+      let totalShares = 0;
+      for (const row of rows) {
+        totalShares += toNumber(row.quantity);
+      }
+      
+      // Enrich with Sekuritas data (best-effort)
+      try {
+        const secRes = await fetch("http://localhost:3002/api/v1/admin/users", {
+          headers: { "x-admin-token": "local-admin-service-token-2026-change-me" }
+        });
+        if (secRes.ok) {
+          const users = await secRes.json();
+          const userMap = new Map();
+          users.forEach((u: any) => {
+            if (u.broker_account_id) userMap.set(u.broker_account_id, u.email);
+          });
+          for (const row of rows) {
+            if (userMap.has(row.email)) {
+              row.email = userMap.get(row.email);
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore cross-service fetch errors in this simulated environment
+        console.warn("Could not fetch user details from Sekuritas", e);
+      }
+
+      const shareholders = rows.map((r) => {
+        const qty = toNumber(r.quantity);
+        return {
+          email: r.email,
+          quantity: qty,
+          percentage: totalShares > 0 ? (qty / totalShares) * 100 : 0
+        };
+      });
+
+      return { symbol: upperSymbol, totalShares, shareholders };
+    } catch (error: any) {
+      return reply.status(500).send({ error: error.message || "Failed to fetch shareholders" });
+    }
+  });
 }
