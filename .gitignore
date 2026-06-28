@@ -79,3 +79,6 @@ SEKURITAS/backend/src/debug_env.ts
 SEKURITAS/frontend/public/playground.html
 
 _BOT_deprecated
+
+# Local agents configuration
+.agents/
