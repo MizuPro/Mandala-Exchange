@@ -344,6 +344,9 @@ Expected:
 - Tidak ada future information.
 - Corporate action/IPO accounting idempotent.
 - Duplicate event tidak menggandakan cash/share movement.
+- IPO allocation tetap pending dan tidak dapat dijual sebelum status `listed`.
+- Partial/zero allocation menghasilkan debit/refund yang tepat.
+- Cancel sebelum allocation dan exceptional reversal setelah allocation lulus invariants.
 
 ## 11. Predictability Smoke Test
 

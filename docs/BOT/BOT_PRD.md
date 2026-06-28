@@ -683,6 +683,8 @@ Authorization: Bearer <bot-user-jwt>
 
 Sekuritas wajib melakukan validasi periode, reserve cash, meneruskan subscription ke BEI, mengubah reserved menjadi settled sesuai alokasi, me-refund selisih, dan memperbarui pending/available shares. Bot tidak boleh memanggil endpoint subscription BEI secara langsung.
 
+Lifecycle event adalah `draft → bookbuilding → subscription → allocation → listed`, dengan `cancelled` sebagai terminal sebelum listing. Investor hanya boleh cancel saat window subscription masih terbuka dan allocation belum dimulai. Saham hasil allocation tetap `pending` serta tidak dapat dijual sampai event menjadi `listed`. Cancellation setelah allocation wajib memakai reversal ledger/custody. Detail normatif terdapat pada Bagian 9 `BOT_API_CONTRACTS.md` dan Bagian 14 `BOT_STATE_MACHINES.md`.
+
 ---
 
 ## 6. Market Realism Engine

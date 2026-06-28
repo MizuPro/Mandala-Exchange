@@ -34,13 +34,13 @@ Dokumen pendamping normatif: `BOT_API_CONTRACTS.md`, `BOT_STATE_MACHINES.md`, `B
   - [ ] **Task 0.6 — Bulk Portfolio Snapshot & Sequenced Account Event Stream (Sekuritas)**  
     Implementasikan `POST /api/v1/internal/bots/portfolio-snapshot` dan `GET /api/v1/internal/bots/events/ws?after_sequence=...`. Snapshot transaction-consistent membawa `as_of_sequence`. Stream memakai global monotonic sequence, at-least-once delivery, retention, replay, heartbeat, explicit slow-consumer disconnect, gap detection, order lifecycle, settlement, dan corporate action.
   - [ ] **Task 0.7 — IPO Subscription via Sekuritas**  
-    Implementasikan `POST /api/v1/ipo-events/:id/subscriptions` untuk user dan bot JWT dengan reserve cash, forwarding ke BEI, allocation, settlement, refund, idempotency, dan notification.
+    Implementasikan event lifecycle `draft → bookbuilding → subscription → allocation → listed/cancelled` dan `POST /api/v1/ipo-events/:id/subscriptions` untuk user/BOT JWT. Cakupan wajib meliputi subscription lot size, window validation, full cash reserve, cancel sebelum allocation, forwarding idempotent ke BEI, partial/zero allocation, official fee, debit aktual, refund, pending shares sampai listing, exceptional reversal, notification, outbox, duplicate protection, dan reconciliation.
   - [ ] **Task 0.8 — Komposisi Indeks MDX (BEI)**  
     Implementasikan `GET /v1/indices/MDX/composition` dengan symbol, weight, effective time, dan version. Tambahkan contract test untuk perubahan komposisi.
   - [ ] **Task 0.9 — Rule/Fee/Session Contract Finalization**  
     Tetapkan dan uji kontrak existing `GET /v1/public/securities`, `GET /v1/integration/mats/rules`, `GET /v1/public/fee-schedule`, dan `GET /v1/integration/mats/sessions/active`. Jangan membuat endpoint sesi duplikatif.
   - [ ] **Task 0.10 — Cross-Service Contract & Recovery Tests**  
-    Implementasikan schema/error/idempotency dari `BOT_API_CONTRACTS.md`; uji retry provisioning, partial genesis failure, event gap/replay, snapshot concurrent event, slow consumer, submit unknown, restart dengan open order, duplicate webhook, settlement, IPO allocation/refund, session rollover, concurrent transition, dan STP.
+    Implementasikan schema/error/idempotency dari `BOT_API_CONTRACTS.md`; uji retry provisioning, partial genesis failure, event gap/replay, snapshot concurrent event, slow consumer, submit unknown, restart dengan open order, duplicate webhook, settlement, IPO reserve/cancel/partial allocation/refund/listing/reversal, session rollover, concurrent transition, dan STP.
   - [ ] **Task 0.11 — Contract Freeze Review**  
     Cocokkan implementasi BEI/MATS/Sekuritas dengan `BOT_API_CONTRACTS.md` dan `BOT_STATE_MACHINES.md`; version-kan perubahan, catat backward compatibility/migration, dan larang Fase 1 memakai mock yang berbeda dari contract final.
 - **Exit Criteria**:

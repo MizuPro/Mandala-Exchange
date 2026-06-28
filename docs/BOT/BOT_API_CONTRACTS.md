@@ -354,6 +354,47 @@ Authorization: Bearer <bot-jwt>
 
 ## 9. IPO Subscription
 
+### 9.1 IPO Event Lifecycle
+
+BEI menjadi source of truth lifecycle event:
+
+```text
+draft
+  → bookbuilding
+  → subscription
+  → allocation
+  → listed
+
+draft | bookbuilding | subscription | allocation
+  → cancelled
+```
+
+- `draft`: belum menerima subscription.
+- `bookbuilding`: informasi sudah dipublikasikan, tetapi subscription final belum dibuka.
+- `subscription`: Sekuritas boleh menerima dan meneruskan pemesanan.
+- `allocation`: subscription/cancel investor ditutup; BEI menghitung penjatahan.
+- `listed`: pending shares hasil allocation menjadi available untuk order reguler.
+- `cancelled`: terminal; reserve, debit, dan custody yang sudah terbentuk dipulihkan melalui refund/reversal idempotent.
+
+Event minimum:
+
+```json
+{
+  "id": "uuid",
+  "symbol": "MOSE",
+  "status": "subscription",
+  "offering_price_idr": "200",
+  "offered_shares": 50000,
+  "subscription_lot_size": 100,
+  "subscription_start": "2026-06-29T00:00:00Z",
+  "subscription_end": "2026-06-30T00:00:00Z",
+  "listing_at": "2026-07-01T00:00:00Z",
+  "version": 3
+}
+```
+
+### 9.2 Subscription Request
+
 ```http
 POST /api/v1/ipo-events/:id/subscriptions
 Authorization: Bearer <user-or-bot-jwt>
@@ -383,11 +424,131 @@ Response:
 Lifecycle:
 
 ```text
-requested → reserved → submitted_to_bei → allocated
-                                ↘ rejected/cancelled
+requested
+  → cash_reserved
+  → submitted_to_bei
+  → allocated
+  → settled
+
+requested → rejected
+cash_reserved → cancelled/refunded
+submitted_to_bei → rejected/refunded
+allocated → reversed/refunded
 ```
 
-Allocation mengubah reserve sebesar actual allocation menjadi debit/settled dan me-refund selisih ke available. Duplicate allocation event tidak boleh mendebit dua kali.
+### 9.3 Validation
+
+Sekuritas wajib memvalidasi:
+
+- Event berstatus `subscription` dan current time berada dalam subscription window.
+- `requested_shares > 0` dan merupakan kelipatan `subscription_lot_size`.
+- Cash available cukup untuk full requested shares ditambah fee IPO jika fee schedule menetapkannya.
+- Account aktif dan boleh mengikuti IPO.
+- Idempotency key tidak pernah dipakai dengan payload berbeda.
+
+Fee IPO berasal dari versioned fee schedule. Jika tidak ada fee IPO, default-nya nol; trading fee reguler tidak boleh diasumsikan berlaku.
+
+### 9.4 Reserve, Allocation, dan Refund
+
+Saat request:
+
+```text
+maximum_cost = requested_shares × offering_price + estimated_ipo_fee
+cash.available -= maximum_cost
+cash.reserved  += maximum_cost
+```
+
+Contoh allocation 25%:
+
+```text
+requested shares = 10.000
+offering price   = Rp200
+reserved cash    = Rp2.000.000
+allocated shares = 2.500
+actual cost      = Rp500.000
+refund           = Rp1.500.000
+```
+
+Saat allocation:
+
+```text
+cash.reserved -= full original reserve
+actual allocation cost + official fee dibukukan sebagai debit
+cash.available += unused reserve/refund
+position.pending += allocated shares
+```
+
+Allocation nol me-refund seluruh reserve.
+
+### 9.5 Cancellation
+
+Investor boleh cancel hanya jika event masih `subscription`, belum melewati `subscription_end`, dan allocation belum dimulai.
+
+```text
+subscription → cancelled
+cash.reserved → cash.available
+```
+
+Setelah event masuk `allocation`, investor tidak boleh cancel sendiri.
+
+### 9.6 Listing dan Share Availability
+
+Allocation tidak langsung membuat saham dapat dijual:
+
+```text
+allocated:
+  position.pending += allocated_shares
+  position.available tidak berubah
+
+listed:
+  position.pending -= allocated_shares
+  position.available += allocated_shares
+```
+
+Transition listing wajib idempotent. Player/BOT baru boleh menjual setelah shares berstatus available.
+
+### 9.7 IPO Cancellation dan Reversal
+
+Jika cancelled sebelum allocation:
+
+- Semua subscription menjadi cancelled.
+- Seluruh cash reserved kembali ke available.
+- Tidak ada custody allocation.
+
+Jika cancelled setelah allocation:
+
+- BEI membuat reversal custody ledger.
+- Sekuritas membuat reversal debit/fee.
+- Pending shares dikurangi.
+- Cash dikembalikan.
+- Ledger lama tidak dihapus.
+
+Jika shares sudah available karena listing, pembatalan tidak memakai flow biasa dan membutuhkan exceptional corporate-action/reversal process.
+
+### 9.8 Failure Semantics
+
+| Kegagalan | State/Aksi |
+|---|---|
+| Reserve sukses, submit BEI timeout | Tetap `cash_reserved`; retry idempotent |
+| BEI menerima, response hilang | Lookup dengan idempotency key; jangan membuat subscription baru |
+| Submit BEI gagal permanen | `rejected`; release seluruh reserve |
+| Allocation sukses, webhook gagal | BEI outbox retry |
+| Allocation webhook duplikat | Abaikan berdasarkan event/idempotency key |
+| Sekuritas restart | Lanjutkan dari persisted state/outbox |
+| Custody dan Sekuritas mismatch | Jangan tandai settled; reconcile/manual intervention |
+
+### 9.9 Invariants
+
+```text
+reserved cash tidak negatif
+allocated shares <= requested shares
+total allocation <= offered shares
+actual debit = allocation value + official IPO fee
+refund = original reserve - actual debit
+duplicate allocation tidak mengubah saldo dua kali
+pending shares tidak dapat dijual
+available shares bertambah tepat sekali saat listed
+```
 
 ## 10. Session Instance Contract
 
@@ -479,6 +640,9 @@ freshness:
 - Replay within retention dan expired retention.
 - Unknown order response setelah HTTP timeout.
 - Duplicate IPO allocation.
+- IPO cancel sebelum allocation.
+- IPO partial/zero allocation, refund, dan listing transition.
+- IPO cancellation setelah allocation dengan reversal.
 - MATS restart di tengah session.
 - Concurrent session rollover.
 - MDX weight/version validation.

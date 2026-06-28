@@ -270,6 +270,21 @@ pending
 
 ## 14. IPO Subscription State
 
+IPO event:
+
+```text
+draft
+  → bookbuilding
+  → subscription
+  → allocation
+  → listed
+
+draft | bookbuilding | subscription | allocation
+  → cancelled
+```
+
+Investor subscription:
+
 ```text
 requested
   → cash_reserved
@@ -278,13 +293,24 @@ requested
   → settled
   ↘ rejected
   ↘ cancelled
+  ↘ reversed
 ```
 
 - Reserve berdasarkan requested shares × offering price.
+- Subscription hanya diterima pada window/status `subscription` dan quantity wajib sesuai subscription lot size.
+- Investor dapat cancel hanya sebelum subscription end dan sebelum allocation.
 - Allocation dapat lebih kecil dari requested.
 - Actual allocation didebit.
 - Sisa reserve di-refund.
 - Duplicate allocation event diabaikan.
+- Allocation menambah `pending_shares`, bukan `available_shares`.
+- `pending_shares` berpindah ke available tepat sekali ketika IPO berstatus `listed`.
+- Cancel sebelum allocation melepaskan seluruh reserve.
+- Cancel setelah allocation menggunakan reversal ledger/custody, bukan delete data.
+- Jika allocation/listing event gagal dikirim, outbox melakukan retry dan transition tetap idempotent.
+- Subscription tidak boleh `settled` saat custody/Sekuritas mismatch.
+
+Detail payload, calculation, failure matrix, dan invariants mengikuti Bagian 9 `BOT_API_CONTRACTS.md`.
 
 ## 15. Shutdown dan Restart
 
@@ -339,4 +365,5 @@ reconciliation mismatch sebelum resume = 0
 - Concurrent session transition.
 - Genesis failure pada setiap state.
 - IPO partial allocation dan duplicate webhook.
+- IPO cancel sebelum allocation, cancel setelah allocation/reversal, dan listing transition.
 - Bankruptcy dan audited recovery.
