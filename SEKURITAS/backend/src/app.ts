@@ -48,6 +48,8 @@ export async function createApp() {
   await app.register(orderRoutes, { prefix: "/api/v1/orders" });
   await app.register(beiWebhookRoutes, { prefix: "/internal" });
   await app.register(matsWebhookRoutes, { prefix: "/internal/mats" });
+  await app.register((await import("./routes/bots.js")).default, { prefix: "/api/v1/internal/bots" });
+  await app.register((await import("./routes/ipo-subscriptions.js")).default, { prefix: "/api/v1/ipo-events" });
   await app.register(marketRoutes, { prefix: "/api/v1/market" });
   await app.register(leaderboardRoutes, { prefix: "/api/v1/leaderboard" });
   await app.register(notificationRoutes, { prefix: "/api/v1/notifications" });

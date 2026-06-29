@@ -3,6 +3,13 @@ import { signUserToken } from "../lib/auth.js";
 import { db } from "../db/db.js";
 import { users, broker_accounts, cash_balances } from "../db/schema.js";
 import { eq } from "drizzle-orm";
+
+type TraderInfo = {
+  id: string;
+  email: string;
+  token: string;
+  brokerAccountId: string;
+};
 import { createBrokerAccount, setupRDNForUser } from "../services/account-service.js";
 
 const BEI_URL = "http://localhost:4100/v1";

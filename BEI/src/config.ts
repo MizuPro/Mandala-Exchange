@@ -14,11 +14,19 @@ const authScopeSchema = z.enum([
   "settlement:read",
   "settlement:write",
   "custody:read",
+  "custody:write",
   "corporate-action:read",
   "corporate-action:write",
+  "ipo:read",
+  "ipo:write",
   "report:read",
   "surveillance:read",
-  "surveillance:write"
+  "surveillance:write",
+  // BOT-specific scopes
+  "bot:provision",
+  "bot:genesis",
+  "bot:snapshot",
+  "bot:events"
 ]);
 
 const serviceTokenSchema = z.object({
@@ -30,23 +38,30 @@ const serviceTokenSchema = z.object({
 const defaultServiceTokens: ServiceIdentity[] = [
   {
     name: "admin",
-    token: "dev-admin-service-token-change-me",
+    token: "dev-admin-service-token-change-me-2026",
     scopes: ["admin:*"]
   },
   {
     name: "mats",
-    token: "dev-mats-service-token-change-me",
+    token: "dev-mats-to-bei-token-change-me-2026",
     scopes: ["market:read", "rules:read", "broker:read", "trade:capture", "market-summary:write", "session:write"]
   },
   {
     name: "sekuritas",
-    token: "dev-sekuritas-service-token-change-me",
-    scopes: ["market:read", "rules:read", "broker:read", "settlement:read", "custody:read", "corporate-action:read", "report:read"]
+    token: "dev-sekuritas-to-bei-token-change-me-2026",
+    scopes: ["market:read", "rules:read", "broker:read", "settlement:read", "custody:read", "custody:write", "corporate-action:read", "ipo:read", "ipo:write", "report:read"]
   },
   {
     name: "readonly",
-    token: "dev-readonly-service-token-change-me",
+    token: "dev-readonly-service-token-change-me-2026",
     scopes: ["market:read", "rules:read", "broker:read", "corporate-action:read", "report:read"]
+  },
+  {
+    // BOT Service: least privilege — hanya market:read, rules:read, dan corporate-action:read dari BEI.
+    // Sekuritas menjadi coordinator untuk provisioning, genesis, snapshot, dan event stream.
+    name: "bot",
+    token: "dev-bot-service-token-change-me-2026",
+    scopes: ["market:read", "rules:read", "corporate-action:read", "ipo:read"]
   }
 ];
 

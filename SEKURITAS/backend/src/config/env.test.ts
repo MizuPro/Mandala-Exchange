@@ -8,6 +8,7 @@ const strongBase = {
   DATABASE_URL: "postgresql://mandala_sekuritas_prod:secret@localhost:5532/mandala_sekuritas_prod",
   JWT_SECRET: "prod-jwt-secret-1234567890abcdef1234567890",
   ADMIN_TOKEN: "prod-admin-token-1234567890abcdef1234567890",
+  BOT_SERVICE_TOKEN: "prod-bot-service-1234567890abcdef1234567",
   MATS_SERVICE_TOKEN: "prod-mats-service-1234567890abcdef123456",
   MATS_TO_SEKURITAS_TOKEN: "prod-mats-webhook-1234567890abcdef123456",
   BEI_SERVICE_TOKEN: "prod-bei-service-1234567890abcdef1234567",

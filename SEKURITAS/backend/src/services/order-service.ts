@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { db } from "../db/db.js";
 import { broker_accounts, cash_balances, order_amendments, orders, securities_positions, trade_fills } from "../db/schema.js";
@@ -8,6 +8,7 @@ import { MatsClientError, matsClient } from "./mats-client.js";
 import { createNotificationTx } from "./notification-service.js";
 import { processPendingSettlementsForOrder } from "./settlement-service.js";
 import { env } from "../config/env.js";
+import { appendBotAccountEventTx } from "./bot-event-service.js";
 
 const BROKER_CODE = env.brokerCode;
 const LOT_SIZE = Number(process.env.ORDER_LOT_SIZE || 100);
@@ -219,15 +220,29 @@ export async function placeOrder(
   side: "buy" | "sell",
   price: number | undefined,
   quantity: number,
-  orderType: BrokerOrderType = "limit"
+  orderType: BrokerOrderType = "limit",
+  providedClientOrderId?: string,
+  brokerAccountId?: string,
 ) {
-  const [brokerAcc] = await db.select().from(broker_accounts).where(eq(broker_accounts.user_id, userId)).limit(1);
+  const [brokerAcc] = await db.select().from(broker_accounts)
+    .where(brokerAccountId ? and(eq(broker_accounts.id, brokerAccountId), eq(broker_accounts.user_id, userId)) : eq(broker_accounts.user_id, userId)).limit(1);
   if (!brokerAcc) throw new Error("Broker account not found");
   if (brokerAcc.status !== "ACTIVE") throw new Error("Broker account is not active");
   if (orderType === "limit" && (!price || price <= 0)) throw new Error("Price is required for limit orders");
   validateLotQuantity(quantity);
 
-  const clientOrderId = `SEQ-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+  const clientOrderId = providedClientOrderId || `SEQ-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+  if (providedClientOrderId) {
+    const [existing] = await db.select().from(orders).where(eq(orders.client_order_id, providedClientOrderId)).limit(1);
+    if (existing) {
+      if (existing.broker_account_id !== brokerAcc.id || existing.symbol !== symbol || existing.side !== side ||
+          existing.order_type !== orderType || existing.original_quantity !== quantity ||
+          (orderType === "limit" && Number(existing.price) !== Number(price))) {
+        throw new Error("IDEMPOTENCY_CONFLICT");
+      }
+      return existing;
+    }
+  }
   const placeIdempotencyKey = idempotencyKey(`place-${clientOrderId}`);
   const orderPrice = orderType === "market" ? 0 : Number(price);
 
@@ -546,6 +561,67 @@ export async function handleWebhookUpdate(payload: any) {
     }).where(eq(orders.id, order.id));
 
     if (status !== order.status || processedFillQuantity > 0) {
+      const [authoritativeCash] = await tx.select().from(cash_balances)
+        .where(eq(cash_balances.broker_account_id, order.broker_account_id)).limit(1);
+      const authoritativePositions = await tx.select().from(securities_positions)
+        .where(eq(securities_positions.broker_account_id, order.broker_account_id));
+      const authoritativeOrders = await tx.select().from(orders)
+        .where(and(
+          eq(orders.broker_account_id, order.broker_account_id),
+          inArray(orders.status, ["pending", "submit_unknown", "accepted", "open", "partially_filled", "amended", "locked_non_cancellable"])
+        ));
+      const eventTypeByStatus: Record<string, string> = {
+        accepted: "order_accepted",
+        open: "order_accepted",
+        amended: "order_amended",
+        partially_filled: "order_partially_filled",
+        filled: "order_filled",
+        cancelled: "order_cancelled",
+        rejected: "order_rejected",
+        expired: "order_expired",
+      };
+      await appendBotAccountEventTx(tx, {
+        brokerAccountId: order.broker_account_id,
+        eventType: eventTypeByStatus[status] || "order_updated",
+        entityId: order.id,
+        entityVersion: eventSequence > 0 ? eventSequence : lastEventSequence + 1,
+        correlationId: payload.correlation_id,
+        payload: {
+          order_id: order.id,
+          client_order_id: order.client_order_id,
+          symbol: order.symbol,
+          side: order.side,
+          status,
+          original_quantity: nextOriginalQuantity,
+          filled_quantity: filledQuantity,
+          remaining_quantity: remainingQuantity,
+          account: {
+            account_id: order.broker_account_id,
+            cash: {
+              available_idr: String(authoritativeCash?.available || "0"),
+              reserved_idr: String(authoritativeCash?.reserved || "0"),
+              pending_idr: String(authoritativeCash?.pending || "0"),
+            },
+            positions: authoritativePositions.map((position: any) => ({
+              symbol: position.symbol,
+              available_shares: position.available,
+              reserved_shares: position.reserved,
+              pending_shares: position.pending,
+              average_price_idr: String(position.average_price),
+            })),
+            open_orders: authoritativeOrders.map((currentOrder: any) => ({
+              order_id: currentOrder.id,
+              client_order_id: currentOrder.client_order_id,
+              symbol: currentOrder.symbol,
+              side: currentOrder.side,
+              status: currentOrder.status,
+              quantity_shares: currentOrder.original_quantity,
+              filled_quantity_shares: currentOrder.filled_quantity,
+              entity_version: currentOrder.last_mats_event_sequence,
+            })),
+          },
+        },
+      });
       const notificationType = processedFillQuantity > 0 ? "order_fill" : "order_status";
       await createNotificationTx(tx, {
         brokerAccountId: order.broker_account_id,

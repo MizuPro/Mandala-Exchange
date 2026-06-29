@@ -12,11 +12,18 @@ export type AuthScope =
   | "settlement:read"
   | "settlement:write"
   | "custody:read"
+  | "custody:write"
   | "corporate-action:read"
   | "corporate-action:write"
+  | "ipo:read"
+  | "ipo:write"
   | "report:read"
   | "surveillance:read"
-  | "surveillance:write";
+  | "surveillance:write"
+  | "bot:events"
+  | "bot:provision"
+  | "bot:genesis"
+  | "bot:snapshot";
 
 export type ServiceIdentity = {
   name: string;

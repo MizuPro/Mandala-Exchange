@@ -12,6 +12,7 @@ const placeOrderSchema = z.object({
   order_type: z.enum(["LIMIT", "MARKET", "limit", "market"]).default("limit").transform((value) => value.toLowerCase() as "limit" | "market"),
   price: z.coerce.number().finite().int().positive().optional(),
   quantity: z.coerce.number().finite().int().positive(),
+  client_order_id: z.string().min(1).max(100).optional(),
 }).refine((value) => value.order_type === "market" || value.price !== undefined, {
   message: "price is required for limit orders",
 });
@@ -33,10 +34,13 @@ export default async function orderRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid order payload" });
     }
-    const { symbol, side, price, quantity, order_type } = parsed.data;
+    const { symbol, side, price, quantity, order_type, client_order_id } = parsed.data;
+    if (request.account_id && (!client_order_id || !/^bot:[^:]+:[0-9a-f-]{36}:\d+$/i.test(client_order_id))) {
+      return reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "BOT orders require stable client_order_id", retryable: false, details: {} } });
+    }
 
     try {
-      const order: any = await placeOrder(user_id, symbol, side, price, quantity, order_type);
+      const order: any = await placeOrder(user_id, symbol, side, price, quantity, order_type, client_order_id, request.account_id);
       if (order.deferred) {
         return reply.status(202).send(order);
       }
@@ -44,6 +48,16 @@ export default async function orderRoutes(app: FastifyInstance) {
     } catch (error: any) {
       return reply.status(400).send({ error: error.message });
     }
+  });
+
+  app.get("/by-client-id/:clientOrderId", async (request: any, reply) => {
+    const clientOrderId = String(request.params.clientOrderId || "");
+    const [brokerAcc] = await db.select().from(broker_accounts)
+      .where(request.account_id ? eq(broker_accounts.id, request.account_id) : eq(broker_accounts.user_id, request.user_id)).limit(1);
+    if (!brokerAcc) return reply.status(404).send({ error: { code: "BOT_NOT_FOUND", message: "Broker account not found", retryable: false, details: {} } });
+    const [order] = await db.select().from(orders).where(and(eq(orders.client_order_id, clientOrderId), eq(orders.broker_account_id, brokerAcc.id))).limit(1);
+    if (!order) return reply.status(404).send({ error: { code: "ORDER_NOT_FOUND", message: "Order not found", retryable: false, details: {} } });
+    return reply.send(order);
   });
 
   // Cancel Order

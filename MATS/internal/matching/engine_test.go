@@ -70,6 +70,31 @@ func TestEnginePartialFillLeavesRemainingOpen(t *testing.T) {
 	}
 }
 
+func TestEngineSelfTradePreventionCancelsNewestWithoutTrade(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine(sequence.NewAtomic(300), "SESSION-1", marketdata.NewSummaryStore())
+	sell := testOrder("S-STP", domain.SideSell, 100, 100, 1)
+	sell.AccountID = "SAME-ACCOUNT"
+	if _, _, err := engine.Place(ctx, sell); err != nil {
+		t.Fatal(err)
+	}
+	buy := testOrder("B-STP", domain.SideBuy, 100, 100, 2)
+	buy.AccountID = "SAME-ACCOUNT"
+	trades, updated, err := engine.Place(ctx, buy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trades) != 0 || len(updated) != 0 {
+		t.Fatalf("self trade prevention must not create trades or resting updates")
+	}
+	if buy.Status != domain.OrderStatusCancelled || buy.RejectReason != "self_trade_prevented" {
+		t.Fatalf("expected cancel_newest self_trade_prevented, got status=%s reason=%s", buy.Status, buy.RejectReason)
+	}
+	if sell.Status != domain.OrderStatusOpen || sell.RemainingQuantity != 100 {
+		t.Fatalf("resting order must remain unchanged")
+	}
+}
+
 func testOrder(id string, side domain.Side, price int64, quantity int64, sequenceNumber int64) *domain.Order {
 	now := time.Now().UTC()
 	return &domain.Order{

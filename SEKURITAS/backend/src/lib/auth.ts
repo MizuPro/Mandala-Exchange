@@ -7,6 +7,8 @@ import { env } from "../config/env.js";
 
 export interface UserTokenPayload {
   user_id: string;
+  account_id?: string;
+  account_type?: string;
 }
 
 const DEV_JWT_SECRET = "mandala_sekuritas_dev_secret";
@@ -23,6 +25,14 @@ export function signUserToken(userId: string) {
   return jwt.sign({ user_id: userId }, jwtSecret(), { expiresIn: "1d" });
 }
 
+export function signBotToken(userId: string, accountId: string) {
+  return jwt.sign(
+    { user_id: userId, account_id: accountId, account_type: "BOT", scopes: ["order:write", "order:read", "ipo:write"] },
+    jwtSecret(),
+    { expiresIn: "1h", audience: "mandala-sekuritas", issuer: "mandala-sekuritas" }
+  );
+}
+
 export function verifyUserToken(token: string) {
   return jwt.verify(token, jwtSecret()) as UserTokenPayload;
 }
@@ -34,6 +44,7 @@ export async function authenticateUser(request: any, reply: FastifyReply) {
     if (!token) throw new Error("No token");
     const decoded = verifyUserToken(token);
     request.user_id = decoded.user_id;
+    request.account_id = decoded.account_id;
   } catch {
     return reply.status(401).send({ error: "Unauthorized" });
   }
@@ -78,6 +89,34 @@ export function requireAdminToken(request: any, reply: FastifyReply) {
   const provided = request.headers["x-admin-token"];
   if (!expectedToken || provided !== expectedToken) {
     reply.status(401).send({ error: "Missing or invalid admin token" });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Validates x-service-token header against BOT_SERVICE_TOKEN env.
+ * Used for all /api/v1/internal/bots/* endpoints.
+ * Must not be the same token as admin — BOT service has least privilege.
+ */
+export function requireBotServiceToken(request: any, reply: FastifyReply) {
+  const expectedToken = env.botServiceToken;
+  const allowInsecureLocal = env.allowInsecureLocalTokens;
+  const host = String(request.hostname || request.headers.host || "");
+  if (!expectedToken && allowInsecureLocal && /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) {
+    return true;
+  }
+  const provided = request.headers["x-service-token"];
+  if (!expectedToken || provided !== expectedToken) {
+    reply.status(401).send({
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Missing or invalid BOT service token",
+        retryable: false,
+        correlation_id: (request.headers["x-correlation-id"] as string) || null,
+        details: {}
+      }
+    });
     return false;
   }
   return true;

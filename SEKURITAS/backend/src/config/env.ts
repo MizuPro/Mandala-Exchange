@@ -33,6 +33,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url().default("postgresql://postgres:postgres@localhost:5432/mandala_sekuritas"),
   JWT_SECRET: z.string().optional(),
   ADMIN_TOKEN: z.string().optional(),
+  BOT_SERVICE_TOKEN: z.string().optional(),
   BROKER_CODE: z.string().default("MANDALA"),
   FRONTEND_ORIGINS: z.string().optional(),
   MATS_API_URL: z.string().url().default("http://localhost:8082"),
@@ -63,6 +64,7 @@ export function parseSekuritasEnv(input: NodeJS.ProcessEnv) {
     const secrets = {
       JWT_SECRET: parsed.JWT_SECRET,
       ADMIN_TOKEN: parsed.ADMIN_TOKEN,
+      BOT_SERVICE_TOKEN: parsed.BOT_SERVICE_TOKEN,
       MATS_SERVICE_TOKEN: parsed.MATS_SERVICE_TOKEN,
       MATS_TO_SEKURITAS_TOKEN: parsed.MATS_TO_SEKURITAS_TOKEN,
       BEI_SERVICE_TOKEN: parsed.BEI_SERVICE_TOKEN,
@@ -101,6 +103,7 @@ export function parseSekuritasEnv(input: NodeJS.ProcessEnv) {
     databaseUrl: parsed.DATABASE_URL,
     jwtSecret: parsed.JWT_SECRET,
     adminToken: parsed.ADMIN_TOKEN,
+    botServiceToken: parsed.BOT_SERVICE_TOKEN,
     brokerCode: parsed.BROKER_CODE,
     frontendOrigins: splitCsv(parsed.FRONTEND_ORIGINS, [
       "http://localhost:5173",

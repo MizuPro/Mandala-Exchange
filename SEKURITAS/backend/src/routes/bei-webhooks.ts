@@ -4,6 +4,7 @@ import { processCorporateAction } from "../services/corporate-action-service.js"
 import { z } from "zod";
 import { requireServiceToken } from "../lib/auth.js";
 import { env } from "../config/env.js";
+import { processIpoLifecycle } from "../services/ipo-lifecycle-service.js";
 
 const settlementDetailSchema = z.object({
   mats_order_id: z.string().min(1),
@@ -71,6 +72,10 @@ export default async function beiWebhookRoutes(app: FastifyInstance) {
     }
 
     try {
+      if (["ipo_allocation", "ipo_listing", "ipo_reversal", "ipo_cancellation"].includes(parsed.data.action_type)) {
+        const result = await processIpoLifecycle(parsed.data);
+        return reply.send({ success: true, ...result });
+      }
       const result = await processCorporateAction(parsed.data as any);
       return reply.send({ success: true, ...result });
     } catch (error: any) {

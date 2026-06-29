@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, numeric, integer, uuid, uniqueIndex, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, numeric, integer, bigint, uuid, uniqueIndex, index, jsonb } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -254,4 +254,120 @@ export const withdrawal_requests = pgTable("withdrawal_requests", {
   error_message: text("error_message"),
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),
+});
+
+export const bot_metadata = pgTable("bot_metadata", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  external_bot_id: text("external_bot_id").notNull().unique(),
+  strategy: text("strategy").notNull(),
+  tier: text("tier").notNull(),
+  created_at: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  brokerAccountUq: uniqueIndex("bot_metadata_broker_account_uq").on(table.broker_account_id),
+}));
+
+export const internal_idempotency = pgTable("internal_idempotency", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  idempotency_key: text("idempotency_key").notNull().unique(),
+  route: text("route").notNull(),
+  payload_hash: text("payload_hash").notNull(),
+  response_status: integer("response_status").notNull(),
+  response_body: jsonb("response_body").notNull(),
+  created_at: timestamp("created_at").defaultNow(),
+});
+
+export const bot_account_events = pgTable("bot_account_events", {
+  sequence: bigint("sequence", { mode: "number" }).primaryKey(),
+  event_id: uuid("event_id").notNull().defaultRandom(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  event_type: text("event_type").notNull(),
+  entity_id: text("entity_id").notNull(),
+  entity_version: integer("entity_version").notNull(),
+  correlation_id: text("correlation_id").notNull(),
+  payload: jsonb("payload").notNull().default({}),
+  occurred_at: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  eventIdUq: uniqueIndex("bot_account_events_event_id_uq").on(table.event_id),
+  entityVersionUq: uniqueIndex("bot_account_events_entity_version_uq").on(table.entity_id, table.entity_version, table.event_type),
+  accountSequenceIdx: index("bot_account_events_account_sequence_idx").on(table.broker_account_id, table.sequence),
+  createdAtIdx: index("bot_account_events_created_at_idx").on(table.created_at),
+}));
+
+export const bot_audit_logs = pgTable("bot_audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  action: text("action").notNull(),
+  actor: text("actor").notNull(),
+  correlation_id: text("correlation_id").notNull(),
+  entity_id: text("entity_id"),
+  details: jsonb("details").notNull().default({}),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  actionCreatedIdx: index("bot_audit_logs_action_created_idx").on(table.action, table.created_at),
+}));
+
+export const bot_genesis_runs = pgTable("bot_genesis_runs", {
+  genesis_run_id: uuid("genesis_run_id").primaryKey(),
+  payload_hash: text("payload_hash").notNull(),
+  status: text("status").notNull(),
+  sekuritas_checkpoint: uuid("sekuritas_checkpoint").notNull().defaultRandom(),
+  bei_custody_checkpoint: text("bei_custody_checkpoint"),
+  last_error: text("last_error"),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completed_at: timestamp("completed_at", { withTimezone: true }),
+});
+
+export const bot_genesis_cash_entries = pgTable("bot_genesis_cash_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  genesis_run_id: uuid("genesis_run_id").references(() => bot_genesis_runs.genesis_run_id).notNull(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  amount_idr: numeric("amount_idr").notNull(),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  runAccountUq: uniqueIndex("bot_genesis_cash_entries_run_account_uq").on(table.genesis_run_id, table.broker_account_id),
+}));
+
+export const bot_genesis_position_entries = pgTable("bot_genesis_position_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  genesis_run_id: uuid("genesis_run_id").references(() => bot_genesis_runs.genesis_run_id).notNull(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  symbol: text("symbol").notNull(),
+  quantity_shares: integer("quantity_shares").notNull(),
+  average_price_idr: numeric("average_price_idr").notNull(),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  runAccountSymbolUq: uniqueIndex("bot_genesis_position_entries_uq").on(table.genesis_run_id, table.broker_account_id, table.symbol),
+}));
+
+export const ipo_investor_subscriptions = pgTable("ipo_investor_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ipo_event_id: uuid("ipo_event_id").notNull(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  idempotency_key: text("idempotency_key").notNull(),
+  requested_shares: integer("requested_shares").notNull(),
+  offering_price_idr: numeric("offering_price_idr").notNull(),
+  reserved_cash_idr: numeric("reserved_cash_idr").notNull(),
+  allocated_shares: integer("allocated_shares").notNull().default(0),
+  actual_debit_idr: numeric("actual_debit_idr").notNull().default("0"),
+  official_fee_idr: numeric("official_fee_idr").notNull().default("0"),
+  status: text("status").notNull(),
+  bei_subscription_id: text("bei_subscription_id"),
+  event_version: integer("event_version").notNull().default(1),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  idempotencyUq: uniqueIndex("ipo_investor_subscriptions_idempotency_uq").on(table.idempotency_key),
+  accountEventIdx: index("ipo_investor_subscriptions_account_event_idx").on(table.broker_account_id, table.ipo_event_id),
+}));
+
+export const bot_ipo_subscriptions = pgTable("bot_ipo_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  broker_account_id: uuid("broker_account_id").references(() => broker_accounts.id).notNull(),
+  symbol: text("symbol").notNull(),
+  price: numeric("price").notNull(),
+  quantity: integer("quantity").notNull(),
+  total_amount: numeric("total_amount").notNull(),
+  status: text("status").notNull().default("pending"), // pending, allocated, rejected
+  created_at: timestamp("created_at").defaultNow(),
 });

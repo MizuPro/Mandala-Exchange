@@ -7,6 +7,10 @@ const redisSubscriber = new Redis(process.env.REDIS_URL || "redis://localhost:63
 redisSubscriber.subscribe("market_updates").catch(console.error);
 
 export default async function marketRoutes(app: FastifyInstance) {
+  app.addHook("onClose", async () => {
+    redisSubscriber.removeAllListeners();
+    await redisSubscriber.quit();
+  });
   app.get("/stream/indices", (request, reply) => {
     reply.raw.setHeader('Content-Type', 'text/event-stream');
     reply.raw.setHeader('Cache-Control', 'no-cache');

@@ -56,6 +56,15 @@ func (b *Book) Match(incoming *domain.Order, newTrade func(resting *domain.Order
 			break
 		}
 
+		// Task 0.2: Self-Trade Prevention (cancel_newest)
+		if resting.AccountID != "" && incoming.AccountID == resting.AccountID {
+			incoming.RemainingQuantity = 0
+			incoming.Status = domain.OrderStatusCancelled
+			incoming.RejectReason = "self_trade_prevented"
+			incoming.UpdatedAt = time.Now().UTC()
+			break
+		}
+
 		quantity := minInt64(incoming.RemainingQuantity, resting.RemainingQuantity)
 		trade, err := newTrade(resting, resting.Price, quantity)
 		if err != nil {
@@ -81,6 +90,8 @@ func (b *Book) Match(incoming *domain.Order, newTrade func(resting *domain.Order
 	}
 
 	switch {
+	case incoming.RejectReason == "self_trade_prevented":
+		incoming.Status = domain.OrderStatusCancelled
 	case incoming.RemainingQuantity == 0:
 		incoming.Status = domain.OrderStatusFilled
 	case incoming.OrderType == domain.OrderTypeMarket && incoming.FilledQuantity > 0:

@@ -225,6 +225,24 @@ async function main() {
     `);
 
     await pool.query(`
+      WITH active AS (
+        SELECT symbol, count(*) OVER () AS component_count
+        FROM listed_securities
+        WHERE status = 'listed'
+      )
+      INSERT INTO index_compositions (index_code, version, effective_at, methodology, components, total_weight, is_active, created_by)
+      SELECT 'MDX', 1, now(), 'float_adjusted_market_cap',
+        jsonb_agg(jsonb_build_object(
+          'symbol', symbol,
+          'weight', to_char(1.0 / component_count, 'FM0.000000')
+        ) ORDER BY symbol),
+        1.000000, true, 'seed'
+      FROM active
+      HAVING count(*) > 0
+      ON CONFLICT (index_code, version) DO NOTHING
+    `);
+
+    await pool.query(`
       INSERT INTO financial_reports (issuer_id, period, period_end_date, revenue, net_income, assets, liabilities, equity, eps, book_value_per_share, dividend_payout, ratios, source)
       SELECT i.id, 'FY2025', '2025-12-31',
         CASE i.code WHEN 'MNDL' THEN 1800000000000 WHEN 'NUSA' THEN 2500000000000 ELSE 1600000000000 END,

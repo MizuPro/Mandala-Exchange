@@ -9,6 +9,7 @@ import {
   securities_positions,
 } from "../db/schema.js";
 import { createNotificationTx } from "./notification-service.js";
+import { appendBotAccountEventTx } from "./bot-event-service.js";
 
 type SupportedActionType =
   | "cash_dividend"
@@ -154,6 +155,13 @@ async function applyCashMovement(tx: any, brokerAccountId: string, amount: numbe
     idempotencyKey: `notification:ca:${referenceId}:${brokerAccountId}:cash`,
     metadata: { action_type: actionType, amount },
   });
+  await appendBotAccountEventTx(tx, {
+    brokerAccountId,
+    eventType: "corporate_action_applied",
+    entityId: `${referenceId}:cash`,
+    entityVersion: 1,
+    payload: { action_type: actionType, amount },
+  });
   return updated;
 }
 
@@ -244,6 +252,13 @@ async function applySecurityMovement(
     referenceId,
     idempotencyKey: `notification:ca:${referenceId}:${brokerAccountId}:${symbol}`,
     metadata: { action_type: actionType, symbol, quantity_delta: delta },
+  });
+  await appendBotAccountEventTx(tx, {
+    brokerAccountId,
+    eventType: "corporate_action_applied",
+    entityId: `${referenceId}:${symbol}`,
+    entityVersion: 1,
+    payload: { action_type: actionType, symbol, quantity_delta: delta },
   });
 
   return updated;

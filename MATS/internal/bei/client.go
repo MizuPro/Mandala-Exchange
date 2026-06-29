@@ -97,6 +97,34 @@ type SessionSegment struct {
 	AllowCancelAmend bool                 `json:"allow_cancel_amend"`
 }
 
+type SessionInstance struct {
+	ID                     string               `json:"id"`
+	SessionTemplateID      string               `json:"session_template_id"`
+	TemplateName           string               `json:"template_name"`
+	SettlementMode         string               `json:"settlement_mode"`
+	VirtualDayIndex        int                  `json:"virtual_day_index"`
+	Status                 domain.SessionStatus `json:"status"`
+	CurrentSegmentSequence int                  `json:"current_segment_sequence"`
+	VirtualDurationSeconds int                  `json:"virtual_duration_seconds"`
+	RealDurationSeconds    int                  `json:"real_duration_seconds"`
+	RealTimeRemainingSecs  *int                 `json:"real_time_remaining_seconds"`
+	Version                int                  `json:"version"`
+	Segments               []SessionSegment     `json:"segments"`
+}
+
+type ActivateSessionPayload struct {
+	SessionTemplateID      string `json:"session_template_id"`
+	VirtualDayIndex        int    `json:"virtual_day_index"`
+	VirtualDurationSeconds int    `json:"virtual_duration_seconds"`
+	RealDurationSeconds    int    `json:"real_duration_seconds"`
+	MatsNodeID             string `json:"mats_node_id,omitempty"`
+}
+
+type FinalizeSessionPayload struct {
+	InstanceID string `json:"instance_id"`
+	Version    int    `json:"version"`
+}
+
 type BrokerValidation struct {
 	Valid  bool   `json:"valid"`
 	Reason string `json:"reason"`
@@ -164,6 +192,24 @@ func (c *Client) UpdateSessionStatusWithFinality(ctx context.Context, sessionID 
 		FinalTradeSequence: finalTradeSequence,
 	}
 	return c.post(ctx, "/integration/mats/sessions/active/status", payload, nil)
+}
+
+func (c *Client) ActiveSessionInstance(ctx context.Context) (*SessionInstance, error) {
+	var instance *SessionInstance
+	err := c.get(ctx, "/integration/mats/sessions/instance/active", &instance)
+	return instance, err
+}
+
+func (c *Client) ActivateSessionInstance(ctx context.Context, payload ActivateSessionPayload) (*SessionInstance, error) {
+	var instance SessionInstance
+	err := c.post(ctx, "/integration/mats/sessions/instance/activate", payload, &instance)
+	return &instance, err
+}
+
+func (c *Client) FinalizeSessionInstance(ctx context.Context, payload FinalizeSessionPayload) (*SessionInstance, error) {
+	var instance SessionInstance
+	err := c.post(ctx, "/integration/mats/sessions/instance/finalize", payload, &instance)
+	return &instance, err
 }
 
 func (c *Client) ValidateBroker(ctx context.Context, code string) (BrokerValidation, error) {

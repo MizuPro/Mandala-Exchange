@@ -35,6 +35,19 @@ async function appliedMigrations() {
   return new Set(result.rows.map((row) => row.filename));
 }
 
+async function reconcileLegacyBaseline() {
+  const existing = await pool.query<{ present: boolean }>(
+    "SELECT to_regclass('public.users') IS NOT NULL AND to_regclass('public.broker_accounts') IS NOT NULL AS present"
+  );
+  if (!existing.rows[0]?.present) return;
+  for (const filename of ["0000_initial_schema.sql", "0000_tranquil_dakota_north.sql"]) {
+    await pool.query(
+      "INSERT INTO sekuritas_schema_migrations(filename) VALUES ($1) ON CONFLICT DO NOTHING",
+      [filename]
+    );
+  }
+}
+
 async function runMigration(filename: string) {
   const fullPath = path.join(migrationsDir, filename);
   const sql = await fs.readFile(fullPath, "utf8");
@@ -59,6 +72,7 @@ async function runMigration(filename: string) {
 
 async function main() {
   await ensureMigrationTable();
+  await reconcileLegacyBaseline();
   const applied = await appliedMigrations();
   const files = (await fs.readdir(migrationsDir))
     .filter((file) => file.endsWith(".sql"))

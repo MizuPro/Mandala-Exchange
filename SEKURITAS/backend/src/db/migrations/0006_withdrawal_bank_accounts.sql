@@ -28,6 +28,17 @@ END $$;
 CREATE INDEX IF NOT EXISTS "withdrawal_bank_accounts_broker_account_idx"
   ON "withdrawal_bank_accounts" USING btree ("broker_account_id");
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "withdrawal_requests" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "broker_account_id" uuid NOT NULL REFERENCES "broker_accounts"("id"),
+  "amount" numeric NOT NULL,
+  "status" text DEFAULT 'pending' NOT NULL,
+  "bank_mandala_tx_id" text,
+  "error_message" text,
+  "created_at" timestamp DEFAULT now(),
+  "updated_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
 ALTER TABLE "withdrawal_requests"
   ADD COLUMN IF NOT EXISTS "destination_bank_name" text;
 --> statement-breakpoint

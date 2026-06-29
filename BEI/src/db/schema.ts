@@ -254,6 +254,41 @@ export const sessionSegments = pgTable("session_segments", {
   ...timestamps
 });
 
+/**
+ * Task 0.1: Session Instance — satu baris per sesi fisik yang dijalankan MATS.
+ *
+ * virtual_day_index: nomor hari perdagangan virtual (monotonically increasing).
+ * MATS restart melanjutkan instance yang status-nya != 'closed'.
+ * version: optimistic locking agar dua MATS process tidak konflik.
+ * real_duration_seconds: total durasi nyata semua segmen.
+ * virtual_duration_seconds: total durasi virtual (bisa berbeda untuk simulasi cepat).
+ * mats_node_id: identifier MATS process yang mengklaim instance ini.
+ */
+export const sessionInstances = pgTable(
+  "session_instances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionTemplateId: uuid("session_template_id").notNull().references(() => sessionTemplates.id),
+    virtualDayIndex: integer("virtual_day_index").notNull(),
+    status: sessionStatusEnum("status").notNull().default("closed"),
+    currentSegmentSequence: integer("current_segment_sequence").notNull().default(0),
+    virtualDurationSeconds: integer("virtual_duration_seconds").notNull(),
+    realDurationSeconds: integer("real_duration_seconds").notNull(),
+    realTimeRemainingSeconds: integer("real_time_remaining_seconds"),
+    matsNodeId: text("mats_node_id"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    expectedEndAt: timestamp("expected_end_at", { withTimezone: true }),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    virtualDayUq: uniqueIndex("session_instances_virtual_day_uq").on(table.virtualDayIndex),
+    templateStatusIdx: index("session_instances_template_status_idx").on(table.sessionTemplateId, table.status)
+  })
+);
+
 export const tradingHalts = pgTable("trading_halts", {
   id: uuid("id").primaryKey().defaultRandom(),
   securityId: uuid("security_id").references(() => listedSecurities.id),
@@ -292,6 +327,32 @@ export const marketIndices = pgTable("market_indices", {
   calculatedAt: timestamp("calculated_at", { withTimezone: true }).notNull().defaultNow(),
   ...timestamps
 });
+
+/**
+ * Komposisi indeks per versi. Versi baru dibuat saat komposisi berubah.
+ * BOT Index Tracker menggunakan endpoint GET /v1/indices/:code/composition
+ * untuk mengetahui symbol dan weight yang berlaku.
+ */
+export const indexCompositions = pgTable(
+  "index_compositions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    indexCode: text("index_code").notNull(),
+    version: integer("version").notNull(),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull().defaultNow(),
+    methodology: text("methodology").notNull().default("float_adjusted_market_cap"),
+    components: jsonb("components").notNull().default(sql`'[]'::jsonb`),
+    // components: [{symbol: string, weight: string (decimal), security_id: uuid}]
+    totalWeight: numeric("total_weight", { precision: 18, scale: 6 }).notNull().default("1.000000"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: text("created_by").notNull().default("system"),
+    ...timestamps
+  },
+  (table) => ({
+    indexVersionUq: uniqueIndex("index_compositions_code_version_uq").on(table.indexCode, table.version),
+    activeIdx: index("index_compositions_active_idx").on(table.indexCode, table.isActive)
+  })
+);
 
 export const marketSummaries = pgTable("market_summaries", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -481,6 +542,7 @@ export const ipoAllocations = pgTable("ipo_allocations", {
   allocatedShares: numeric("allocated_shares", { precision: 24, scale: 0 }).notNull(),
   allocationValue: numeric("allocation_value", { precision: 24, scale: 2 }).notNull(),
   status: text("status").notNull().default("allocated"),
+  allocationKey: text("allocation_key"),
   ...timestamps
 });
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/index.js";
 import redisClient from "../lib/redis.js";
+import { z } from "zod";
 
 export async function registerIndexRoutes(app: FastifyInstance) {
   // GET /v1/indices — daftar semua indeks (last value saat ini)
@@ -186,5 +187,154 @@ export async function registerIndexRoutes(app: FastifyInstance) {
     }
 
     return result;
+  });
+
+  /**
+   * GET /v1/indices/:code/composition
+   *
+   * Task 0.8: Komposisi indeks aktif untuk BOT Index Tracker.
+   * Response mengikuti kontrak BOT_API_CONTRACTS.md Section 11.
+   * BOT wajib menggunakan version untuk deteksi perubahan komposisi.
+   */
+  app.get("/indices/:code/composition", async (request: any, reply) => {
+    const code = (request.params.code as string).toUpperCase();
+
+    const result = await pool.query(
+      `SELECT id, index_code, version, effective_at, methodology, components, total_weight, is_active, created_by, created_at, updated_at
+       FROM index_compositions
+       WHERE index_code = $1 AND is_active = true
+       ORDER BY version DESC
+       LIMIT 1`,
+      [code]
+    );
+
+    if (!result.rows[0]) {
+      return reply.status(404).send({
+        error: {
+          code: "NOT_FOUND",
+          message: `No active composition found for index ${code}`,
+          retryable: false,
+          details: {}
+        }
+      });
+    }
+
+    const row = result.rows[0];
+    const components = Array.isArray(row.components) ? row.components : [];
+
+    // Validasi total weight dalam tolerance ±0.001
+    const totalWeight = parseFloat(row.total_weight);
+    if (Math.abs(totalWeight - 1.0) > 0.001) {
+      return reply.status(409).send({
+        error: {
+          code: "INVALID_COMPOSITION",
+          message: `Index ${code} composition total weight (${totalWeight}) is not within tolerance of 1.0`,
+          retryable: false,
+          details: { total_weight: row.total_weight }
+        }
+      });
+    }
+
+    return {
+      index_code: row.index_code,
+      version: row.version,
+      effective_at: row.effective_at,
+      methodology: row.methodology,
+      components: components.map((c: any) => ({
+        symbol: c.symbol,
+        weight: String(c.weight),
+        security_id: c.security_id ?? null
+      })),
+      total_weight: row.total_weight
+    };
+  });
+
+  /**
+   * POST /v1/indices/:code/composition
+   *
+   * Admin endpoint untuk membuat versi komposisi baru.
+   * Setiap perubahan komposisi menaikkan version.
+   * Scope: admin:*
+   */
+  app.post("/indices/:code/composition", async (request: any, reply) => {
+    const code = (request.params.code as string).toUpperCase();
+
+    const bodySchema = z.object({
+      methodology: z.string().min(3).default("float_adjusted_market_cap"),
+      effective_at: z.string().datetime().optional(),
+      components: z.array(z.object({
+        symbol: z.string().min(1).max(12),
+        weight: z.string().regex(/^\d+(\.\d+)?$/, "weight must be decimal string"),
+        security_id: z.string().uuid().optional()
+      })).min(1),
+      created_by: z.string().default("admin")
+    });
+
+    const parsed = bodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: parsed.error.issues[0]?.message || "Invalid composition payload",
+          retryable: false,
+          details: parsed.error.issues
+        }
+      });
+    }
+
+    const { methodology, effective_at, components, created_by } = parsed.data;
+
+    // Validasi total weight harus mendekati 1.0 (tolerance ±0.001)
+    const totalWeight = components.reduce((sum, c) => sum + parseFloat(c.weight), 0);
+    if (Math.abs(totalWeight - 1.0) > 0.001) {
+      return reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: `Total weight (${totalWeight.toFixed(6)}) must equal 1.0 within ±0.001 tolerance`,
+          retryable: false,
+          details: { total_weight: totalWeight, components_count: components.length }
+        }
+      });
+    }
+
+    // Ambil versi tertinggi yang ada
+    const versionResult = await pool.query(
+      `SELECT COALESCE(MAX(version), 0) AS max_version FROM index_compositions WHERE index_code = $1`,
+      [code]
+    );
+    const nextVersion = parseInt(versionResult.rows[0].max_version, 10) + 1;
+
+    // Nonaktifkan komposisi lama
+    await pool.query(
+      `UPDATE index_compositions SET is_active = false, updated_at = now() WHERE index_code = $1 AND is_active = true`,
+      [code]
+    );
+
+    // Buat komposisi baru
+    const insertResult = await pool.query(
+      `INSERT INTO index_compositions (index_code, version, effective_at, methodology, components, total_weight, is_active, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, true, $7)
+       RETURNING id, index_code, version, effective_at, methodology, components, total_weight`,
+      [
+        code,
+        nextVersion,
+        effective_at || new Date().toISOString(),
+        methodology,
+        JSON.stringify(components),
+        totalWeight.toFixed(6),
+        created_by
+      ]
+    );
+
+    const newRow = insertResult.rows[0];
+    return reply.status(201).send({
+      index_code: newRow.index_code,
+      version: newRow.version,
+      effective_at: newRow.effective_at,
+      methodology: newRow.methodology,
+      components: newRow.components,
+      total_weight: newRow.total_weight,
+      created: true
+    });
   });
 }

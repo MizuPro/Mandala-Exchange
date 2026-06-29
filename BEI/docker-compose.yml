@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c shared_buffers=256MB
     container_name: ${BEI_POSTGRES_CONTAINER:-mandala-bei-postgres}
     environment:
       POSTGRES_USER: ${BEI_POSTGRES_USER:-mandala_bei}

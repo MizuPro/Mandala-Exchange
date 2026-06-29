@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, pool } from "../db/index.js";
 import {
@@ -323,6 +323,23 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
     return created;
   });
 
+  app.get("/ipo-events/:id", async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const [event] = await db.select().from(ipoEvents).where(eq(ipoEvents.id, params.id));
+    if (!event) return reply.status(404).send({ error: { code: "NOT_FOUND", message: "IPO event not found", retryable: false, details: {} } });
+    return {
+      id: event.id,
+      status: event.status,
+      offering_price_idr: String(event.offeringPrice),
+      offered_shares: Number(event.offeredShares),
+      subscription_lot_size: Number((event.metadata as any)?.subscription_lot_size || 100),
+      subscription_start: event.subscriptionStart,
+      subscription_end: event.subscriptionEnd,
+      listing_at: event.listingDate,
+      version: Number((event.metadata as any)?.version || 1),
+    };
+  });
+
   app.post("/ipo-events/:id/subscriptions", async (request) => {
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = z
@@ -350,6 +367,19 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
       .onConflictDoNothing()
       .returning();
     return created ?? { idempotent: true };
+  });
+
+  app.post("/ipo-events/:id/subscriptions/:subscriptionId/cancel", async (request, reply) => {
+    const params = z.object({ id: z.string().uuid(), subscriptionId: z.string().uuid() }).parse(request.params);
+    const [subscription] = await db.select().from(ipoSubscriptions).where(and(eq(ipoSubscriptions.id, params.subscriptionId), eq(ipoSubscriptions.ipoEventId, params.id)));
+    if (!subscription) return reply.status(404).send({ error: { code: "NOT_FOUND", message: "IPO subscription not found", retryable: false, details: {} } });
+    if (subscription.status === "cancelled") return { id: subscription.id, status: "cancelled", idempotent: true };
+    const [event] = await db.select().from(ipoEvents).where(eq(ipoEvents.id, params.id));
+    if (!event || event.status !== "subscription" || (event.subscriptionEnd && Date.now() > new Date(event.subscriptionEnd).getTime())) {
+      return reply.status(409).send({ error: { code: "IPO_NOT_OPEN", message: "IPO subscription can no longer be cancelled", retryable: false, details: {} } });
+    }
+    await db.update(ipoSubscriptions).set({ status: "cancelled", updatedAt: new Date() }).where(eq(ipoSubscriptions.id, subscription.id));
+    return { id: subscription.id, status: "cancelled" };
   });
 
   app.post("/ipo-events/:id/allocate", async (request) => {
@@ -400,8 +430,9 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
         .values({
           ipoSubscriptionId: subscription.id,
           allocatedShares: allocatedShares.toString(),
-          allocationValue: allocationValue.toFixed(2)
-        })
+          allocationValue: allocationValue.toFixed(2),
+          allocationKey: `ipo:${event.id}:${subscription.id}`
+        }).onConflictDoNothing()
         .returning();
       if (!allocation) continue;
 
@@ -528,6 +559,67 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
     }
 
     return { allocations: generated };
+  });
+
+  app.post("/ipo-events/:id/list", async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const [event] = await db.select().from(ipoEvents).where(eq(ipoEvents.id, params.id));
+    if (!event) return reply.status(404).send({ error: { code: "NOT_FOUND", message: "IPO event not found", retryable: false, details: {} } });
+    if (event.status === "listed") return { id: event.id, status: "listed", idempotent: true };
+    if (event.status !== "allocation") return reply.status(409).send({ error: { code: "IPO_NOT_OPEN", message: "IPO must be allocated before listing", retryable: false, details: {} } });
+    const [security] = event.securityId ? await db.select().from(listedSecurities).where(eq(listedSecurities.id, event.securityId)) : [];
+    await db.update(ipoEvents).set({ status: "listed", updatedAt: new Date() }).where(eq(ipoEvents.id, event.id));
+    await postSekuritasWebhook("corporate_action", {
+      event_id: `bei:ipo-listing:${event.id}`,
+      idempotency_key: `bei:ipo-listing:${event.id}`,
+      corporate_action_id: event.id,
+      action_type: "ipo_listing",
+      symbol: security?.symbol || "N/A",
+      entitlements: [],
+    });
+    return { id: event.id, status: "listed" };
+  });
+
+  app.post("/ipo-events/:id/cancel", async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const [event] = await db.select().from(ipoEvents).where(eq(ipoEvents.id, params.id));
+    if (!event) return reply.status(404).send({ error: { code: "NOT_FOUND", message: "IPO event not found", retryable: false, details: {} } });
+    if (event.status === "cancelled") return { id: event.id, status: "cancelled", idempotent: true };
+    if (event.status === "listed") return reply.status(409).send({ error: { code: "IPO_NOT_OPEN", message: "Listed IPO requires exceptional corporate-action process", retryable: false, details: {} } });
+    const previousStatus = event.status;
+    const [security] = event.securityId ? await db.select().from(listedSecurities).where(eq(listedSecurities.id, event.securityId)) : [];
+    if (previousStatus === "allocation" && event.securityId) {
+      const subscriptions = await db.select().from(ipoSubscriptions).where(eq(ipoSubscriptions.ipoEventId, event.id));
+      for (const subscription of subscriptions) {
+        const [allocation] = await db.select().from(ipoAllocations).where(eq(ipoAllocations.ipoSubscriptionId, subscription.id));
+        if (!allocation || toNumber(allocation.allocatedShares) <= 0) continue;
+        const [broker] = await db.select().from(brokerMembers).where(eq(brokerMembers.id, subscription.brokerId));
+        if (!broker) continue;
+        const account = await ensureCustodyAccount({ brokerId: broker.id, brokerCode: broker.code, investorId: subscription.investorId });
+        await db.insert(custodyLedgerEntries).values([
+          {
+            custodyAccountId: account.id, securityId: event.securityId, entryType: "reversal", assetType: "security",
+            quantity: (-toNumber(allocation.allocatedShares)).toString(), cashAmount: "0", positionState: "settled",
+            referenceType: "ipo_reversal", referenceId: allocation.id, idempotencyKey: `ledger:ipo:${allocation.id}:reversal:security`
+          },
+          {
+            custodyAccountId: account.id, securityId: event.securityId, entryType: "reversal", assetType: "cash",
+            quantity: "0", cashAmount: toNumber(allocation.allocationValue).toFixed(2), positionState: "settled",
+            referenceType: "ipo_reversal", referenceId: allocation.id, idempotencyKey: `ledger:ipo:${allocation.id}:reversal:cash`
+          }
+        ]).onConflictDoNothing();
+      }
+    }
+    await db.update(ipoEvents).set({ status: "cancelled", updatedAt: new Date() }).where(eq(ipoEvents.id, event.id));
+    await postSekuritasWebhook("corporate_action", {
+      event_id: `bei:ipo-cancel:${event.id}`,
+      idempotency_key: `bei:ipo-cancel:${event.id}`,
+      corporate_action_id: event.id,
+      action_type: previousStatus === "allocation" ? "ipo_reversal" : "ipo_cancellation",
+      symbol: security?.symbol || "N/A",
+      entitlements: [],
+    });
+    return { id: event.id, status: "cancelled" };
   });
 
   app.get("/ipo-events", async () => db.select().from(ipoEvents).orderBy(ipoEvents.createdAt));

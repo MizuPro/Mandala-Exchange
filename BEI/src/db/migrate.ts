@@ -556,10 +556,67 @@ CREATE UNIQUE INDEX IF NOT EXISTS session_templates_name_uq
   ON session_templates(name);
 CREATE UNIQUE INDEX IF NOT EXISTS session_segments_template_sequence_uq
   ON session_segments(template_id, sequence);
+
+-- Task 0.1: Session Instance tracking untuk MATS restart continuity
+CREATE TABLE IF NOT EXISTS session_instances (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_template_id uuid NOT NULL REFERENCES session_templates(id),
+  virtual_day_index integer NOT NULL,
+  status session_status NOT NULL DEFAULT 'closed',
+  current_segment_sequence integer NOT NULL DEFAULT 0,
+  virtual_duration_seconds integer NOT NULL,
+  real_duration_seconds integer NOT NULL,
+  real_time_remaining_seconds integer,
+  mats_node_id text,
+  started_at timestamptz,
+  expected_end_at timestamptz,
+  finalized_at timestamptz,
+  version integer NOT NULL DEFAULT 1,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS session_instances_virtual_day_uq
+  ON session_instances(virtual_day_index);
+CREATE INDEX IF NOT EXISTS session_instances_template_status_idx
+  ON session_instances(session_template_id, status);
+
 CREATE UNIQUE INDEX IF NOT EXISTS fee_schedules_name_uq
   ON fee_schedules(name);
 CREATE UNIQUE INDEX IF NOT EXISTS market_indices_code_uq
   ON market_indices(code);
+
+-- Task 0.8: Komposisi indeks berversi untuk BOT Index Tracker
+CREATE TABLE IF NOT EXISTS index_compositions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  index_code text NOT NULL,
+  version integer NOT NULL,
+  effective_at timestamptz NOT NULL DEFAULT now(),
+  methodology text NOT NULL DEFAULT 'float_adjusted_market_cap',
+  components jsonb NOT NULL DEFAULT '[]'::jsonb,
+  total_weight numeric(18,6) NOT NULL DEFAULT '1.000000',
+  is_active boolean NOT NULL DEFAULT true,
+  created_by text NOT NULL DEFAULT 'system',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS index_compositions_code_version_uq
+  ON index_compositions(index_code, version);
+CREATE INDEX IF NOT EXISTS index_compositions_active_idx
+  ON index_compositions(index_code, is_active);
+
+CREATE TABLE IF NOT EXISTS bot_genesis_custody_runs (
+  genesis_run_id uuid PRIMARY KEY,
+  payload_hash text NOT NULL,
+  status text NOT NULL,
+  result jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz
+);
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS underwriter_broker_id uuid REFERENCES broker_members(id);
+ALTER TABLE ipo_allocations ADD COLUMN IF NOT EXISTS allocation_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS ipo_allocations_allocation_key_uq
+  ON ipo_allocations(allocation_key) WHERE allocation_key IS NOT NULL;
 `;
 
 async function createEnums(pool: pg.Pool) {

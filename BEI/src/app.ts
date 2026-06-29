@@ -15,6 +15,7 @@ import { registerRuleRoutes } from "./routes/rules.js";
 import { registerSettlementRoutes } from "./routes/settlement.js";
 import { registerSurveillanceRoutes } from "./routes/surveillance.js";
 import { registerTradeRoutes } from "./routes/trades.js";
+import { registerBotGenesisRoutes } from "./routes/bot-genesis.js";
 
 export async function createApp() {
   const app = Fastify({
@@ -51,6 +52,7 @@ export async function createApp() {
   await app.register(registerReportingRoutes, { prefix: "/v1" });
   await app.register(registerIndexRoutes, { prefix: "/v1" });
   await app.register(registerSurveillanceRoutes, { prefix: "/v1" });
+  await app.register(registerBotGenesisRoutes, { prefix: "/v1" });
 
   app.setErrorHandler((error, _request, reply) => {
     sendError(reply, error);

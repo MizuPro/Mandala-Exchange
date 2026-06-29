@@ -481,4 +481,184 @@ export async function registerRuleRoutes(app: FastifyInstance) {
     `);
     return result.rows;
   });
+
+  /**
+   * GET /integration/mats/sessions/instance/active
+   *
+   * Task 0.1: MATS memanggil endpoint ini saat startup untuk melihat apakah ada
+   * session instance yang belum selesai (status != 'closed'). Jika ada, MATS
+   * melanjutkan dari posisi terakhir (currentSegmentSequence, realTimeRemainingSeconds).
+   * Jika tidak ada, MATS akan membuat instance baru via POST /activate.
+   *
+   * Scope: rules:read
+   */
+  app.get("/integration/mats/sessions/instance/active", async (_request, reply) => {
+    const result = await pool.query(
+      `SELECT si.*, st.name AS template_name, st.settlement_mode,
+              COALESCE(json_agg(ss.* ORDER BY ss.sequence) FILTER (WHERE ss.id IS NOT NULL), '[]') AS segments
+       FROM session_instances si
+       JOIN session_templates st ON st.id = si.session_template_id
+       LEFT JOIN session_segments ss ON ss.template_id = si.session_template_id
+       WHERE si.status != 'closed'
+       GROUP BY si.id, st.name, st.settlement_mode
+       ORDER BY si.virtual_day_index DESC
+       LIMIT 1`
+    );
+
+    if (!result.rows[0]) {
+      return reply.status(200).send(null);
+    }
+    return result.rows[0];
+  });
+
+  /**
+   * POST /integration/mats/sessions/instance/activate
+   *
+   * Task 0.1: MATS membuat session instance baru atau mengklaim instance yang
+   * sudah ada (idempotent via virtual_day_index). MATS menyediakan virtual_day_index
+   * yang monotonically increasing. BEI menyimpan mats_node_id untuk audit.
+   *
+   * Request: { session_template_id, virtual_day_index, virtual_duration_seconds,
+   *            real_duration_seconds, mats_node_id? }
+   * Scope: session:write
+   */
+  app.post("/integration/mats/sessions/instance/activate", async (request: any, reply) => {
+    const bodySchema = z.object({
+      session_template_id: z.string().uuid(),
+      virtual_day_index: z.number().int().min(1),
+      virtual_duration_seconds: z.number().int().min(1),
+      real_duration_seconds: z.number().int().min(1),
+      mats_node_id: z.string().optional()
+    });
+
+    const parsed = bodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: parsed.error.issues[0]?.message || "Invalid instance payload",
+          retryable: false,
+          details: parsed.error.issues
+        }
+      });
+    }
+
+    const { session_template_id, virtual_day_index, virtual_duration_seconds, real_duration_seconds, mats_node_id } = parsed.data;
+
+    // Cek apakah template aktif
+    const templateResult = await pool.query(
+      `SELECT id FROM session_templates WHERE id = $1 AND is_active = true LIMIT 1`,
+      [session_template_id]
+    );
+    if (!templateResult.rows[0]) {
+      return reply.status(404).send({
+        error: {
+          code: "NOT_FOUND",
+          message: `Active session template ${session_template_id} not found`,
+          retryable: false,
+          details: {}
+        }
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('session_instance_activate'))");
+      const active = await client.query(`SELECT * FROM session_instances WHERE status != 'closed' ORDER BY virtual_day_index DESC LIMIT 1`);
+      if (active.rows[0]) {
+        await client.query("COMMIT");
+        return reply.status(200).send({ ...active.rows[0], created: false });
+      }
+      const existing = await client.query(`SELECT * FROM session_instances WHERE virtual_day_index = $1 LIMIT 1`, [virtual_day_index]);
+      if (existing.rows[0]) {
+        await client.query("COMMIT");
+        return reply.status(200).send({ ...existing.rows[0], created: false });
+      }
+      const insertResult = await client.query(
+        `INSERT INTO session_instances (
+           session_template_id, virtual_day_index, status, current_segment_sequence,
+           virtual_duration_seconds, real_duration_seconds, real_time_remaining_seconds,
+           mats_node_id, started_at, expected_end_at, version
+         ) VALUES ($1, $2, 'pre_open', 0, $3, $4::int, $4::int, $5, now(),
+                   now() + make_interval(secs => $4::int), 1)
+         RETURNING *`,
+        [session_template_id, virtual_day_index, virtual_duration_seconds, real_duration_seconds, mats_node_id || null]
+      );
+      await client.query("COMMIT");
+      return reply.status(201).send({ ...insertResult.rows[0], created: true });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
+  /**
+   * POST /integration/mats/sessions/instance/finalize
+   *
+   * Task 0.1: MATS menandai session instance sebagai selesai ('closed').
+   * Menggunakan optimistic locking via version untuk mencegah double-finalize.
+   *
+   * Request: { instance_id, version }
+   * Scope: session:write
+   */
+  app.post("/integration/mats/sessions/instance/finalize", async (request: any, reply) => {
+    const bodySchema = z.object({
+      instance_id: z.string().uuid(),
+      version: z.number().int().min(1)
+    });
+
+    const parsed = bodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: parsed.error.issues[0]?.message || "Invalid finalize payload",
+          retryable: false,
+          details: parsed.error.issues
+        }
+      });
+    }
+
+    const { instance_id, version } = parsed.data;
+
+    // Optimistic locking: versi harus cocok
+    const updateResult = await pool.query(
+      `UPDATE session_instances
+       SET status = 'closed', finalized_at = now(), version = version + 1, updated_at = now()
+       WHERE id = $1 AND version = $2 AND status != 'closed'
+       RETURNING *`,
+      [instance_id, version]
+    );
+
+    if (!updateResult.rows[0]) {
+      // Cek apakah sudah closed (idempotent)
+      const checkResult = await pool.query(
+        `SELECT id, status, version FROM session_instances WHERE id = $1 LIMIT 1`,
+        [instance_id]
+      );
+      const inst = checkResult.rows[0];
+
+      if (!inst) {
+        return reply.status(404).send({
+          error: { code: "NOT_FOUND", message: `Session instance ${instance_id} not found`, retryable: false, details: {} }
+        });
+      }
+      if (inst.status === "closed") {
+        return reply.status(200).send({ id: inst.id, status: "closed", already_finalized: true });
+      }
+      return reply.status(409).send({
+        error: {
+          code: "VERSION_CONFLICT",
+          message: `Optimistic lock failed: expected version ${version}, current version is ${inst.version}`,
+          retryable: true,
+          details: { current_version: inst.version }
+        }
+      });
+    }
+
+    return reply.status(200).send({ ...updateResult.rows[0], already_finalized: false });
+  });
 }
