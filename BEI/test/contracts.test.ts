@@ -52,6 +52,22 @@ describe("BEI integration contract guard", () => {
     expect(response.statusCode).toBe(403);
   });
 
+  it("serves one authenticated public announcement feed without future publications", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/announcements",
+      headers: { "x-service-token": tokenFor("readonly") }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const announcements = response.json();
+    expect(Array.isArray(announcements)).toBe(true);
+    for (const announcement of announcements) {
+      expect(typeof announcement.id).toBe("string");
+      expect(new Date(announcement.published_at).getTime()).toBeLessThanOrEqual(Date.now());
+    }
+  });
+
   it("maps tokens to service identities", () => {
     expect(findIdentity(tokenFor("admin"))?.name).toBe("admin");
     expect(findIdentity(tokenFor("mats"))?.name).toBe("mats");

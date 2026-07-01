@@ -606,6 +606,21 @@ Response:
 
 Jumlah weight harus sama dengan 1 dalam tolerance decimal yang ditentukan. Perubahan composition menaikkan version.
 
+### 11.1 Public Announcement Fairness Feed
+
+```http
+GET /v1/announcements
+x-service-token: <market:read token>
+```
+
+Response berupa array announcement BEI yang sudah publik, dengan minimal
+`id`, `issuer_id`, optional `security_id`/`symbol`, `type`, `title`,
+`published_at`, dan `metadata`. Endpoint tidak boleh mengembalikan row dengan
+`published_at` di masa depan. Sekuritas/player dan BOT memakai authority feed
+yang sama; BOT mencatat waktu penerimaan dan reaction timer tidak boleh dimulai
+sebelum `max(published_at, received_at)`. Event `simulation_only` tidak boleh
+masuk feed normal ini.
+
 ## 12. Freshness Contract
 
 Default:

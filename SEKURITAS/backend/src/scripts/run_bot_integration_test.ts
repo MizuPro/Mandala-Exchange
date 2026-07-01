@@ -125,7 +125,7 @@ async function runValidation() {
       throw new Error(`Snapshot failed: ${snapRes.body}`);
     }
     const snapshotBody = JSON.parse(snapRes.body);
-    if (snapshotBody.accounts?.[0]?.cash?.available_idr !== "100000000" ||
+    if (Number(snapshotBody.accounts?.[0]?.cash?.available_idr) !== 100000000 ||
         snapshotBody.accounts?.[0]?.positions?.[0]?.symbol !== "BARA" ||
         snapshotBody.accounts?.[0]?.positions?.[0]?.available_shares !== 1000) {
       throw new Error(`Genesis snapshot reconciliation failed: ${snapRes.body}`);
@@ -165,11 +165,14 @@ async function runValidation() {
       headers: { authorization: `Bearer ${tokenBody.tokens[0].token}` }
     });
     if (lookupOrder.statusCode !== 200 || JSON.parse(lookupOrder.body).id !== placedBody.id) throw new Error(`BOT order lookup failed: ${lookupOrder.body}`);
-    const cancelOrder = await app.inject({
-      method: "DELETE", url: `/api/v1/orders/${placedBody.id}`,
-      headers: { authorization: `Bearer ${tokenBody.tokens[0].token}` }
-    });
-    if (cancelOrder.statusCode !== 200) throw new Error(`BOT order cleanup failed: ${cancelOrder.body}`);
+    const terminalOrderStatuses = new Set(["filled", "cancelled", "rejected", "expired"]);
+    if (!terminalOrderStatuses.has(String(placedBody.status || "").toLowerCase())) {
+      const cancelOrder = await app.inject({
+        method: "DELETE", url: `/api/v1/orders/${placedBody.id}`,
+        headers: { authorization: `Bearer ${tokenBody.tokens[0].token}` }
+      });
+      if (cancelOrder.statusCode !== 200) throw new Error(`BOT order cleanup failed: ${cancelOrder.body}`);
+    }
 
     console.log("6. Testing normative IPO reserve/cancel/allocation/refund/listing");
     const beiBase = process.env.BEI_API_URL || "http://localhost:4100";
@@ -229,7 +232,7 @@ async function runValidation() {
     });
     const allocationAccount = JSON.parse(allocationSnapshot.body).accounts[0];
     const allocationPosition = allocationAccount.positions.find((item: any) => item.symbol === "BARA");
-    if (allocationAccount.cash.available_idr !== "99975000" || allocationPosition.pending_shares !== 250) {
+    if (Number(allocationAccount.cash.available_idr) !== 99975000 || allocationPosition.pending_shares !== 250) {
       throw new Error(`IPO partial allocation/refund mismatch: ${allocationSnapshot.body}`);
     }
     const listResponse = await fetch(`${beiBase}/v1/ipo-events/${allocatedIpo.id}/list`, { method: "POST", headers: { "x-service-token": beiAdminToken } });
@@ -261,7 +264,7 @@ async function runValidation() {
       headers: { "x-service-token": botToken }, payload: { account_ids: [accountId], include_open_orders: true }
     });
     const zeroAccount = JSON.parse(zeroSnapshot.body).accounts[0];
-    if (zeroAccount.cash.available_idr !== "99975000" || zeroAccount.cash.reserved_idr !== "0") {
+    if (Number(zeroAccount.cash.available_idr) !== 99975000 || Number(zeroAccount.cash.reserved_idr) !== 0) {
       throw new Error(`IPO zero allocation refund mismatch: ${zeroSnapshot.body}`);
     }
 
@@ -292,7 +295,7 @@ async function runValidation() {
     });
     const reversalAccount = JSON.parse(reversalSnapshot.body).accounts[0];
     const reversalPosition = reversalAccount.positions.find((item: any) => item.symbol === "BARA");
-    if (reversalAccount.cash.available_idr !== "99975000" || reversalPosition.available_shares !== 1250 || reversalPosition.pending_shares !== 0) {
+    if (Number(reversalAccount.cash.available_idr) !== 99975000 || reversalPosition.available_shares !== 1250 || reversalPosition.pending_shares !== 0) {
       throw new Error(`IPO exceptional reversal mismatch: ${reversalSnapshot.body}`);
     }
     const finalCustodyResponse = await fetch(`${beiBase}/v1/custody/accounts/MANDALA/${accountId}/summary`, {
@@ -346,7 +349,7 @@ async function runValidation() {
       method: "POST", url: "/api/v1/internal/bots/portfolio-snapshot",
       headers: { "x-service-token": botToken }, payload: { account_ids: [accountId], include_open_orders: true }
     });
-    if (JSON.parse(partialFailureSnapshot.body).accounts[0].cash.available_idr !== "99975000") {
+    if (Number(JSON.parse(partialFailureSnapshot.body).accounts[0].cash.available_idr) !== 99975000) {
       throw new Error(`Rejected genesis changed cash: ${partialFailureSnapshot.body}`);
     }
 

@@ -30,6 +30,9 @@ func redact(val string) string {
 }
 
 func RedactSecretFields(fields map[string]interface{}) map[string]interface{} {
+	if fields == nil {
+		return map[string]interface{}{}
+	}
 	redacted := make(map[string]interface{})
 	for k, v := range fields {
 		keyLower := strings.ToLower(k)
@@ -39,11 +42,32 @@ func RedactSecretFields(fields map[string]interface{}) map[string]interface{} {
 			} else {
 				redacted[k] = "****"
 			}
-		} else {
-			redacted[k] = v
+			continue
 		}
+		redacted[k] = redactNested(v)
 	}
 	return redacted
+}
+
+func redactNested(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return RedactSecretFields(typed)
+	case map[string]string:
+		result := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			result[key] = item
+		}
+		return RedactSecretFields(result)
+	case []interface{}:
+		result := make([]interface{}, len(typed))
+		for i, item := range typed {
+			result[i] = redactNested(item)
+		}
+		return result
+	default:
+		return value
+	}
 }
 
 func Log(level LogLevel, msg string, fields map[string]interface{}) {

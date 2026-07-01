@@ -35,6 +35,7 @@ Expected scopes: `market:read`, `rules:read`, `broker:read`, `trade:capture`, `m
 - `GET /v1/public/securities`
 - `GET /v1/public/securities/:symbol`
 - `GET /v1/public/securities/:symbol/fundamentals`
+- `GET /v1/announcements` — aggregate announcement publik; hanya row dengan `published_at <= now`, scope `market:read`
 - `GET /v1/public/fee-schedule`
 - `GET /v1/custody/accounts/:brokerCode/:investorId/summary`
 - `GET /v1/settlement/session/:sessionId`

@@ -5,20 +5,23 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Mandala-Exchange/BOT/internal/client/sekuritas"
 	"github.com/Mandala-Exchange/BOT/internal/logger"
 	"github.com/Mandala-Exchange/BOT/internal/metrics"
 	"github.com/Mandala-Exchange/BOT/internal/portfolio"
 )
 
+type SnapshotClient interface {
+	BulkSnapshot(context.Context, []string) (portfolio.Snapshot, error)
+}
+
 type Reconciler struct {
-	client     *sekuritas.Client
+	client     SnapshotClient
 	store      *portfolio.Store
 	accountIDs []string
 	interval   time.Duration
 }
 
-func NewReconciler(client *sekuritas.Client, store *portfolio.Store, accountIDs []string, interval time.Duration) *Reconciler {
+func NewReconciler(client SnapshotClient, store *portfolio.Store, accountIDs []string, interval time.Duration) *Reconciler {
 	return &Reconciler{client: client, store: store, accountIDs: append([]string(nil), accountIDs...), interval: interval}
 }
 

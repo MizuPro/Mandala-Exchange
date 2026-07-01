@@ -12,7 +12,7 @@ import {
 } from "../db/schema.js";
 import { calculateFee, getFeeScheduleSnapshot } from "./fee-service.js";
 import { createNotificationTx } from "./notification-service.js";
-import { appendBotAccountEventTx } from "./bot-event-service.js";
+import { appendBotAccountEventTx, botAccountSnapshotTx } from "./bot-event-service.js";
 
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
@@ -256,7 +256,11 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
       eventType: "settlement_completed",
       entityId: event.id,
       entityVersion: 1,
-      payload: { order_id: order.id, mats_order_id: matsOrderId, trade_id: tradeId, symbol: order.symbol, side, quantity, price: actualPrice },
+      payload: {
+        order_id: order.id, mats_order_id: matsOrderId, trade_id: tradeId,
+        symbol: order.symbol, side, quantity, price: actualPrice,
+        account: await botAccountSnapshotTx(tx, order.broker_account_id),
+      },
     });
 
     return { status: "processed", idempotencyKey };

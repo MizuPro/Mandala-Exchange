@@ -363,6 +363,23 @@ export async function registerIssuerRoutes(app: FastifyInstance) {
       .orderBy(desc(issuerAnnouncements.publishedAt));
   });
 
+  // Public, service-authenticated aggregate feed used by Sekuritas/player and
+  // BOT. A single authority and published_at prevents BOT-only future events.
+  app.get("/announcements", async () => {
+    const result = await pool.query(`
+      SELECT a.id, a.issuer_id, a.security_id, a.type, a.title, a.body,
+             a.published_at, a.metadata, a.created_at, a.updated_at,
+             i.code AS issuer_code, s.symbol
+      FROM issuer_announcements a
+      JOIN issuers i ON i.id = a.issuer_id
+      LEFT JOIN listed_securities s ON s.id = a.security_id
+      WHERE a.published_at <= NOW()
+      ORDER BY a.published_at DESC, a.id DESC
+      LIMIT 1000
+    `);
+    return result.rows;
+  });
+
   app.post("/securities/:symbol/suspend", async (request) => {
     const params = z.object({ symbol: z.string().transform((value) => value.toUpperCase()) }).parse(request.params);
     const body = z.object({ reason: z.string().min(3) }).parse(request.body);
