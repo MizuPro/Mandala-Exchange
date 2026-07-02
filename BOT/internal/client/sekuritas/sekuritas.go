@@ -88,6 +88,97 @@ func (c *Client) PlaceOrder(ctx context.Context, accountID string, request Place
 	return result, nil
 }
 
+// CancelOrder sends a DELETE request to cancel an order.
+func (c *Client) CancelOrder(ctx context.Context, accountID, orderID string) error {
+	token, ok := c.GetToken(accountID)
+	if !ok {
+		return ErrTokenNotFound
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.apiClient.BaseURL+"/orders/"+url.PathEscape(orderID), nil)
+	if err != nil {
+		return err
+	}
+	httpRequest.Header.Set("authorization", "Bearer "+token)
+	httpRequest.Header.Set("x-correlation-id", uuid.NewString())
+	response, err := c.apiClient.HTTPClient.Do(httpRequest)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		return fmt.Errorf("sekuritas cancel order status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+type OrderResponse struct {
+	ID            string `json:"id"`
+	ClientOrderID string `json:"client_order_id"`
+	Status        string `json:"status"`
+}
+
+// GetOrderByClientID fetches an order by its client order ID.
+func (c *Client) GetOrderByClientID(ctx context.Context, accountID, clientOrderID string) (OrderResponse, error) {
+	var result OrderResponse
+	token, ok := c.GetToken(accountID)
+	if !ok {
+		return result, ErrTokenNotFound
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiClient.BaseURL+"/orders/by-client-id/"+url.PathEscape(clientOrderID), nil)
+	if err != nil {
+		return result, err
+	}
+	httpRequest.Header.Set("authorization", "Bearer "+token)
+	response, err := c.apiClient.HTTPClient.Do(httpRequest)
+	if err != nil {
+		return result, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		return result, fmt.Errorf("sekuritas get order status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+type AmendOrderRequest struct {
+	PriceIDR int64 `json:"price,omitempty"`
+	Quantity int64 `json:"quantity,omitempty"`
+}
+
+// AmendOrder sends a PATCH request to amend an order's price or quantity.
+func (c *Client) AmendOrder(ctx context.Context, accountID, orderID string, request AmendOrderRequest) error {
+	token, ok := c.GetToken(accountID)
+	if !ok {
+		return ErrTokenNotFound
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.apiClient.BaseURL+"/orders/"+url.PathEscape(orderID), strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	httpRequest.Header.Set("authorization", "Bearer "+token)
+	httpRequest.Header.Set("content-type", "application/json")
+	httpRequest.Header.Set("x-correlation-id", uuid.NewString())
+	response, err := c.apiClient.HTTPClient.Do(httpRequest)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		return fmt.Errorf("sekuritas amend order status %d: %s", response.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	return nil
+}
+
 func NewClient(baseURL, token string) *Client {
 	return &Client{
 		apiClient:   client.NewAPIClient(baseURL, token),

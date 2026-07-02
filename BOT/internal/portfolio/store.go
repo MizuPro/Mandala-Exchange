@@ -322,7 +322,16 @@ func (s *Store) Replace(snapshot Snapshot) {
 	}
 	s.lastSequence = snapshot.AsOfSequence
 	s.seen = make(map[string]struct{})
-	// localOrders is intentionally preserved (BOT reconciles against fresh snapshot)
+	
+	// Garbage Collection (Anti Happy-Path):
+	// Purge local orders that are already terminal, as their final state
+	// is now fully represented in the fresh account snapshot. This prevents
+	// unbounded memory growth (Memory Leak) for long-running bots.
+	for clientOrderID, lo := range s.localOrders {
+		if lo.Status.IsTerminal() {
+			delete(s.localOrders, clientOrderID)
+		}
+	}
 }
 
 // Apply applies a sequenced Sekuritas account event to the local cache.

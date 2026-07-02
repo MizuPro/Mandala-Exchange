@@ -35,11 +35,13 @@ import (
 	"github.com/Mandala-Exchange/BOT/internal/portfolio"
 	"github.com/Mandala-Exchange/BOT/internal/queue"
 	"github.com/Mandala-Exchange/BOT/internal/reconciliation"
+	"github.com/Mandala-Exchange/BOT/internal/realism"
 	"github.com/Mandala-Exchange/BOT/internal/risk"
 	"github.com/Mandala-Exchange/BOT/internal/scheduler"
 	"github.com/Mandala-Exchange/BOT/internal/sentiment"
 	"github.com/Mandala-Exchange/BOT/internal/session"
 	"github.com/Mandala-Exchange/BOT/internal/strategystate"
+	"github.com/Mandala-Exchange/BOT/internal/strategy/noise"
 )
 
 type registeredBot struct {
@@ -72,7 +74,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_ = sessionSeeder // consumed by strategy engines introduced from Fase 4 onward
+
 
 	logger.Info("Starting BOT Service", map[string]interface{}{
 		"env":  cfg.AppEnv,
@@ -163,6 +165,9 @@ func main() {
 			LastUpdate:   beiSnapshot.SecuritiesAt,
 		})
 	}
+	
+	ruleStore := marketrules.NewStore()
+	ruleStore.Update(ruleResolver)
 
 	// ── Portfolio Store & Account Registry
 	portfolioStore := portfolio.NewStore()
@@ -577,6 +582,7 @@ func main() {
 							})
 						}
 					}
+					ruleStore.Update(resolver)
 					// Task 2.8: Update session monitor from freshly-fetched BEI session instance.
 					// BEI is the session authority; session monitor uses it as daily boundary.
 					if si := beiClient.GetSessionInstance(); si != nil {
@@ -614,11 +620,13 @@ func main() {
 	// Order queue worker
 	orderQ.Run(ctx, func(c context.Context, req *queue.OrderRequest) {
 		internalID := internalIDByBotID[req.BotID]
-		if liquidation, ok := req.Payload.(liquidationPayload); ok {
-			response, submitErr := sekuritasClient.PlaceOrder(c, liquidation.AccountID, sekuritas.PlaceOrderRequest{
+		
+		switch payload := req.Payload.(type) {
+		case liquidationPayload:
+			response, submitErr := sekuritasClient.PlaceOrder(c, payload.AccountID, sekuritas.PlaceOrderRequest{
 				ClientOrderID: req.ClientOrderID,
-				Symbol:        liquidation.Symbol, Side: "sell", OrderType: "market",
-				Quantity: liquidation.Quantity,
+				Symbol:        payload.Symbol, Side: "sell", OrderType: "market",
+				Quantity: payload.Quantity,
 			})
 			if submitErr != nil {
 				logger.Error("Liquidation order submission requires reconciliation", map[string]interface{}{
@@ -626,30 +634,129 @@ func main() {
 				})
 				reason := submitErr.Error()
 				recordDecision(decision.DecisionLog{
-					InternalID: optionalUUID(internalID), Strategy: "risk", Symbol: liquidation.Symbol,
+					InternalID: optionalUUID(internalID), Strategy: "risk", Symbol: payload.Symbol,
 					Action: decision.ActionReject, DecisionReason: "sekuritas_submit_failed",
 					ClientOrderID: &req.ClientOrderID, RejectReason: &reason,
-					OrderQuantity: &liquidation.Quantity,
+					OrderQuantity: &payload.Quantity,
 				})
 			} else {
 				recordDecision(decision.DecisionLog{
-					InternalID: optionalUUID(internalID), Strategy: "risk", Symbol: liquidation.Symbol,
+					InternalID: optionalUUID(internalID), Strategy: "risk", Symbol: payload.Symbol,
 					Action: decision.ActionPlaceOrder, DecisionReason: "sekuritas_accepted",
 					ClientOrderID: &req.ClientOrderID, SekuritasOrderID: &response.ID,
-					OrderQuantity: &liquidation.Quantity, OrderSubmitted: true, OrderStatus: &response.Status,
+					OrderQuantity: &payload.Quantity, OrderSubmitted: true, OrderStatus: &response.Status,
 				})
 			}
-			return
+			
+		case queue.SubmitOrderPayload:
+			response, submitErr := sekuritasClient.PlaceOrder(c, payload.AccountID, sekuritas.PlaceOrderRequest{
+				ClientOrderID: req.ClientOrderID,
+				Symbol:        payload.Symbol, Side: payload.Side, OrderType: "limit",
+				PriceIDR: payload.PriceIDR, Quantity: payload.Quantity,
+			})
+			if submitErr != nil {
+				logger.Error("Normal order submission failed", map[string]interface{}{
+					"bot_id": req.BotID, "client_order_id": req.ClientOrderID, "error": submitErr.Error(),
+				})
+				reason := submitErr.Error()
+				recordDecision(decision.DecisionLog{
+					InternalID: optionalUUID(internalID), Strategy: "noise_trader", Symbol: payload.Symbol,
+					Action: decision.ActionReject, DecisionReason: "sekuritas_submit_failed",
+					ClientOrderID: &req.ClientOrderID, RejectReason: &reason,
+					OrderQuantity: &payload.Quantity,
+				})
+			} else {
+				recordDecision(decision.DecisionLog{
+					InternalID: optionalUUID(internalID), Strategy: "noise_trader", Symbol: payload.Symbol,
+					Action: decision.ActionPlaceOrder, DecisionReason: "sekuritas_accepted",
+					ClientOrderID: &req.ClientOrderID, SekuritasOrderID: &response.ID,
+					OrderQuantity: &payload.Quantity, OrderSubmitted: true, OrderStatus: &response.Status,
+				})
+			}
+
+		case queue.CancelOrderPayload:
+			// Fetch the sekuritas order ID first
+			orderMeta, fetchErr := sekuritasClient.GetOrderByClientID(c, payload.AccountID, payload.ClientOrderID)
+			if fetchErr != nil {
+				logger.Error("Cancel order lookup failed", map[string]interface{}{
+					"bot_id": req.BotID, "client_order_id": payload.ClientOrderID, "error": fetchErr.Error(),
+				})
+				reason := fetchErr.Error()
+				recordDecision(decision.DecisionLog{
+					InternalID: optionalUUID(internalID), Strategy: "noise_trader",
+					Action: decision.ActionReject, DecisionReason: "sekuritas_cancel_lookup_failed",
+					ClientOrderID: &payload.ClientOrderID, RejectReason: &reason,
+				})
+				return
+			}
+			
+			cancelErr := sekuritasClient.CancelOrder(c, payload.AccountID, orderMeta.ID)
+			if cancelErr != nil {
+				logger.Error("Cancel order failed", map[string]interface{}{
+					"bot_id": req.BotID, "order_id": orderMeta.ID, "error": cancelErr.Error(),
+				})
+				reason := cancelErr.Error()
+				recordDecision(decision.DecisionLog{
+					InternalID: optionalUUID(internalID), Strategy: "noise_trader",
+					Action: decision.ActionReject, DecisionReason: "sekuritas_cancel_failed",
+					ClientOrderID: &payload.ClientOrderID, RejectReason: &reason,
+					SekuritasOrderID: &orderMeta.ID,
+				})
+			} else {
+				recordDecision(decision.DecisionLog{
+					InternalID: optionalUUID(internalID), Strategy: "noise_trader",
+					Action: decision.ActionCancel, DecisionReason: "sekuritas_cancel_accepted",
+					ClientOrderID: &payload.ClientOrderID, SekuritasOrderID: &orderMeta.ID,
+					OrderSubmitted: true,
+				})
+			}
+
+		default:
+			logger.Warn("Unknown payload type in order queue", map[string]interface{}{
+				"bot_id": req.BotID, "client_order_id": req.ClientOrderID,
+			})
 		}
-		logger.Info("Processing order", map[string]interface{}{
-			"bot_id":          req.BotID,
-			"client_order_id": req.ClientOrderID,
-		})
-		recordDecision(decision.DecisionLog{
-			InternalID: optionalUUID(internalID), Strategy: "system", Action: decision.ActionPlaceOrder,
-			DecisionReason: "queue_dispatched", ClientOrderID: &req.ClientOrderID,
-		})
 	})
+
+	// ── Initialize Autonomous Strategies (Task 4.2)
+	// realism.Engine is constructed with a session-independent fallback seed here;
+	// the per-bot per-session HMAC seed is derived inside HandleTask using sessionSeeder.
+	realismEngine := realism.New(time.Now().UnixNano())
+	accountLookup := func(botID string) string {
+		for _, b := range registeredBots {
+			if b.BotID == botID {
+				return b.AccountID
+			}
+		}
+		return ""
+	}
+	internalIDLookup := func(botID string) *uuid.UUID {
+		id, ok := internalIDByBotID[botID]
+		if !ok {
+			return nil
+		}
+		return &id
+	}
+
+	noiseTrader := noise.NewTrader(
+		configMgr, portfolioStore, sched, realismEngine, sessMonitor, orderQ, ruleStore,
+		accountLookup, internalIDLookup, sessionSeeder, decisionPipeline,
+	)
+
+	// Bootstrap registered bots that are noise_traders
+	for _, bot := range registeredBots {
+		cfg, _, err := configMgr.GetDBConfig(ctx, bot.BotID)
+		if err == nil && cfg.StrategyType == "noise_trader" {
+			// Stagger startup across 1–5 s to avoid thundering-herd on order queue.
+			delay := time.Duration(1+time.Now().UnixNano()%4) * time.Second
+			sched.Schedule(&scheduler.Task{
+				BotID:     bot.BotID,
+				ExecuteAt: time.Now().Add(delay),
+				Handler:   noiseTrader.HandleTask,
+			})
+			logger.Info("Bootstrapped Noise Trader bot", map[string]interface{}{"bot_id": bot.BotID})
+		}
+	}
 
 	// ── Graceful Shutdown (BOT_STATE_MACHINES.md §15)
 	// Default shutdown does NOT cancel all market orders.

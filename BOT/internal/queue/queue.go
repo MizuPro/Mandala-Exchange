@@ -37,6 +37,19 @@ type OrderRequest struct {
 	ExpiresAt     time.Time
 }
 
+type SubmitOrderPayload struct {
+	AccountID string
+	Symbol    string
+	Side      string
+	PriceIDR  int64
+	Quantity  int64
+}
+
+type CancelOrderPayload struct {
+	AccountID     string
+	ClientOrderID string
+}
+
 type orderHeap []*OrderRequest
 
 func (h orderHeap) Len() int { return len(h) }
@@ -76,6 +89,7 @@ type OrderQueue struct {
 	maxSize   int
 	lookups   map[string]*OrderRequest
 	onExpired func(*OrderRequest)
+	signal    chan struct{}
 }
 
 // SetExpirationHandler wires the expired_before_submit audit path. Configure it
@@ -105,6 +119,7 @@ func NewOrderQueue(workers int, maxSize int) *OrderQueue {
 		workers:   workers,
 		maxSize:   maxSize,
 		lookups:   make(map[string]*OrderRequest),
+		signal:    make(chan struct{}, maxSize+1000), // extra buffer for risk bypass
 	}
 }
 
@@ -116,7 +131,8 @@ func (q *OrderQueue) Submit(req *OrderRequest) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if len(q.items) >= q.maxSize {
+	// Risk/Cancel orders bypass the max size to prevent catastrophic drops.
+	if len(q.items) >= q.maxSize && req.Priority < PriorityRiskCancel {
 		return errors.New("queue full")
 	}
 	if req.ClientOrderID == "" {
@@ -129,6 +145,11 @@ func (q *OrderQueue) Submit(req *OrderRequest) error {
 
 	heap.Push(&q.items, req)
 	q.lookups[req.ClientOrderID] = req
+	
+	select {
+	case q.signal <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -148,55 +169,76 @@ func (q *OrderQueue) LookupByClientID(clientOrderID string) (*OrderRequest, bool
 	return &copy, true
 }
 
-// Run starts the worker goroutines. Blocks until ctx is cancelled.
+// Run starts the worker goroutines. Blocks until ctx is cancelled, then drains the queue.
 func (q *OrderQueue) Run(ctx context.Context, handler func(context.Context, *OrderRequest)) {
+	var wg sync.WaitGroup
 	for i := 0; i < q.workers; i++ {
-		go q.worker(ctx, handler)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q.worker(ctx, handler)
+		}()
 	}
+	// Block until context is cancelled and workers exit
+	wg.Wait()
+
+	// Graceful Shutdown Drain: process all remaining orders in the queue
+	q.mu.Lock()
+	for len(q.items) > 0 {
+		req := heap.Pop(&q.items).(*OrderRequest)
+		delete(q.lookups, req.ClientOrderID)
+		q.mu.Unlock()
+		
+		// Pass a background context since the original is cancelled
+		handler(context.Background(), req)
+		q.mu.Lock()
+	}
+	q.mu.Unlock()
 }
 
 func (q *OrderQueue) worker(ctx context.Context, handler func(context.Context, *OrderRequest)) {
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		default:
-			// Wait for sustained rate limiter
-			err := q.limit.Wait(ctx)
-			if err != nil {
-				return
-			}
-			// Enforce hard limit
-			err = q.hardLimit.Wait(ctx)
-			if err != nil {
-				return
-			}
-
-			q.mu.Lock()
-			if len(q.items) == 0 {
-				q.mu.Unlock()
-				time.Sleep(10 * time.Millisecond) // avoid tight loop when empty
-				continue
-			}
-
-			req := heap.Pop(&q.items).(*OrderRequest)
-			delete(q.lookups, req.ClientOrderID)
-			q.mu.Unlock()
-
-			// TTL check: expired_before_submit
-			if !req.ExpiresAt.IsZero() && time.Now().After(req.ExpiresAt) {
-				q.mu.Lock()
-				onExpired := q.onExpired
-				q.mu.Unlock()
-				if onExpired != nil {
-					copy := *req
-					onExpired(&copy)
-				}
-				// Task expired before it could be submitted — do not send to handler
-				continue
-			}
-
-			handler(ctx, req)
+			return // Workers exit, Run() will perform the drain
+		case <-q.signal:
+			// Item available
 		}
+		
+		// Wait for sustained rate limiter
+		err := q.limit.Wait(ctx)
+		if err != nil {
+			return
+		}
+		// Enforce hard limit
+		err = q.hardLimit.Wait(ctx)
+		if err != nil {
+			return
+		}
+
+		q.mu.Lock()
+		if len(q.items) == 0 {
+			q.mu.Unlock()
+			continue
+		}
+
+		req := heap.Pop(&q.items).(*OrderRequest)
+		delete(q.lookups, req.ClientOrderID)
+		q.mu.Unlock()
+
+		// TTL check: expired_before_submit
+		if !req.ExpiresAt.IsZero() && time.Now().After(req.ExpiresAt) {
+			q.mu.Lock()
+			onExpired := q.onExpired
+			q.mu.Unlock()
+			if onExpired != nil {
+				copyReq := *req
+				onExpired(&copyReq)
+			}
+			// Task expired before it could be submitted — do not send to handler
+			continue
+		}
+
+		handler(ctx, req)
 	}
 }

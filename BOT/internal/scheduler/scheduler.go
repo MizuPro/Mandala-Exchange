@@ -160,9 +160,14 @@ func (s *Scheduler) Run(ctx context.Context) {
 	// Capacity = workers * 50 provides bursting room without unbounded memory growth.
 	taskCh := make(chan *Task, s.workers*50)
 
+	var wg sync.WaitGroup
 	// Start workers
 	for i := 0; i < s.workers; i++ {
-		go s.worker(ctx, taskCh)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.worker(ctx, taskCh)
+		}()
 	}
 
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -171,6 +176,22 @@ func (s *Scheduler) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			// Wait for workers to cleanly exit their current select loop
+			wg.Wait()
+			close(taskCh)
+
+			// Graceful Drain: log dropped tasks in channel
+			for task := range taskCh {
+				fmt.Printf("Scheduler shutdown: cancelled pending task %d for bot %s\n", task.Sequence, task.BotID)
+			}
+
+			// Graceful Drain: log dropped tasks in heap
+			s.mu.Lock()
+			for s.queue.Len() > 0 {
+				task := heap.Pop(&s.queue).(*Task)
+				fmt.Printf("Scheduler shutdown: cancelled scheduled task %d for bot %s\n", task.Sequence, task.BotID)
+			}
+			s.mu.Unlock()
 			return
 		case <-ticker.C:
 			s.dispatch(taskCh)
@@ -221,7 +242,10 @@ func (s *Scheduler) worker(ctx context.Context, taskCh <-chan *Task) {
 		select {
 		case <-ctx.Done():
 			return
-		case task := <-taskCh:
+		case task, ok := <-taskCh:
+			if !ok {
+				return
+			}
 			s.executeTask(ctx, task)
 		}
 	}

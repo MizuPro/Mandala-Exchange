@@ -158,18 +158,79 @@ Dokumen pendamping normatif: `BOT_API_CONTRACTS.md`, `BOT_STATE_MACHINES.md`, `B
 
 - **Status**: [ ] Berjalan / Sebagian Selesai
 - **Dependency**: Fase 3.
+- **Aturan granularitas task Fase 4–8**:
+  - Checkbox parent hanya boleh menjadi `[x]` setelah seluruh subtask dan exit criteria parent lulus.
+  - Subtask implementasi lokal cukup dibuktikan dengan unit/component test yang relevan. Contract/integration test nyata wajib dijalankan pada subtask boundary antarlayanan; pengujian satu sesi penuh tetap menjadi tanggung jawab Task 4.5.
+  - Dilarang mengganti aksi resmi (`place`, `amend`, `cancel`) dengan pencatatan lokal, mock, atau perubahan state cache sebagai bukti selesai.
+  - Jika satu subtask menemukan dependency yang belum tersedia, biarkan checkbox terbuka dan catat blocker tanpa melompati urutan.
 - **Tugas**:
   - [x] **Task 4.1 — Decision Log Pipeline**
     Log seluruh action/reject/risk/breaker, sampling HOLD default 2%, batch insert 100–500, flush 1–5 detik, retention 30 session instance, dan secret redaction.
     _Selesai dan diaudit ulang 2026-07-01: pipeline production terhubung ke order queue, Sekuritas submit/reject, risk transition, dependency breaker, dan queue expiry. Material log memakai bounded backpressure tanpa silent drop, failed batch dipertahankan untuk retry, shutdown menguras seluruh accepted record, sedangkan HOLD disampling configurable default 2%. Batch 100–500, flush 1–5 detik, retention default 30 session instance, schema audit lengkap, dan redaksi secret rekursif tersedia. Migration PostgreSQL `00009`, integration test insert/redaction/retention nyata, 195 regression test, build, dan vet lulus._
-  - [ ] **Task 4.2 — Noise Trader**  
-    Implementasikan typed config/distribution, universe dinamis, valid price deviation, small order, cancel probability, inventory awareness, dan session-aware frequency sesuai `BOT_STRATEGY_SPEC.md`.
-  - [ ] **Task 4.3 — Momentum Trader**  
-    Implementasikan lookback virtual time, distributed trigger, multi-signal confirmation, hysteresis, cooldown, take profit, stop loss, event/session boundaries, dan no-lookahead.
-  - [ ] **Task 4.4 — Market Maker**  
-    Implementasikan N-level quote, distributed refresh/size/spread, inventory skew, fee-aware spread, refresh/cancel policy, outstanding order tracking, STP pre-check, dan dependency pada MATS STP.
-  - [ ] **Task 4.5 — End-to-End MVP Test**  
-    Jalankan 10 bot tiga strategi selama satu session instance lengkap: place, amend, cancel, partial fill, fill, expiry, settlement, restart, dan reconciliation.
+  - [x] **Task 4.2 — Noise Trader**
+    - **Status**: Perlu dilanjutkan — audit menemukan cancel masih berupa pre-submit abort, RNG sesi diinisialisasi ulang setiap tick, dan belum ada integration test lifecycle nyata.
+    - **Dependency**: 4.1
+    - [x] **Task 4.2.1 — Typed Config dan Strict Validation**
+      Implementasikan `NoiseTraderConfig` machine-valid untuk `decision_interval_virtual_minutes`, `order_size_lots`, `buy_probability`, `max_price_deviation_pct`, `cancel_probability`, `cancel_after_virtual_minutes`, dan dynamic `symbols_universe`. Gunakan distribution schema resmi, tolak unknown/irrelevant field pada strict mode, validasi fixed symbol terhadap snapshot BEI, dan pastikan config tervalidasi sebelum persist/activate.
+      - **Bukti minimum**: table-driven unit test default, boundary, malformed distribution, unknown field, fixed symbol stale/tidak dikenal, dan normal/uniform sampling.
+    - [x] **Task 4.2.2 — Deterministic Random State dan Session Lifecycle**
+      Sediakan random state per bot/session yang berasal dari HMAC session seed tetapi tidak di-reset pada setiap tick. Persist atau journal decision sequence yang diperlukan deterministic replay; reset tepat sekali saat session instance berubah dan tetap berbeda antarbot.
+      - **Bukti minimum**: test keputusan berurutan bervariasi dalam satu sesi, replay seed+input menghasilkan urutan identik, bot berbeda tidak memakai stream identik, serta race test concurrent scheduling.
+    - [x] **Task 4.2.3 — Dynamic Universe dan Intent Generation**
+      Pilih symbol acak hanya dari active universe terkini; hitung side dengan inventory/sentiment bias terbatas; order size kecil 1–5 lot; sell hanya dari available shares; price deviation mengacu market reference yang ditetapkan PRD dan tetap valid terhadap tick/ARA/ARB.
+      - **Bukti minimum**: unit/component test universe refresh/IPO listing, delisted/stale exclusion, buy/sell distribution, insufficient inventory, lot conversion, price deviation, dan rule boundary.
+    - [x] **Task 4.2.4 — Scheduler, Realism Filter, dan Order Queue**
+      Jalankan strategi melalui shared scheduler, virtual clock, bounded worker, dan `realism.Engine.PlanDecision` sebagai filter akhir. Semua place order memakai stable `client_order_id`, melewati priority queue/rate limiter, lalu Sekuritas; tidak boleh membuat goroutine/timer tak terbatas per keputusan.
+      - **Bukti minimum**: component test handler benar-benar dieksekusi, reschedule tidak mati setelah transient failure, session non-continuous tidak submit, queue backpressure/TTL tercatat, dan order tidak pernah langsung ke MATS.
+    - [x] **Task 4.2.5 — Open-Order Aging dan Probabilistic Cancel**
+      Track order resmi yang sudah open/partially-filled beserta timestamp virtual dari account event Sekuritas. Setelah sampled `cancel_after_virtual_minutes`, evaluasi `cancel_probability`, status terminal, remaining quantity, session/NCP, dan kirim cancel idempotent melalui Sekuritas dengan priority `risk/cancel`. Pre-submit abort tidak boleh dihitung sebagai cancel order.
+      - **Bukti minimum**: integration test nyata place→open→cancel→event/release reservation, duplicate cancel, partial fill, already terminal, NCP/locked, restart/recovery open order, dan timeout/unknown tanpa blind retry.
+    - [x] **Task 4.2.6 — Decision Audit dan Noise Trader Completion Gate**
+      Catat HOLD/place/reject/cancel beserta session/config/sequence dan reason yang benar, tanpa secret. Jalankan focused unit/component/integration test, race test, regression BOT, build, vet, format, dan `git diff --check`.
+      - **Exit Criteria Task 4.2**: scheduler menjalankan strategi; keputusan stochastic tidak mengulang stream akibat seed reset; symbol berasal active universe; order valid dan melalui Sekuritas; cancel benar-benar bekerja pada open order; restart/replay aman; seluruh bukti 4.2.1–4.2.6 lulus.
+  - [ ] **Task 4.3 — Momentum Trader**
+    - **Dependency**: 4.2 selesai; gunakan ulang contract strategy runtime, jangan membuat jalur order baru.
+    - [ ] **Task 4.3.1 — Typed Config, History, dan Virtual-Time Lookback**
+      Definisikan config trigger/lookback/cooldown/take-profit/stop-loss menggunakan distribution typed. Bangun window history berdasarkan virtual time dan closed/public market event; tetapkan warm-up/fallback saat data belum cukup.
+    - [ ] **Task 4.3.2 — Public Multi-Signal dan No-Lookahead**
+      Hitung price move, volume/trade confirmation, dan sentiment publik dengan event time/checkpoint. Tolak future event, private player data, stale snapshot, serta input setelah decision timestamp.
+    - [ ] **Task 4.3.3 — Trigger, Hysteresis, dan Cooldown State**
+      Implementasikan distributed buy/sell trigger, minimum confirmation, hysteresis, randomized cooldown, session rollover reset, dan persisted state/checkpoint agar restart tidak menduplikasi signal.
+    - [ ] **Task 4.3.4 — Position Exit dan Risk Guard**
+      Implementasikan take profit, stop loss, available/reserved/pending awareness, max exposure, session boundary, dan liquidation precedence tanpa memakai pending proceeds.
+    - [ ] **Task 4.3.5 — Scheduler/Queue Integration dan Decision Audit**
+      Integrasikan melalui shared scheduler, realism filter, stable client order ID, queue/Sekuritas, serta material decision log. Uji stale decision, breaker, queue expiry, dan transient dependency recovery.
+    - [ ] **Task 4.3.6 — Momentum Completion Tests**
+      Tambahkan deterministic replay, no-lookahead, restart, config boundary, trigger/hysteresis/cooldown, order-path integration, race, dan regression test.
+      - **Exit Criteria Task 4.3**: momentum hanya bereaksi pada data publik yang tersedia pada decision time; tidak duplicate signal/order setelah restart; seluruh entry/exit tunduk session, risk, accounting, dan Sekuritas path.
+  - [ ] **Task 4.4 — Market Maker**
+    - **Dependency**: 4.3 selesai dan MATS STP Task 0.2 tetap tervalidasi.
+    - [ ] **Task 4.4.1 — Typed Quote Config dan Symbol Assignment**
+      Definisikan N-level, refresh interval, size, spread, inventory target/skew, outstanding limit, dan fixed/assigned symbol secara typed serta tervalidasi terhadap active rules.
+    - [ ] **Task 4.4.2 — Fee-Aware Quote Model**
+      Hitung bid/ask dari public book, volatility, active tick, ARA/ARB, official fee, minimum spread, dan inventory skew. Pastikan own best bid selalu di bawah own best ask minimal satu tick.
+    - [ ] **Task 4.4.3 — Outstanding Order State**
+      Track client/order ID, level, side, remaining quantity, version, age, amendability, dan terminal state dari account event. Pulihkan state dari snapshot/replay setelah restart.
+    - [ ] **Task 4.4.4 — Refresh, Amend, Cancel, dan Idempotency**
+      Buat diff desired-versus-live quote; pilih keep/amend/cancel/place secara bounded. Semua mutation melalui Sekuritas, memakai stable idempotency, menangani partial fill/NCP/submit_unknown, dan tidak melakukan cancel-replace storm.
+    - [ ] **Task 4.4.5 — STP dan Inventory/Risk Safety**
+      Jalankan local STP pre-check sebelum queue, pertahankan MATS sebagai final authority, batasi inventory/exposure/order rate, dan hentikan quote pada stale dependency/session/breaker.
+    - [ ] **Task 4.4.6 — Market Maker Completion Tests**
+      Uji N-level formation, fee-aware spread, skew, tick boundary, quote diff, partial fill, duplicate event, restart, STP, NCP, queue pressure, race, dan integration path nyata.
+      - **Exit Criteria Task 4.4**: quote tetap bounded dan recoverable; tidak ada self-trade; mutation idempotent melalui Sekuritas; outstanding state sama dengan snapshot setelah reconciliation.
+  - [ ] **Task 4.5 — End-to-End MVP Test**
+    - **Dependency**: 4.2, 4.3, dan 4.4 selesai secara individual.
+    - [ ] **Task 4.5.1 — Deterministic E2E Fixture dan Oracle**
+      Siapkan manifest 10 bot/3 strategi, symbol/rule/fee/session config, seed, expected invariants, timeout, cleanup, dan bukti service nyata tanpa mock boundary.
+    - [ ] **Task 4.5.2 — Full Session Order Lifecycle**
+      Jalankan satu session instance lengkap dan buktikan place, amend, cancel, partial fill, fill, expiry, settlement, serta session boundary.
+    - [ ] **Task 4.5.3 — Restart, Gap, dan Reconciliation**
+      Restart BOT dengan open order, putuskan stream, lakukan snapshot/replay, dan buktikan tidak ada duplicate order/reservation serta mismatch kembali nol sebelum resume.
+    - [ ] **Task 4.5.4 — Safety dan Fairness Assertions**
+      Buktikan tidak ada self-trade, overspend, short sell, pending reuse, stale-rule order, direct MATS injection, private/future data, atau terminal-state regression.
+    - [ ] **Task 4.5.5 — Predictability Smoke dan MVP Report**
+      Jalankan predictability smoke test yang ditetapkan performance plan; simpan manifest/ringkasan hasil serta tautan bukti test tanpa mengklaim performance gate Fase 7.
+      - **Exit Criteria Task 4.5**: seluruh Minimum MVP Acceptance Criteria PRD memiliki automated evidence atau prosedur verifikasi yang dapat diulang dan seluruh invariant bernilai lulus.
 - **Exit Criteria**:
   - [ ] Seluruh Minimum MVP Acceptance Criteria pada PRD lulus.
   - [ ] Tidak ada self-trade, overspend, short sell, duplicate order, atau mismatch settlement.
@@ -182,18 +243,37 @@ Dokumen pendamping normatif: `BOT_API_CONTRACTS.md`, `BOT_STATE_MACHINES.md`, `B
 - **Status**: [ ] Belum Mulai
 - **Dependency**: Fase 4; Task 0.7 untuk IPO dan Task 0.8 untuk Index Tracker.
 - **Tugas**:
-  - [ ] **Task 5.1 — Contrarian / Dip Buyer**  
-    Intraday high/reference basis, staged accumulation, recovery exit, patience berbasis virtual time, dan max position.
-  - [ ] **Task 5.2 — Value Investor**  
-    MA-200 closed session instance, margin of safety, slow rebalance, portfolio concentration, dan fallback jika history belum cukup.
-  - [ ] **Task 5.3 — Bandar Multi-Session**  
-    State machine accumulation → mark-up → distribution, session counter, capital/inventory guard, restart persistence, dan anti-self-trade.
-  - [ ] **Task 5.4 — Event-Driven & IPO Hunter**  
-    Reaksi setelah `published_at`, event intensity, reaction delay, IPO subscription melalui Sekuritas, allocation/refund event, dan first-listing behavior.
-  - [ ] **Task 5.5 — Index Tracker**  
-    Versioned MDX composition, tracking error, rebalance setiap 5 session instance, TWAP slice dengan TTL/rate limit, dan disable-safe jika composition stale.
-  - [ ] **Task 5.6 — Panic Seller Scenario Actor**  
-    Manual/conditional stress actor, duration, symbol scope, risk cap, explicit `simulation_only`, serta cleanup/cancel saat scenario berakhir.
+  - [ ] **Task 5.1 — Contrarian / Dip Buyer**
+    - [ ] **5.1.1 Config dan public reference data**: typed decline/recovery/patience/stage/max-position config; intraday high/reference hanya dari data publik dan event time sah.
+    - [ ] **5.1.2 Entry state machine**: distributed dip trigger, multi-signal confirmation, hysteresis, staged accumulation, virtual-time patience, dan cooldown.
+    - [ ] **5.1.3 Exit dan accounting guard**: recovery exit, stop/risk precedence, concentration, available/reserved/pending awareness, serta session boundary.
+    - [ ] **5.1.4 Persistence dan completion tests**: checkpoint/restart, deterministic replay, no-lookahead, order-path integration, failure recovery, dan audit log.
+  - [ ] **Task 5.2 — Value Investor**
+    - [ ] **5.2.1 Closed-session history**: bangun MA-200 hanya dari session instance finalized, dengan version/checkpoint dan fallback eksplisit jika history kurang.
+    - [ ] **5.2.2 Valuation/config model**: typed margin-of-safety, rebalance interval, concentration, order slicing, dan bounded drift.
+    - [ ] **5.2.3 Slow rebalance execution**: target portfolio, available funds/positions, fee awareness, TTL/rate limit, dan mutation melalui Sekuritas.
+    - [ ] **5.2.4 Persistence dan completion tests**: multi-session/restart, insufficient history, corporate action adjustment, deterministic replay, dan integration test.
+  - [ ] **Task 5.3 — Bandar Multi-Session**
+    - [ ] **5.3.1 Typed config dan transition contract**: definisikan accumulation→mark-up→distribution beserta legal transition, conditional signal, min/max session, dan terminal/abort path.
+    - [ ] **5.3.2 Persisted multi-session state**: session counter, inventory/capital basis, checkpoint/version, rollover tepat sekali, optimistic concurrency, dan restart restore.
+    - [ ] **5.3.3 Phase execution**: staged orders, price/inventory guard, public signal confirmation, cooldown/hysteresis, fee/risk/session compliance.
+    - [ ] **5.3.4 STP dan completion tests**: own-order awareness, local STP plus MATS authority, restart tiap fase, concurrent update, deterministic replay, dan multi-session integration.
+  - [ ] **Task 5.4 — Event-Driven & IPO Hunter**
+    - [ ] **5.4.1 Fair announcement ingestion**: dedupe/version, `published_at`/`received_at` gate, event intensity, reaction delay, dan penolakan future/private/`simulation_only` event.
+    - [ ] **5.4.2 Event strategy state**: typed mapping event→signal, confirmation/cooldown/expiry, symbol scope, restart checkpoint, dan decision audit.
+    - [ ] **5.4.3 IPO subscription client**: discovery dan subscribe/cancel hanya melalui Sekuritas dengan JWT/idempotency, lot/window/full-reserve validation, serta timeout lookup.
+    - [ ] **5.4.4 Allocation/listing lifecycle**: partial/zero allocation, fee/debit/refund, pending shares, reversal, duplicate webhook, dan first-listing behavior.
+    - [ ] **5.4.5 Completion tests**: fairness timing, restart/outbox/replay, reserve→allocation→refund→listing/reversal integration nyata, dan reconciliation.
+  - [ ] **Task 5.5 — Index Tracker**
+    - [ ] **5.5.1 MDX composition state**: consume version/effective time, validate weights, cache/checkpoint, reject rollback, dan disable hanya Index Tracker ketika stale.
+    - [ ] **5.5.2 Target portfolio dan tracking error**: hitung target berbasis available/reserved/pending, price/fee, concentration, dan rebalance setiap 5 session instance.
+    - [ ] **5.5.3 TWAP execution**: bounded slice, virtual schedule, TTL, rate limit, partial fill/remainder, stable ID, dan queue/Sekuritas path.
+    - [ ] **5.5.4 Completion tests**: composition change, stale/invalid weight, restart mid-rebalance, insufficient cash, deterministic slicing, dan integration/reconciliation.
+  - [ ] **Task 5.6 — Panic Seller Scenario Actor**
+    - [ ] **5.6.1 Scenario-only config/lifecycle**: explicit `simulation_only`, admin/manual trigger contract, duration, symbol/actor scope, risk cap, idempotent start/stop, dan larangan registry autonomous.
+    - [ ] **5.6.2 Execution dan isolation**: bounded sell behavior melalui Sekuritas, public market effects, rate/session/risk/STP compliance, serta tidak bocor ke live normal mode.
+    - [ ] **5.6.3 Cleanup/recovery**: cancel cancellable order saat scenario selesai, track NCP/locked sampai terminal, restart restore, dan audit.
+    - [ ] **5.6.4 Completion tests**: normal-mode exclusion, duplicate trigger, timeout, cleanup, NCP, restart, and accounting/reconciliation invariant.
 - **Exit Criteria**:
   - [ ] Delapan strategi autonomous berjalan dan Panic Seller hanya aktif sebagai scenario actor.
   - [ ] State Bandar bertahan melewati restart dan session rollover.
@@ -206,16 +286,33 @@ Dokumen pendamping normatif: `BOT_API_CONTRACTS.md`, `BOT_STATE_MACHINES.md`, `B
 - **Status**: [ ] Belum Mulai
 - **Dependency**: Fase 5.
 - **Tugas**:
-  - [ ] **Task 6.1 — Admin API**  
-    Pause/resume/disable, pause-all/resume-all, sentiment, scenario, parameter update dengan optimistic config version, performance, audit, health, readiness, dan kill switch.
-  - [ ] **Task 6.2 — Super Admin Sekuritas Integration**  
-    Integrasikan Ruang Kendali BOT ke frontend Super Admin Sekuritas melalui backend proxy. Tidak ada frontend BOT/port 8080 terpisah dan secret BOT tidak masuk browser.
-  - [ ] **Task 6.3 — Dashboard Query Efficiency**  
-    Agregasi 2–5 detik, pagination, indexed query, cached metrics, dan tidak ada query/WS per bot per market event.
-  - [ ] **Task 6.4 — Fairness Audit**  
-    Verifikasi tidak ada private player state, future event, direct MATS order, stale rules, pending fund reuse, atau event BOT-only pada normal mode.
-  - [ ] **Task 6.5 — Scenario A–E Tests**  
-    Jalankan input, trigger, expected invariant, metric range, timeout, cleanup, dan pass/fail oracle pada `BOT_PERFORMANCE_TEST_PLAN.md` untuk Hari Normal, Akumulasi Bandar, Saham Terbang, Market Crash, dan Reaksi Korporasi.
+  - [ ] **Task 6.1 — Admin API**
+    - [ ] **6.1.1 Auth/audit/error contract**: scoped admin token, correlation/idempotency, validation envelope, actor/reason, secret redaction, dan immutable audit.
+    - [ ] **6.1.2 Per-bot lifecycle controls**: pause/resume/disable dan cancel variants sesuai state machine, optimistic version, readiness guard, dan restart persistence.
+    - [ ] **6.1.3 Global controls**: pause-all/resume-all/kill-switch dengan bounded batch, NCP tracking, explicit recovery, dan account stream tetap berjalan.
+    - [ ] **6.1.4 Runtime mutations**: sentiment/scenario/config update dengan typed validation, effective-session semantics, expiry, version conflict, dan rollback-safe failure.
+    - [ ] **6.1.5 Read APIs dan completion tests**: performance/audit/health/readiness pagination, auth/contract/concurrency/failure/restart/integration tests.
+  - [ ] **Task 6.2 — Super Admin Sekuritas Integration**
+    - [ ] **6.2.1 Backend proxy contract**: allowlisted BOT endpoint, server-side scoped credential, timeout/error mapping/correlation, audit, dan larangan secret ke browser.
+    - [ ] **6.2.2 Control UI**: lifecycle/global/sentiment/scenario/config controls dengan loading/error/version-conflict/confirmation/accessibility state.
+    - [ ] **6.2.3 Observability UI**: health/readiness/performance/audit views dengan pagination dan bounded refresh; tanpa frontend BOT/port 8080 terpisah.
+    - [ ] **6.2.4 Security/integration tests**: unauthorized/forbidden, proxy failure, concurrent update, secret scan, browser contract, dan admin action audit.
+  - [ ] **Task 6.3 — Dashboard Query Efficiency**
+    - [ ] **6.3.1 Query/index audit**: tetapkan query shape, pagination cursor, required index, explain baseline, dan larangan N+1.
+    - [ ] **6.3.2 Aggregation/cache**: agregasi 2–5 detik, bounded cache/invalidation, cached metrics, dan satu shared feed alih-alih query/WS per bot/event.
+    - [ ] **6.3.3 Load/completion tests**: ukur latency, DB connections/query count, memory, stale bound, pagination consistency, dan cache failure fallback.
+  - [ ] **Task 6.4 — Fairness Audit**
+    - [ ] **6.4.1 Data-flow static audit**: petakan setiap input strategi dan buktikan tidak ada private player state, direct DB lintas layanan, atau direct MATS order.
+    - [ ] **6.4.2 Runtime fairness assertions**: future event, unpublished event, stale rules, pending fund reuse, BOT-only live event, dan privilege scope harus fail-closed.
+    - [ ] **6.4.3 Adversarial/completion tests**: injeksikan payload terlarang/stale/future, token salah scope, boundary bypass, dan simpan evidence pass/fail.
+  - [ ] **Task 6.5 — Scenario A–E Tests**
+    - [ ] **6.5.1 Reusable scenario harness**: manifest, deterministic input, trigger, oracle, metric range, timeout, cleanup, artifact, dan failure diagnostics.
+    - [ ] **6.5.2 Scenario A — Hari Normal**.
+    - [ ] **6.5.3 Scenario B — Akumulasi Bandar**.
+    - [ ] **6.5.4 Scenario C — Saham Terbang**.
+    - [ ] **6.5.5 Scenario D — Market Crash**.
+    - [ ] **6.5.6 Scenario E — Reaksi Korporasi**.
+    - [ ] **6.5.7 Cross-scenario cleanup/reconciliation report**: tidak ada state bocor, saldo/custody/session/STP/rate-limit invariant lulus.
 - **Exit Criteria**:
   - [ ] Admin action teraudit dan aman terhadap concurrent update.
   - [ ] Seluruh scenario menjaga invariants saldo, custody, session rules, STP, dan rate limit.
@@ -227,22 +324,49 @@ Dokumen pendamping normatif: `BOT_API_CONTRACTS.md`, `BOT_STATE_MACHINES.md`, `B
 - **Status**: [ ] Belum Mulai
 - **Dependency**: Fase 6.
 - **Tugas**:
-  - [ ] **Task 7.1 — 100 Bot Baseline**  
-    Jalankan canonical workload dan environment manifest pada `BOT_PERFORMANCE_TEST_PLAN.md`; profil CPU, RSS, GC, goroutine, queue, API latency, DB connections, event lag, reconciliation, dan memory trend.
-  - [ ] **Task 7.2 — 300–500 Bot Default Gate**  
-    Jalankan developer-realistic profile dan canonical workload. Wajib memenuhi seluruh correctness/performance gate, termasuk BOT RSS ≤ 500 MB, average CPU ≤ 10%, peak ≤ 40%, total stack RAM ≤ 12 GB, queue p95 ≤ 2 detik, dan Sekuritas API p95 ≤ 500 ms.
-  - [ ] **Task 7.3 — 1.000 Bot Extended Test**  
-    Naikkan populasi tanpa menaikkan rate limit lebih dahulu. Catat bottleneck dan lakukan tuning berbasis hasil profil.
-  - [ ] **Task 7.4 — 2.000 Bot Stress Test**  
-    Jalankan sebagai maximum stress test. Hasil harus terdokumentasi; gagal memenuhi budget tidak menghalangi default 300–500 selama sistem fail-safe.
-  - [ ] **Task 7.5 — Development/Production Deployment**  
-    BOT API 9090/9091, DB 5435/5535, env/secret/volume terpisah, loopback binding, log rotation, backup, migration, graceful shutdown, dan recovery runbook.
-  - [ ] **Task 7.6 — `start-all.bat` Integration**  
-    Tambahkan BOT DB, migration, dependency readiness, BOT startup setelah Sekuritas ready, dan hapus referensi Control Panel port 8080. Production tunnel tidak mengekspos BOT.
-  - [ ] **Task 7.7 — Operational Runbook**  
-    Dokumentasikan start, stop, restart, genesis, reconcile, event gap, breaker recovery, database backup/restore, token rotation, benchmark, dan emergency kill.
-  - [ ] **Task 7.8 — Failure Injection & Soak Report**  
-    Lulus 10-session soak 500 bot serta failure injection MATS/Sekuritas/BEI/DB/stream/queue/kill-switch. Simpan manifest, summary, metrics, failures, dan reconciliation report sesuai test plan.
+  - [ ] **Task 7.1 — 100 Bot Baseline**
+    - [ ] **7.1.1 Reproducible manifest/instrumentation**: environment/service version, dataset, symbols, session, seed, DB size, log level, dan metric completeness.
+    - [ ] **7.1.2 Canonical run**: warm-up dan full workload 100 bot tanpa mengubah normative rate limit.
+    - [ ] **7.1.3 Profile/report**: CPU/RSS/GC/goroutine/queue/API/DB/event lag/reconciliation/memory trend beserta raw artifact dan bottleneck.
+    - [ ] **7.1.4 Correctness gate**: invariant, restart/leak check, dan repeatability lulus sebelum 7.2.
+  - [ ] **Task 7.2 — 300–500 Bot Default Gate**
+    - [ ] **7.2.1 300-bot clean dan developer-realistic run**.
+    - [ ] **7.2.2 500-bot clean dan developer-realistic run**.
+    - [ ] **7.2.3 Budget verification**: BOT RSS ≤ 500 MB, average CPU ≤ 10%, peak ≤ 40%, total stack RAM ≤ 12 GB, queue p95 ≤ 2 detik, Sekuritas API p95 ≤ 500 ms, serta correctness gates.
+    - [ ] **7.2.4 Profile-driven tuning and rerun**: hanya optimasi bottleneck terukur; dilarang menaikkan global rate limit untuk menutupi queue/scheduler issue.
+    - [ ] **7.2.5 Default-capacity report**: manifest, raw metrics, comparison, failures, reconciliation, dan keputusan pass/fail.
+  - [ ] **Task 7.3 — 1.000 Bot Extended Test**
+    - [ ] **7.3.1 Capacity/readiness precheck**: 7.2 lulus, connection/worker/queue bounds tervalidasi, rate limit tidak dinaikkan.
+    - [ ] **7.3.2 Canonical run dan failure behavior**.
+    - [ ] **7.3.3 Bottleneck profile dan bounded tuning**.
+    - [ ] **7.3.4 Repeat run/report**: correctness, fail-safe behavior, resource trend, dan batas operasional terdokumentasi.
+  - [ ] **Task 7.4 — 2.000 Bot Stress Test**
+    - [ ] **7.4.1 Stress manifest dan abort/safety threshold**.
+    - [ ] **7.4.2 Maximum stress run tanpa menjadikannya default**.
+    - [ ] **7.4.3 Degradation/recovery verification**: breaker, backpressure, no data corruption, reconciliation setelah load turun.
+    - [ ] **7.4.4 Stress report**: bottleneck dan failure terdokumentasi; budget miss tidak menggagalkan default 300–500 jika fail-safe.
+  - [ ] **Task 7.5 — Development/Production Deployment**
+    - [ ] **7.5.1 Environment isolation**: API 9090/9091, DB 5435/5535, env/secret/volume/network terpisah dan loopback binding.
+    - [ ] **7.5.2 Migration/startup/shutdown**: version check, no runtime auto-migrate, dependency gate, graceful drain, restart recovery.
+    - [ ] **7.5.3 Logging/backup/restore/token rotation**: rotation/retention, encrypted backup, restore drill, scoped secret rotation.
+    - [ ] **7.5.4 Deployment security/recovery tests**: tunnel exposure scan, cross-env isolation, failed migration, crash/restart, backup restore.
+  - [ ] **Task 7.6 — `start-all.bat` Integration**
+    - [ ] **7.6.1 BOT DB dan migration orchestration**.
+    - [ ] **7.6.2 Dependency readiness/order**: BOT hanya start setelah Sekuritas dan required BEI/MATS contract ready; timeout/error terlihat.
+    - [ ] **7.6.3 Shutdown/restart behavior**: process ownership, cleanup, idempotent rerun, dan tidak meninggalkan duplicate instance.
+    - [ ] **7.6.4 Exposure/completion tests**: hapus Control Panel 8080, production tunnel tidak mengekspos internal service, smoke test dev/prod config.
+  - [ ] **Task 7.7 — Operational Runbook**
+    - [ ] **7.7.1 Normal operations**: start/stop/restart/status/migration/genesis.
+    - [ ] **7.7.2 Recovery operations**: reconcile/event gap/breaker/queue/DB/stream/dependency recovery.
+    - [ ] **7.7.3 Security/data operations**: backup/restore/token rotation/secret incident.
+    - [ ] **7.7.4 Benchmark/emergency operations**: canonical run, evidence collection, kill switch, rollback/escalation.
+    - [ ] **7.7.5 Runbook drill**: operator lain mengikuti prosedur pada environment bersih dan hasilnya dicatat.
+  - [ ] **Task 7.8 — Failure Injection & Soak Report**
+    - [ ] **7.8.1 Soak harness/artifact retention**: 500 bot, 10 session, manifest, periodic snapshot, metric/raw log, pass/fail oracle.
+    - [ ] **7.8.2 Dependency injections**: MATS, Sekuritas, BEI, account/market stream disconnect/stale/timeout.
+    - [ ] **7.8.3 Internal injections**: DB unavailable, queue pressure, worker panic, kill switch, restart, slow consumer.
+    - [ ] **7.8.4 Post-failure reconciliation/leak check**: mismatch nol, no duplicate, no negative accounting, resource trend bounded.
+    - [ ] **7.8.5 Final soak report**: summary, failures/root cause, recovery time, metrics, reconciliation, unresolved risk, dan explicit pass/fail.
 - **Exit Criteria**:
   - [ ] Default 300–500 bot lulus seluruh performance budget dan multi-session soak test.
   - [ ] Startup/restart tidak membutuhkan koreksi database manual.
@@ -255,9 +379,18 @@ Dokumen pendamping normatif: `BOT_API_CONTRACTS.md`, `BOT_STATE_MACHINES.md`, `B
 - **Status**: [ ] Ditunda/Opsional
 - **Dependency**: Fase 7 stabil.
 - **Tugas**:
-  - [ ] **Task 8.1**: Standardisasi metadata sektor emiten dan versioning.
-  - [ ] **Task 8.2**: Benchmark korelasi lokal terlebih dahulu; external compute hanya dipilih bila profiling membuktikan kebutuhan.
-  - [ ] **Task 8.3**: Jika external compute dipakai, gunakan authenticated outbound channel/webhook, replay protection, timeout, dan fail-safe local fallback.
+  - [ ] **Task 8.1 — Sector Metadata Contract**
+    - [ ] **8.1.1** Tetapkan authority BEI, schema sector/industry, effective time, version, dan backward compatibility.
+    - [ ] **8.1.2** Implementasikan ingestion/cache/freshness serta mapping symbol yang fail-closed terhadap version rollback.
+    - [ ] **8.1.3** Tambahkan contract/restart/change tests dan dokumentasikan consumer strategy.
+  - [ ] **Task 8.2 — Local Correlation Baseline**
+    - [ ] **8.2.1** Tetapkan workload/dataset/window/metric correctness dan memory/CPU budget.
+    - [ ] **8.2.2** Implementasikan atau gunakan dependency kecil teruji untuk perhitungan lokal bounded tanpa mengganggu market loop.
+    - [ ] **8.2.3** Benchmark/profile local engine dan dokumentasikan keputusan cukup/tidak cukup berdasarkan data.
+  - [ ] **Task 8.3 — Optional External Compute**
+    - [ ] **8.3.1** Hanya aktif jika bukti 8.2 menunjukkan kebutuhan; tetapkan versioned request/response dan data-minimization boundary.
+    - [ ] **8.3.2** Implementasikan authenticated outbound channel/webhook, scoped secret, replay protection, correlation, timeout, retry/idempotency, dan circuit breaker.
+    - [ ] **8.3.3** Sediakan fail-safe local fallback serta integration/failure/security test untuk duplicate, stale response, outage, dan recovery.
 
 ---
 

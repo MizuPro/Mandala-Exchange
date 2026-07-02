@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -124,6 +125,20 @@ func (r *SnapshotResolver) Resolve(symbol, side string, targetPrice, quantitySha
 	return ResolvedOrder{PriceIDR: price, QuantityShares: qty, EstimatedFeeIDR: fee, RuleVersion: r.version}, nil
 }
 
+// ListedSymbols returns a sorted slice of all symbol codes in this snapshot.
+// Only symbols with status "listed" at compile time are present; the resolver
+// is compiled fail-closed (missing rules are errors), so every returned symbol
+// has valid tick/lot/band rules and a positive last price.
+func (r *SnapshotResolver) ListedSymbols() []string {
+	out := make([]string, 0, len(r.securities))
+	for sym := range r.securities {
+		out = append(out, sym)
+	}
+	// Sort for deterministic iteration order (important for seeded RNG reproducibility).
+	sort.Strings(out)
+	return out
+}
+
 func (r *SnapshotResolver) LastPriceIDR(symbol string) (int64, bool) {
 	s, ok := r.securities[strings.ToUpper(symbol)]
 	return s.LastPrice, ok && s.LastPrice > 0
@@ -132,6 +147,13 @@ func (r *SnapshotResolver) LastPriceIDR(symbol string) (int64, bool) {
 func (r *SnapshotResolver) LotSize(symbol string) (int64, bool) {
 	s, ok := r.securities[strings.ToUpper(symbol)]
 	return s.Rules.LotSize, ok && s.Rules.LotSize > 0
+}
+
+// SecurityRules returns the BoardRules (tick rules, ARA/ARB pct, lot size) for a symbol.
+// Needed by strategy code that must snap a price to a valid tick before calling Resolve.
+func (r *SnapshotResolver) SecurityRules(symbol string) (BoardRules, bool) {
+	s, ok := r.securities[strings.ToUpper(symbol)]
+	return s.Rules, ok
 }
 
 // AdjustPriceTicks moves a proposed price by a bounded number of active ticks,

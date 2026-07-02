@@ -58,16 +58,15 @@ func (p *PostgresRepository) Load(ctx context.Context, runID uuid.UUID) (Run, []
 	if err != nil {
 		return Run{}, nil, err
 	}
+	defer seedRows.Close()
 	for seedRows.Next() {
 		var id string
 		var seed int64
 		if err := seedRows.Scan(&id, &seed); err != nil {
-			seedRows.Close()
 			return Run{}, nil, err
 		}
 		run.BotSeeds[id] = seed
 	}
-	seedRows.Close()
 	rows, err := p.db.Query(ctx, `SELECT sequence,kind,event_sequence,virtual_time,COALESCE(bot_id,''),payload
 		FROM simulation_journal WHERE run_id=$1 ORDER BY sequence`, runID)
 	if err != nil {
