@@ -2,6 +2,8 @@ package noise
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -19,6 +21,7 @@ import (
 	"github.com/Mandala-Exchange/BOT/internal/queue"
 	"github.com/Mandala-Exchange/BOT/internal/realism"
 	"github.com/Mandala-Exchange/BOT/internal/scheduler"
+	"github.com/Mandala-Exchange/BOT/internal/session"
 )
 
 // DecisionRecorder is the subset of *decision.Pipeline used by Trader.
@@ -57,9 +60,12 @@ type Trader struct {
 	seeder       *antipredict.Seeder
 	decisionPipe DecisionRecorder
 
-	rngMu        sync.Mutex
-	botRNGs      map[string]*rand.Rand
-	botSessions  map[string]uuid.UUID
+	rngMu           sync.Mutex
+	botRNGs         map[string]*rand.Rand
+	botRNGLocks     map[string]*sync.Mutex
+	botSessions     map[string]uuid.UUID
+	cancelScheduled map[string]struct{}
+	cancelEvaluated map[string]struct{}
 }
 
 // NewTrader creates a new Noise Trader strategy handler.
@@ -80,19 +86,22 @@ func NewTrader(
 	decisionPipe DecisionRecorder,
 ) *Trader {
 	return &Trader{
-		configMgr:    configMgr,
-		portStore:    portStore,
-		sched:        sched,
-		engine:       engine,
-		clock:        clock,
-		orderQ:       orderQ,
-		ruleStore:    ruleStore,
-		lookup:       lookup,
-		idLookup:     idLookup,
-		seeder:       seeder,
-		decisionPipe: decisionPipe,
-		botRNGs:      make(map[string]*rand.Rand),
-		botSessions:  make(map[string]uuid.UUID),
+		configMgr:       configMgr,
+		portStore:       portStore,
+		sched:           sched,
+		engine:          engine,
+		clock:           clock,
+		orderQ:          orderQ,
+		ruleStore:       ruleStore,
+		lookup:          lookup,
+		idLookup:        idLookup,
+		seeder:          seeder,
+		decisionPipe:    decisionPipe,
+		botRNGs:         make(map[string]*rand.Rand),
+		botRNGLocks:     make(map[string]*sync.Mutex),
+		botSessions:     make(map[string]uuid.UUID),
+		cancelScheduled: make(map[string]struct{}),
+		cancelEvaluated: make(map[string]struct{}),
 	}
 }
 
@@ -113,6 +122,7 @@ func (t *Trader) HandleTask(ctx context.Context, botID string, payload interface
 	if err != nil {
 		return fmt.Errorf("invalid noise config: %w", err)
 	}
+	t.scheduleRecoveredCancels(botID, noiseCfg)
 
 	rules := t.ruleStore.Get()
 	if rules == nil {
@@ -125,6 +135,16 @@ func (t *Trader) HandleTask(ctx context.Context, botID string, payload interface
 	if instance != nil {
 		sessionID = instance.InstanceID
 	}
+
+	t.rngMu.Lock()
+	botRNGLock := t.botRNGLocks[botID]
+	if botRNGLock == nil {
+		botRNGLock = &sync.Mutex{}
+		t.botRNGLocks[botID] = botRNGLock
+	}
+	t.rngMu.Unlock()
+	botRNGLock.Lock()
+	defer botRNGLock.Unlock()
 
 	t.rngMu.Lock()
 	rng, exists := t.botRNGs[botID]
@@ -281,10 +301,6 @@ func (t *Trader) HandleTask(ctx context.Context, botID string, payload interface
 	// 8. Enqueue Order — the resolved order from the realism engine has already been
 	// tick-aligned and ARA/ARB-clamped by rules.Resolve inside PlanDecision.
 	clientOrderID := fmt.Sprintf("bot:%s:%s:%d", botID, symbol, rng.Uint64())
-	cancelAfterReal := t.clock.VirtualToRealDelay(
-		time.Duration(sampleDistribution(noiseCfg.CancelAfterVirtualMinutes, rng)) * time.Minute,
-	)
-
 	price := plan.Order.PriceIDR
 	qty := plan.Order.QuantityShares
 
@@ -300,18 +316,17 @@ func (t *Trader) HandleTask(ctx context.Context, botID string, payload interface
 	})
 
 	schedPayload := delayedSubmitPayload{
-		BotID:           botID,
-		Symbol:          symbol,
-		Side:            side,
-		PriceIDR:        price,
-		QuantityShares:  qty,
-		ClientOrderID:   clientOrderID,
-		CancelAfterReal: cancelAfterReal,
+		BotID:             botID,
+		AccountID:         t.lookup(botID),
+		Symbol:            symbol,
+		Side:              side,
+		PriceIDR:          price,
+		QuantityShares:    qty,
+		ClientOrderID:     clientOrderID,
 		SessionInstanceID: sessionInstanceID,
 		VirtualDayIndex:   virtualDayIndex,
 		SessionStatus:     sessionStatus,
 		InternalID:        internalID,
-		NoiseCfg:        noiseCfg,
 	}
 
 	t.sched.Schedule(&scheduler.Task{
@@ -325,18 +340,17 @@ func (t *Trader) HandleTask(ctx context.Context, botID string, payload interface
 }
 
 type delayedSubmitPayload struct {
-	BotID           string
-	Symbol          string
-	Side            string
-	PriceIDR        int64
-	QuantityShares  int64
-	ClientOrderID   string
-	CancelAfterReal time.Duration
+	BotID             string
+	AccountID         string
+	Symbol            string
+	Side              string
+	PriceIDR          int64
+	QuantityShares    int64
+	ClientOrderID     string
 	SessionInstanceID *uuid.UUID
 	VirtualDayIndex   *int64
 	SessionStatus     string
 	InternalID        *uuid.UUID
-	NoiseCfg        Config
 }
 
 func (t *Trader) handleDelayedSubmit(ctx context.Context, botID string, payload interface{}) error {
@@ -345,31 +359,8 @@ func (t *Trader) handleDelayedSubmit(ctx context.Context, botID string, payload 
 		return fmt.Errorf("invalid payload for delayed submit")
 	}
 
-	t.rngMu.Lock()
-	rng, exists := t.botRNGs[botID]
-	t.rngMu.Unlock()
-	if !exists {
-		// Fallback if rng not initialized
-		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
-	}
-
-	// Cancel probability simulates mind-change
-	if rng.Float64() < p.NoiseCfg.CancelProbability {
-		cancelEntry := decision.DecisionLog{
-			InternalID:        p.InternalID,
-			SessionInstanceID: p.SessionInstanceID,
-			VirtualDayIndex:   p.VirtualDayIndex,
-			Strategy:          "noise_trader",
-			Symbol:            p.Symbol,
-			SessionStatus:     p.SessionStatus,
-			Action:            decision.ActionCancel,
-			DecisionReason:    "mind_change_cancel",
-			ClientOrderID:     &p.ClientOrderID,
-			ContextSnapshot:   map[string]interface{}{"bot_id": p.BotID},
-			CreatedAt:         time.Now().UTC(),
-		}
-		_ = t.decisionPipe.Record(context.Background(), cancelEntry)
-		return nil
+	if p.AccountID == "" {
+		return fmt.Errorf("missing Sekuritas account mapping for bot %s", botID)
 	}
 
 	req := &queue.OrderRequest{
@@ -377,16 +368,25 @@ func (t *Trader) handleDelayedSubmit(ctx context.Context, botID string, payload 
 		BotID:         p.BotID,
 		Priority:      queue.PriorityNormal,
 		Payload: queue.SubmitOrderPayload{
-			AccountID: p.BotID, // AccountID is usually the BotID for bots
+			AccountID: p.AccountID,
 			Symbol:    p.Symbol,
 			Side:      p.Side,
 			PriceIDR:  p.PriceIDR,
 			Quantity:  p.QuantityShares,
 		},
-		ExpiresAt: time.Now().Add(p.CancelAfterReal),
+		ExpiresAt: time.Now().Add(15 * time.Second),
+	}
+	trackErr := t.portStore.TrackLocalOrder(&portfolio.LocalOrder{
+		ClientOrderID: p.ClientOrderID, AccountID: p.AccountID, Symbol: p.Symbol,
+		Side: p.Side, OrderType: "limit", PriceIDR: p.PriceIDR,
+		OriginalQtyShares: p.QuantityShares, Status: portfolio.StatusQueued,
+	})
+	if trackErr != nil && !errors.Is(trackErr, portfolio.ErrOrderAlreadyTracked) {
+		return trackErr
 	}
 
 	if submitErr := t.orderQ.Submit(req); submitErr != nil {
+		_ = t.portStore.UpdateLocalOrderStatus(p.ClientOrderID, portfolio.StatusExpiredBeforeSubmit)
 		rejectReason := submitErr.Error()
 		rejectEntry := decision.DecisionLog{
 			InternalID:        p.InternalID,
@@ -406,33 +406,19 @@ func (t *Trader) handleDelayedSubmit(ctx context.Context, botID string, payload 
 		return nil
 	}
 
-	// Schedule a lifecycle cancel task
-	t.sched.Schedule(&scheduler.Task{
-		BotID:     p.BotID,
-		ExecuteAt: time.Now().Add(p.CancelAfterReal),
-		Payload: delayedCancelPayload{
-			BotID:             p.BotID,
-			ClientOrderID:     p.ClientOrderID,
-			InternalID:        p.InternalID,
-			SessionInstanceID: p.SessionInstanceID,
-			VirtualDayIndex:   p.VirtualDayIndex,
-			SessionStatus:     p.SessionStatus,
-			Symbol:            p.Symbol,
-		},
-		Handler: t.handleDelayedCancel,
-	})
-
 	return nil
 }
 
 type delayedCancelPayload struct {
 	BotID             string
+	AccountID         string
 	ClientOrderID     string
 	InternalID        *uuid.UUID
 	SessionInstanceID *uuid.UUID
 	VirtualDayIndex   *int64
 	SessionStatus     string
 	Symbol            string
+	NoiseCfg          Config
 }
 
 func (t *Trader) handleDelayedCancel(ctx context.Context, botID string, payload interface{}) error {
@@ -440,19 +426,44 @@ func (t *Trader) handleDelayedCancel(ctx context.Context, botID string, payload 
 	if !ok {
 		return fmt.Errorf("invalid payload for delayed cancel")
 	}
+	defer t.clearCancelScheduled(p.ClientOrderID)
+
+	order, exists := t.portStore.GetLocalOrder(p.ClientOrderID)
+	if !exists {
+		return t.recordCancelHold(ctx, p, "cancel_order_not_tracked")
+	}
+	if order.Status.IsTerminal() {
+		return t.recordCancelHold(ctx, p, "cancel_order_already_terminal")
+	}
+	if order.Status != portfolio.StatusOpen && order.Status != portfolio.StatusPartiallyFilled {
+		return t.recordCancelHold(ctx, p, "cancel_order_not_authoritatively_open")
+	}
+	if order.RemainingQtyShares() <= 0 {
+		return t.recordCancelHold(ctx, p, "cancel_order_no_remaining_quantity")
+	}
+	instance := t.clock.GetInstance()
+	if instance == nil || instance.Status == session.StateNonCancellation {
+		return t.recordCancelHold(ctx, p, "cancel_deferred_by_market_rule")
+	}
+	if orderRNG(p.ClientOrderID).Float64() >= p.NoiseCfg.CancelProbability {
+		t.markCancelEvaluated(p.ClientOrderID)
+		return t.recordCancelHold(ctx, p, "cancel_probability_not_selected")
+	}
+	t.markCancelEvaluated(p.ClientOrderID)
 
 	req := &queue.OrderRequest{
-		ClientOrderID: p.ClientOrderID + "-cancel", // Make sure this is unique for the cancel request itself
+		ClientOrderID: p.ClientOrderID + ":cancel:1",
 		BotID:         p.BotID,
 		Priority:      queue.PriorityRiskCancel, // Cancels have highest priority
 		Payload: queue.CancelOrderPayload{
-			AccountID:     p.BotID,
+			AccountID:     p.AccountID,
 			ClientOrderID: p.ClientOrderID,
 		},
 		ExpiresAt: time.Now().Add(10 * time.Second),
 	}
 
 	if submitErr := t.orderQ.Submit(req); submitErr != nil {
+		t.clearCancelEvaluated(p.ClientOrderID)
 		rejectReason := submitErr.Error()
 		rejectEntry := decision.DecisionLog{
 			InternalID:        p.InternalID,
@@ -472,6 +483,89 @@ func (t *Trader) handleDelayedCancel(ctx context.Context, botID string, payload 
 	}
 
 	return nil
+}
+
+func (t *Trader) recordCancelHold(ctx context.Context, p delayedCancelPayload, reason string) error {
+	entry := decision.DecisionLog{
+		InternalID: p.InternalID, SessionInstanceID: p.SessionInstanceID,
+		VirtualDayIndex: p.VirtualDayIndex, Strategy: "noise_trader",
+		Symbol: p.Symbol, SessionStatus: p.SessionStatus, Action: decision.ActionHold,
+		DecisionReason: reason, ClientOrderID: &p.ClientOrderID,
+		ContextSnapshot: map[string]interface{}{"bot_id": p.BotID},
+		CreatedAt:       time.Now().UTC(),
+	}
+	return t.decisionPipe.Record(ctx, entry)
+}
+
+func (t *Trader) scheduleRecoveredCancels(botID string, cfg Config) {
+	accountID := t.lookup(botID)
+	if accountID == "" {
+		return
+	}
+	for _, order := range t.portStore.OpenLocalOrders(accountID) {
+		if order.Status != portfolio.StatusOpen && order.Status != portfolio.StatusPartiallyFilled {
+			continue
+		}
+		t.scheduleCancel(botID, accountID, order, cfg)
+	}
+}
+
+func (t *Trader) scheduleCancel(botID, accountID string, order portfolio.LocalOrder, cfg Config) {
+	if order.OpenedAt.IsZero() {
+		return
+	}
+	t.rngMu.Lock()
+	if _, evaluated := t.cancelEvaluated[order.ClientOrderID]; evaluated {
+		t.rngMu.Unlock()
+		return
+	}
+	if _, exists := t.cancelScheduled[order.ClientOrderID]; exists {
+		t.rngMu.Unlock()
+		return
+	}
+	t.cancelScheduled[order.ClientOrderID] = struct{}{}
+	t.rngMu.Unlock()
+
+	rng := orderRNG(order.ClientOrderID + ":age")
+	virtualAge := time.Duration(sampleDistribution(cfg.CancelAfterVirtualMinutes, rng) * float64(time.Minute))
+	due := order.OpenedAt.Add(t.clock.VirtualToRealDelay(virtualAge))
+	if due.Before(time.Now()) {
+		due = time.Now()
+	}
+	t.sched.Schedule(&scheduler.Task{
+		BotID: botID, ExecuteAt: due,
+		Payload: delayedCancelPayload{
+			BotID: botID, AccountID: accountID, ClientOrderID: order.ClientOrderID,
+			Symbol: order.Symbol, NoiseCfg: cfg,
+		},
+		Handler: t.handleDelayedCancel,
+	})
+}
+
+func (t *Trader) markCancelEvaluated(clientOrderID string) {
+	t.rngMu.Lock()
+	if t.cancelEvaluated == nil {
+		t.cancelEvaluated = make(map[string]struct{})
+	}
+	t.cancelEvaluated[clientOrderID] = struct{}{}
+	t.rngMu.Unlock()
+}
+
+func (t *Trader) clearCancelEvaluated(clientOrderID string) {
+	t.rngMu.Lock()
+	delete(t.cancelEvaluated, clientOrderID)
+	t.rngMu.Unlock()
+}
+
+func (t *Trader) clearCancelScheduled(clientOrderID string) {
+	t.rngMu.Lock()
+	delete(t.cancelScheduled, clientOrderID)
+	t.rngMu.Unlock()
+}
+
+func orderRNG(key string) *rand.Rand {
+	sum := sha256.Sum256([]byte(key))
+	return rand.New(rand.NewSource(int64(binary.BigEndian.Uint64(sum[:8]))))
 }
 
 func (t *Trader) scheduleNextTick(botID string, cfg Config, rng *rand.Rand) {

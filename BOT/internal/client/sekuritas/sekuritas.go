@@ -26,6 +26,11 @@ var ErrTokenNotFound = errors.New("token not found")
 // ErrTokenExpired is returned when the cached token has already expired.
 var ErrTokenExpired = errors.New("token expired")
 
+// ErrOrderSubmitUnknown means Sekuritas may have accepted the request but the
+// client did not receive a complete response. Callers must reconcile by the
+// stable client_order_id and must not submit a replacement order.
+var ErrOrderSubmitUnknown = errors.New("order submit outcome unknown")
+
 type Client struct {
 	apiClient *client.APIClient
 
@@ -75,7 +80,7 @@ func (c *Client) PlaceOrder(ctx context.Context, accountID string, request Place
 	httpRequest.Header.Set("x-correlation-id", uuid.NewString())
 	response, err := c.apiClient.HTTPClient.Do(httpRequest)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("%w: %v", ErrOrderSubmitUnknown, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -83,7 +88,7 @@ func (c *Client) PlaceOrder(ctx context.Context, accountID string, request Place
 		return result, fmt.Errorf("sekuritas place order status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
 	}
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		return result, err
+		return result, fmt.Errorf("%w: invalid success response: %v", ErrOrderSubmitUnknown, err)
 	}
 	return result, nil
 }

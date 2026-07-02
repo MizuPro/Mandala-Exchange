@@ -266,7 +266,19 @@ Response:
           "average_price_idr": "9000"
         }
       ],
-      "open_orders": []
+      "open_orders": [
+        {
+          "order_id": "uuid",
+          "client_order_id": "bot:noise-0001:session-uuid:42",
+          "symbol": "BBCA",
+          "side": "buy",
+          "status": "open",
+          "quantity_shares": 100,
+          "filled_quantity_shares": 0,
+          "entity_version": 1,
+          "created_at": "2026-06-29T00:00:00Z"
+        }
+      ]
     }
   ]
 }
@@ -275,6 +287,13 @@ Response:
 Snapshot harus konsisten pada satu transaction boundary. Setelah snapshot diterima, consumer memulai/replay event dari `as_of_sequence + 1`.
 
 Batch maksimum default 100 account. BOT melakukan pagination/batching untuk populasi lebih besar.
+
+`open_orders[].created_at` adalah waktu authoritative ketika order dibentuk di
+Sekuritas dan wajib dipertahankan pada snapshot/fat event. BOT menggunakannya
+untuk aging berbasis waktu virtual setelah restart. Selama rolling upgrade,
+client lama yang menerima field ini tetap kompatibel; client BOT yang menerima
+snapshot lama tanpa field tersebut wajib fail-closed dengan tidak mengirim
+cancel berbasis usia sampai timestamp authoritative tersedia.
 
 ## 7. Sequenced BOT Account Event Stream
 

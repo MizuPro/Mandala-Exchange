@@ -49,7 +49,7 @@ type staticClock struct {
 	instance *session.SessionInstance
 }
 
-func (c staticClock) GetInstance() *session.SessionInstance         { return c.instance }
+func (c staticClock) GetInstance() *session.SessionInstance            { return c.instance }
 func (c staticClock) VirtualToRealDelay(d time.Duration) time.Duration { return d }
 func (c staticClock) SessionProgress() float64                         { return 0.5 }
 
@@ -534,5 +534,130 @@ func TestValidateConfigFixedSymbolsRequired(t *testing.T) {
 	}
 	if err := ValidateConfig(cfg); err == nil {
 		t.Error("expected error for fixed symbols_universe with empty symbols")
+	}
+}
+
+func TestCancelAgingRequiresAuthoritativeOpenOrder(t *testing.T) {
+	store := portfolio.NewStore()
+	if err := store.TrackLocalOrder(&portfolio.LocalOrder{
+		ClientOrderID: "bot:noise:session:1", AccountID: "acc-1",
+		Status: portfolio.StatusQueued, OriginalQtyShares: 100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	q := queue.NewOrderQueue(1, 10)
+	rec := &noopRecorder{}
+	tr := &Trader{
+		portStore: store, orderQ: q, clock: activeClock(), decisionPipe: rec,
+		cancelScheduled: map[string]struct{}{"bot:noise:session:1": {}},
+	}
+	payload := delayedCancelPayload{
+		BotID: "noise-1", AccountID: "acc-1", ClientOrderID: "bot:noise:session:1",
+		NoiseCfg: Config{CancelProbability: 1},
+	}
+	if err := tr.handleDelayedCancel(context.Background(), "noise-1", payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := q.LookupByClientID("bot:noise:session:1:cancel:1"); ok {
+		t.Fatal("queued/submitting order must never produce an official cancel")
+	}
+	if got := rec.all(); len(got) != 1 || got[0].DecisionReason != "cancel_order_not_authoritatively_open" {
+		t.Fatalf("unexpected audit entries: %#v", got)
+	}
+}
+
+func TestCancelAgingOpenOrderUsesRiskQueueAndStableID(t *testing.T) {
+	store := portfolio.NewStore()
+	store.Replace(portfolio.Snapshot{
+		AsOfSequence: 1,
+		Accounts: []portfolio.Account{{
+			AccountID: "acc-1",
+			OpenOrders: []portfolio.OpenOrder{{
+				OrderID: "order-1", ClientOrderID: "bot:noise:session:2",
+				Symbol: "BBCA", Side: "buy", Status: "partially_filled",
+				QuantityShares: 200, FilledQuantityShares: 100,
+				EntityVersion: 2, CreatedAt: time.Now().Add(-time.Hour),
+			}},
+		}},
+	})
+	q := queue.NewOrderQueue(1, 10)
+	tr := &Trader{
+		portStore: store, orderQ: q, clock: activeClock(), decisionPipe: &noopRecorder{},
+		cancelScheduled: map[string]struct{}{"bot:noise:session:2": {}},
+	}
+	payload := delayedCancelPayload{
+		BotID: "noise-1", AccountID: "acc-1", ClientOrderID: "bot:noise:session:2",
+		Symbol: "BBCA", NoiseCfg: Config{CancelProbability: 1},
+	}
+	if err := tr.handleDelayedCancel(context.Background(), "noise-1", payload); err != nil {
+		t.Fatal(err)
+	}
+	req, ok := q.LookupByClientID("bot:noise:session:2:cancel:1")
+	if !ok {
+		t.Fatal("expected stable lifecycle cancel in queue")
+	}
+	if req.Priority != queue.PriorityRiskCancel {
+		t.Fatalf("cancel priority = %v, want risk/cancel", req.Priority)
+	}
+	cancel, ok := req.Payload.(queue.CancelOrderPayload)
+	if !ok || cancel.AccountID != "acc-1" || cancel.ClientOrderID != "bot:noise:session:2" {
+		t.Fatalf("unexpected cancel payload: %#v", req.Payload)
+	}
+}
+
+func TestCancelAgingNCPDefersWithoutQueueMutation(t *testing.T) {
+	store := portfolio.NewStore()
+	store.Replace(portfolio.Snapshot{
+		AsOfSequence: 1,
+		Accounts: []portfolio.Account{{
+			AccountID: "acc-1",
+			OpenOrders: []portfolio.OpenOrder{{
+				OrderID: "order-1", ClientOrderID: "bot:noise:session:3",
+				Status: "open", QuantityShares: 100, CreatedAt: time.Now().Add(-time.Hour),
+			}},
+		}},
+	})
+	ncpClock := activeClock()
+	ncpClock.instance.Status = session.StateNonCancellation
+	q := queue.NewOrderQueue(1, 10)
+	rec := &noopRecorder{}
+	tr := &Trader{
+		portStore: store, orderQ: q, clock: ncpClock, decisionPipe: rec,
+		cancelScheduled: map[string]struct{}{"bot:noise:session:3": {}},
+	}
+	payload := delayedCancelPayload{
+		BotID: "noise-1", AccountID: "acc-1", ClientOrderID: "bot:noise:session:3",
+		NoiseCfg: Config{CancelProbability: 1},
+	}
+	if err := tr.handleDelayedCancel(context.Background(), "noise-1", payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := q.LookupByClientID("bot:noise:session:3:cancel:1"); ok {
+		t.Fatal("NCP must not enqueue cancel")
+	}
+	if got := rec.all(); len(got) != 1 || got[0].DecisionReason != "cancel_deferred_by_market_rule" {
+		t.Fatalf("unexpected NCP audit: %#v", got)
+	}
+}
+
+func TestRecoveredOpenOrderPreservesCreatedAt(t *testing.T) {
+	createdAt := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Second)
+	store := portfolio.NewStore()
+	store.Replace(portfolio.Snapshot{
+		AsOfSequence: 9,
+		Accounts: []portfolio.Account{{
+			AccountID: "acc-1",
+			OpenOrders: []portfolio.OpenOrder{{
+				OrderID: "order-1", ClientOrderID: "bot:noise:session:4",
+				Status: "open", QuantityShares: 100, CreatedAt: createdAt,
+			}},
+		}},
+	})
+	order, ok := store.GetLocalOrder("bot:noise:session:4")
+	if !ok {
+		t.Fatal("restart snapshot did not hydrate local order")
+	}
+	if !order.OpenedAt.Equal(createdAt) || order.Status != portfolio.StatusOpen {
+		t.Fatalf("recovered order = %#v", order)
 	}
 }

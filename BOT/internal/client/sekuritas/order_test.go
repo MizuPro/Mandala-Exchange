@@ -3,6 +3,7 @@ package sekuritas
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -38,6 +39,25 @@ func TestPlaceOrderUsesBotJWTAndStableClientID(t *testing.T) {
 	}
 	if result.ID != "order-1" {
 		t.Fatalf("unexpected response: %+v", result)
+	}
+}
+
+func TestPlaceOrderInvalidSuccessResponseIsSubmitUnknown(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "service-token")
+	client.tokenCache["account-1"] = "jwt-value"
+	client.tokenExpiry["account-1"] = time.Now().Add(time.Hour)
+	_, err := client.PlaceOrder(context.Background(), "account-1", PlaceOrderRequest{
+		ClientOrderID: "bot:test:session:1", Symbol: "BBCA", Side: "buy",
+		OrderType: "limit", PriceIDR: 100, Quantity: 100,
+	})
+	if !errors.Is(err, ErrOrderSubmitUnknown) {
+		t.Fatalf("expected submit_unknown sentinel, got %v", err)
 	}
 }
 

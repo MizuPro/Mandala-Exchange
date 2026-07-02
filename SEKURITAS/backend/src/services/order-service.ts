@@ -493,14 +493,24 @@ export async function handleWebhookUpdate(payload: any) {
       }
     }
 
+    const fillRows = await tx.select().from(trade_fills).where(eq(trade_fills.order_id, order.id));
+    const accountedFilledQuantity = fillRows.reduce(
+      (sum: number, fill: typeof trade_fills.$inferSelect) => sum + fill.quantity,
+      0
+    );
     if (processedFillQuantity > 0 && payload.filled_quantity === undefined) {
-      filledQuantity = Math.min(nextOriginalQuantity, previousFilledQuantity + processedFillQuantity);
+      // Order-status snapshots and standalone trade-fill events can arrive in
+      // either order. The snapshot's cumulative filled_quantity may already
+      // include this trade, so adding the fill delta to previousFilledQuantity
+      // would double count it. Reconcile against the idempotent fill ledger.
+      filledQuantity = Math.min(
+        nextOriginalQuantity,
+        Math.max(previousFilledQuantity, accountedFilledQuantity)
+      );
       remainingQuantity = Math.max(nextOriginalQuantity - filledQuantity, 0);
     }
 
     const status = rawStatus || (processedFillQuantity > 0 ? (remainingQuantity === 0 ? "filled" : "partially_filled") : order.status);
-    const fillRows = await tx.select().from(trade_fills).where(eq(trade_fills.order_id, order.id));
-    const accountedFilledQuantity = fillRows.reduce((sum: number, fill: typeof trade_fills.$inferSelect) => sum + fill.quantity, 0);
     const remainingReserveQuantity = status === "filled"
       ? Math.max(nextOriginalQuantity - accountedFilledQuantity, 0)
       : remainingQuantity;
@@ -618,6 +628,7 @@ export async function handleWebhookUpdate(payload: any) {
               quantity_shares: currentOrder.original_quantity,
               filled_quantity_shares: currentOrder.filled_quantity,
               entity_version: currentOrder.last_mats_event_sequence,
+              created_at: currentOrder.created_at,
             })),
           },
         },
@@ -776,6 +787,11 @@ export async function cancelOrder(userId: string, orderId: string) {
 
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order || order.broker_account_id !== brokerAcc.id) throw new Error("Order not found or unauthorized");
+  // A retry after the first cancel response was lost must return the same
+  // successful semantic result without sending another mutation to MATS.
+  if (String(order.status).toLowerCase() === "cancelled") {
+    return { message: "Cancel request already completed", idempotent: true };
+  }
   if (isTerminalOrderStatus(order.status)) throw new Error("Order cannot be cancelled in its current state");
   if (!order.mats_order_id) throw new Error("Order not yet accepted by MATS");
 
@@ -784,6 +800,9 @@ export async function cancelOrder(userId: string, orderId: string) {
     const matsResponse = matsRes as any;
     if (matsResponse?.order) {
       await handleWebhookUpdate(matsOrderToWebhookPayload(matsResponse.order, matsResponse.trades || []));
+      if (normalizeOrderStatus(matsResponse.order.status) === "locked_non_cancellable") {
+        throw new Error(matsResponse.order.reject_reason || "non_cancellation_period");
+      }
     }
   } catch (e: any) {
     throw new Error(`Failed to send cancel request: ${e.message}`);

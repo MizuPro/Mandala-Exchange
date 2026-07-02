@@ -34,14 +34,14 @@ import (
 	"github.com/Mandala-Exchange/BOT/internal/metrics"
 	"github.com/Mandala-Exchange/BOT/internal/portfolio"
 	"github.com/Mandala-Exchange/BOT/internal/queue"
-	"github.com/Mandala-Exchange/BOT/internal/reconciliation"
 	"github.com/Mandala-Exchange/BOT/internal/realism"
+	"github.com/Mandala-Exchange/BOT/internal/reconciliation"
 	"github.com/Mandala-Exchange/BOT/internal/risk"
 	"github.com/Mandala-Exchange/BOT/internal/scheduler"
 	"github.com/Mandala-Exchange/BOT/internal/sentiment"
 	"github.com/Mandala-Exchange/BOT/internal/session"
-	"github.com/Mandala-Exchange/BOT/internal/strategystate"
 	"github.com/Mandala-Exchange/BOT/internal/strategy/noise"
+	"github.com/Mandala-Exchange/BOT/internal/strategystate"
 )
 
 type registeredBot struct {
@@ -74,7 +74,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 
 	logger.Info("Starting BOT Service", map[string]interface{}{
 		"env":  cfg.AppEnv,
@@ -165,7 +164,7 @@ func main() {
 			LastUpdate:   beiSnapshot.SecuritiesAt,
 		})
 	}
-	
+
 	ruleStore := marketrules.NewStore()
 	ruleStore.Update(ruleResolver)
 
@@ -620,7 +619,7 @@ func main() {
 	// Order queue worker
 	orderQ.Run(ctx, func(c context.Context, req *queue.OrderRequest) {
 		internalID := internalIDByBotID[req.BotID]
-		
+
 		switch payload := req.Payload.(type) {
 		case liquidationPayload:
 			response, submitErr := sekuritasClient.PlaceOrder(c, payload.AccountID, sekuritas.PlaceOrderRequest{
@@ -647,7 +646,7 @@ func main() {
 					OrderQuantity: &payload.Quantity, OrderSubmitted: true, OrderStatus: &response.Status,
 				})
 			}
-			
+
 		case queue.SubmitOrderPayload:
 			response, submitErr := sekuritasClient.PlaceOrder(c, payload.AccountID, sekuritas.PlaceOrderRequest{
 				ClientOrderID: req.ClientOrderID,
@@ -655,6 +654,11 @@ func main() {
 				PriceIDR: payload.PriceIDR, Quantity: payload.Quantity,
 			})
 			if submitErr != nil {
+				nextStatus := portfolio.StatusRejected
+				if errors.Is(submitErr, sekuritas.ErrOrderSubmitUnknown) {
+					nextStatus = portfolio.StatusSubmitUnknown
+				}
+				_ = portfolioStore.UpdateLocalOrderStatus(req.ClientOrderID, nextStatus)
 				logger.Error("Normal order submission failed", map[string]interface{}{
 					"bot_id": req.BotID, "client_order_id": req.ClientOrderID, "error": submitErr.Error(),
 				})
@@ -666,6 +670,8 @@ func main() {
 					OrderQuantity: &payload.Quantity,
 				})
 			} else {
+				_ = portfolioStore.SetLocalOrderID(req.ClientOrderID, response.ID)
+				_ = portfolioStore.UpdateLocalOrderStatus(req.ClientOrderID, portfolio.StatusOpen)
 				recordDecision(decision.DecisionLog{
 					InternalID: optionalUUID(internalID), Strategy: "noise_trader", Symbol: payload.Symbol,
 					Action: decision.ActionPlaceOrder, DecisionReason: "sekuritas_accepted",
@@ -689,7 +695,7 @@ func main() {
 				})
 				return
 			}
-			
+
 			cancelErr := sekuritasClient.CancelOrder(c, payload.AccountID, orderMeta.ID)
 			if cancelErr != nil {
 				logger.Error("Cancel order failed", map[string]interface{}{

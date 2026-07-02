@@ -96,6 +96,9 @@ type LocalOrder struct {
 	FilledQtyShares   int64
 	Status            LocalOrderStatus
 	EntityVersion     int64
+	// OpenedAt is the authoritative Sekuritas order creation/acceptance time.
+	// It is used for virtual-time order aging and survives snapshot recovery.
+	OpenedAt time.Time
 	// Pre-reserve: applied locally before Sekuritas confirms.
 	// Overwritten when Sekuritas fat event arrives (see ReserveCashForBuy).
 	PreReservedCashIDR int64 // buy: estimated cash locked (price×qty + fee estimate)
@@ -174,14 +177,15 @@ func (p *Position) applyBuySettlement(settledShares, settlePriceIDR int64) {
 // OpenOrder is the Sekuritas-authoritative view of an open order.
 // Used in Account snapshots and fat events.
 type OpenOrder struct {
-	OrderID              string `json:"order_id"`
-	ClientOrderID        string `json:"client_order_id"`
-	Symbol               string `json:"symbol"`
-	Side                 string `json:"side"`
-	Status               string `json:"status"`
-	QuantityShares       int64  `json:"quantity_shares"`
-	FilledQuantityShares int64  `json:"filled_quantity_shares"`
-	EntityVersion        int64  `json:"entity_version"`
+	OrderID              string    `json:"order_id"`
+	ClientOrderID        string    `json:"client_order_id"`
+	Symbol               string    `json:"symbol"`
+	Side                 string    `json:"side"`
+	Status               string    `json:"status"`
+	QuantityShares       int64     `json:"quantity_shares"`
+	FilledQuantityShares int64     `json:"filled_quantity_shares"`
+	EntityVersion        int64     `json:"entity_version"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 // Account is the BOT's local cache of a single Sekuritas account.
@@ -318,11 +322,12 @@ func (s *Store) Replace(snapshot Snapshot) {
 			if o.OrderID != "" && o.EntityVersion > s.orderVersion[o.OrderID] {
 				s.orderVersion[o.OrderID] = o.EntityVersion
 			}
+			s.syncRecoveredOpenOrder(cloned.AccountID, o)
 		}
 	}
 	s.lastSequence = snapshot.AsOfSequence
 	s.seen = make(map[string]struct{})
-	
+
 	// Garbage Collection (Anti Happy-Path):
 	// Purge local orders that are already terminal, as their final state
 	// is now fully represented in the fresh account snapshot. This prevents
@@ -611,7 +616,8 @@ func (s *Store) syncLocalOrdersFromOpenOrders(accountID string, openOrders []Ope
 	for _, o := range openOrders {
 		lo, ok := s.localOrders[o.ClientOrderID]
 		if !ok {
-			continue
+			s.syncRecoveredOpenOrder(accountID, o)
+			lo = s.localOrders[o.ClientOrderID]
 		}
 		if lo.Status.IsTerminal() {
 			continue
@@ -623,6 +629,9 @@ func (s *Store) syncLocalOrdersFromOpenOrders(accountID string, openOrders []Ope
 		}
 		if o.OrderID != "" && lo.OrderID == "" {
 			lo.OrderID = o.OrderID
+		}
+		if lo.OpenedAt.IsZero() && !o.CreatedAt.IsZero() {
+			lo.OpenedAt = o.CreatedAt
 		}
 		// Update status based on Sekuritas open order status
 		switch o.Status {
@@ -651,6 +660,42 @@ func (s *Store) syncLocalOrdersFromOpenOrders(accountID string, openOrders []Ope
 	}
 }
 
+// syncRecoveredOpenOrder hydrates local lifecycle state from the authoritative
+// Sekuritas snapshot. This is required after restart, when no pre-submit local
+// order exists but aging/cancel policy must continue without creating a new order.
+func (s *Store) syncRecoveredOpenOrder(accountID string, o OpenOrder) {
+	if o.ClientOrderID == "" {
+		return
+	}
+	if _, exists := s.localOrders[o.ClientOrderID]; exists {
+		return
+	}
+	status := StatusOpen
+	switch o.Status {
+	case "pending":
+		status = StatusQueued
+	case "submit_unknown":
+		status = StatusSubmitUnknown
+	case "partially_filled":
+		status = StatusPartiallyFilled
+	}
+	if o.FilledQuantityShares > 0 {
+		status = StatusPartiallyFilled
+	}
+	s.localOrders[o.ClientOrderID] = &LocalOrder{
+		ClientOrderID:     o.ClientOrderID,
+		OrderID:           o.OrderID,
+		AccountID:         accountID,
+		Symbol:            o.Symbol,
+		Side:              o.Side,
+		OriginalQtyShares: o.QuantityShares,
+		FilledQtyShares:   o.FilledQuantityShares,
+		Status:            status,
+		EntityVersion:     o.EntityVersion,
+		OpenedAt:          o.CreatedAt,
+	}
+}
+
 // updateLocalOrderFromEvent updates the local order matching event.EntityID
 // based on the Sekuritas event type.
 func (s *Store) updateLocalOrderFromEvent(event Event) {
@@ -671,6 +716,9 @@ func (s *Store) updateLocalOrderFromEvent(event Event) {
 	switch event.EventType {
 	case "order_accepted":
 		lo.Status = StatusOpen
+		if lo.OpenedAt.IsZero() {
+			lo.OpenedAt = event.OccurredAt
+		}
 		if lo.OrderID == "" {
 			lo.OrderID = event.EntityID
 		}

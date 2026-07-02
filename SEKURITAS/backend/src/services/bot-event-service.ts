@@ -34,6 +34,7 @@ export async function botAccountSnapshotTx(tx: any, brokerAccountId: string) {
       quantity_shares: order.original_quantity,
       filled_quantity_shares: order.filled_quantity,
       entity_version: order.last_mats_event_sequence,
+      created_at: order.created_at,
     })),
   };
 }
