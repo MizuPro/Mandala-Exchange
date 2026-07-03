@@ -80,7 +80,7 @@ Repositori ini terorganisasi berdasarkan tanggung jawab fungsional masing-masing
 | **🏛️ BEI** | Market Authority. Mengelola master emiten, trading rules, broker member, trade capture, settlement, custody ledger, corporate action, reporting, dan surveillance. | [README.md](./BEI/README.md) |
 | **⚡ MATS** | Mandala Automated Trading System. Mengelola order book (in-memory), continuous matching engine, validasi rules BEI, trade generation, dan distribusi market data realtime via WebSockets. | [README.md](./MATS/README.md) |
 | **💼 SEKURITAS** | Mandala Sekuritas. Mengelola user/player, cash reservation, share reservation, order entry gateway, portofolio, leaderboards, dan antarmuka web trader. | [README.md](./SEKURITAS/README.md) |
-| **🤖 BOT** | Automated trading investor. Bertindak sebagai penyedia likuiditas pasar, wajib masuk melalui gerbang Sekuritas (tunduk pada aturan pasar). | [PRD Dokumen](./docs/BOT/BOT_PRD.md) |
+| **🤖 _BOT_DEPRECATED_2** | (DEPRECATED) Automated trading investor. Bertindak sebagai penyedia likuiditas pasar, wajib masuk melalui gerbang Sekuritas (tunduk pada aturan pasar). | [PRD Dokumen](./docs/BOT/BOT_PRD.md) |
 
 ---
 
