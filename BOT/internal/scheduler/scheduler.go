@@ -43,6 +43,12 @@ func (pq *taskHeap) Pop() interface{} {
 
 // ── MarketSnapshot ────────────────────────────────────────────────────────────
 
+// BookLevel represents a single price level and its total quantity in the order book.
+type BookLevel struct {
+	Price    int64 `json:"price"`
+	Quantity int64 `json:"quantity"`
+}
+
 // MarketSnapshot is an immutable snapshot of market state for one symbol.
 // All fields are read-only once published. To update, publish a new value.
 // This ensures bots never observe a partially-updated state.
@@ -52,6 +58,8 @@ type MarketSnapshot struct {
 	LotSize      int64
 	RulesVersion string
 	LastUpdate   time.Time
+	Bids         []BookLevel
+	Asks         []BookLevel
 }
 
 // ── SnapshotStore ─────────────────────────────────────────────────────────────

@@ -15,14 +15,14 @@ const matsOrderStatusSchema = z.object({
   event_sequence: z.coerce.number().int().nonnegative().optional(),
   order_sequence_number: z.coerce.number().int().nonnegative().optional(),
   trade_id: z.string().min(1).optional(),
-  price: z.coerce.number().finite().positive().optional(),
+  price: z.coerce.number().finite().nonnegative().optional(),
   quantity: z.coerce.number().int().positive().optional(),
   side: z.enum(["BUY", "SELL", "buy", "sell"]).optional(),
   idempotency_key: z.string().min(1).optional(),
   fills: z.array(z.object({
     trade_id: z.string().min(1),
     mats_order_id: z.string().min(1).optional(),
-    price: z.coerce.number().finite().positive(),
+    price: z.coerce.number().finite().nonnegative(),
     quantity: z.coerce.number().int().positive(),
     side: z.enum(["BUY", "SELL", "buy", "sell"]).optional(),
     occurred_at: z.string().optional(),
@@ -42,6 +42,7 @@ export default async function matsWebhookRoutes(app: FastifyInstance) {
 
     const parsed = matsOrderStatusSchema.safeParse(request.body);
     if (!parsed.success) {
+      app.log.error({ body: request.body, errors: parsed.error.issues }, "MATS event payload validation failed");
       return reply.status(400).send({ error: parsed.error.issues[0]?.message || "Invalid MATS event payload" });
     }
 

@@ -41,6 +41,8 @@ import (
 	"github.com/Mandala-Exchange/BOT/internal/sentiment"
 	"github.com/Mandala-Exchange/BOT/internal/session"
 	"github.com/Mandala-Exchange/BOT/internal/strategy/noise"
+	"github.com/Mandala-Exchange/BOT/internal/strategy/momentum"
+	"github.com/Mandala-Exchange/BOT/internal/strategy/marketmaker"
 	"github.com/Mandala-Exchange/BOT/internal/strategystate"
 )
 
@@ -137,8 +139,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to build active universe: %v", err)
 	}
+	var momentumTrader *momentum.Trader
+	var marketMakerTrader *marketmaker.Trader
 	matsClient.Configure(symbols, func(event mats.Event) {
 		updateMarketPrice(sched.Snapshots, event)
+		if momentumTrader != nil {
+			momentumTrader.OnMarketEvent(event)
+		}
+		if marketMakerTrader != nil {
+			marketMakerTrader.OnMarketEvent(event)
+		}
 	})
 
 	// Compile the active BEI rule/fee snapshot. Missing rules fail startup closed.
@@ -617,7 +627,7 @@ func main() {
 	}()
 
 	// Order queue worker
-	orderQ.Run(ctx, func(c context.Context, req *queue.OrderRequest) {
+	go orderQ.Run(ctx, func(c context.Context, req *queue.OrderRequest) {
 		internalID := internalIDByBotID[req.BotID]
 
 		switch payload := req.Payload.(type) {
@@ -648,6 +658,10 @@ func main() {
 			}
 
 		case queue.SubmitOrderPayload:
+			strategy := "system"
+			if botCfg, _, err := configMgr.GetDBConfig(c, req.BotID); err == nil {
+				strategy = botCfg.StrategyType
+			}
 			response, submitErr := sekuritasClient.PlaceOrder(c, payload.AccountID, sekuritas.PlaceOrderRequest{
 				ClientOrderID: req.ClientOrderID,
 				Symbol:        payload.Symbol, Side: payload.Side, OrderType: "limit",
@@ -664,7 +678,7 @@ func main() {
 				})
 				reason := submitErr.Error()
 				recordDecision(decision.DecisionLog{
-					InternalID: optionalUUID(internalID), Strategy: "noise_trader", Symbol: payload.Symbol,
+					InternalID: optionalUUID(internalID), Strategy: strategy, Symbol: payload.Symbol,
 					Action: decision.ActionReject, DecisionReason: "sekuritas_submit_failed",
 					ClientOrderID: &req.ClientOrderID, RejectReason: &reason,
 					OrderQuantity: &payload.Quantity,
@@ -673,7 +687,7 @@ func main() {
 				_ = portfolioStore.SetLocalOrderID(req.ClientOrderID, response.ID)
 				_ = portfolioStore.UpdateLocalOrderStatus(req.ClientOrderID, portfolio.StatusOpen)
 				recordDecision(decision.DecisionLog{
-					InternalID: optionalUUID(internalID), Strategy: "noise_trader", Symbol: payload.Symbol,
+					InternalID: optionalUUID(internalID), Strategy: strategy, Symbol: payload.Symbol,
 					Action: decision.ActionPlaceOrder, DecisionReason: "sekuritas_accepted",
 					ClientOrderID: &req.ClientOrderID, SekuritasOrderID: &response.ID,
 					OrderQuantity: &payload.Quantity, OrderSubmitted: true, OrderStatus: &response.Status,
@@ -681,6 +695,10 @@ func main() {
 			}
 
 		case queue.CancelOrderPayload:
+			strategy := "system"
+			if botCfg, _, err := configMgr.GetDBConfig(c, req.BotID); err == nil {
+				strategy = botCfg.StrategyType
+			}
 			// Fetch the sekuritas order ID first
 			orderMeta, fetchErr := sekuritasClient.GetOrderByClientID(c, payload.AccountID, payload.ClientOrderID)
 			if fetchErr != nil {
@@ -689,7 +707,7 @@ func main() {
 				})
 				reason := fetchErr.Error()
 				recordDecision(decision.DecisionLog{
-					InternalID: optionalUUID(internalID), Strategy: "noise_trader",
+					InternalID: optionalUUID(internalID), Strategy: strategy,
 					Action: decision.ActionReject, DecisionReason: "sekuritas_cancel_lookup_failed",
 					ClientOrderID: &payload.ClientOrderID, RejectReason: &reason,
 				})
@@ -703,17 +721,60 @@ func main() {
 				})
 				reason := cancelErr.Error()
 				recordDecision(decision.DecisionLog{
-					InternalID: optionalUUID(internalID), Strategy: "noise_trader",
+					InternalID: optionalUUID(internalID), Strategy: strategy,
 					Action: decision.ActionReject, DecisionReason: "sekuritas_cancel_failed",
 					ClientOrderID: &payload.ClientOrderID, RejectReason: &reason,
 					SekuritasOrderID: &orderMeta.ID,
 				})
 			} else {
 				recordDecision(decision.DecisionLog{
-					InternalID: optionalUUID(internalID), Strategy: "noise_trader",
+					InternalID: optionalUUID(internalID), Strategy: strategy,
 					Action: decision.ActionCancel, DecisionReason: "sekuritas_cancel_accepted",
 					ClientOrderID: &payload.ClientOrderID, SekuritasOrderID: &orderMeta.ID,
 					OrderSubmitted: true,
+				})
+			}
+
+		case queue.AmendOrderPayload:
+			strategy := "system"
+			if botCfg, _, err := configMgr.GetDBConfig(c, req.BotID); err == nil {
+				strategy = botCfg.StrategyType
+			}
+			orderMeta, fetchErr := sekuritasClient.GetOrderByClientID(c, payload.AccountID, payload.ClientOrderID)
+			if fetchErr != nil {
+				logger.Error("Amend order lookup failed", map[string]interface{}{
+					"bot_id": req.BotID, "client_order_id": payload.ClientOrderID, "error": fetchErr.Error(),
+				})
+				reason := fetchErr.Error()
+				recordDecision(decision.DecisionLog{
+					InternalID: optionalUUID(internalID), Strategy: strategy,
+					Action: decision.ActionReject, DecisionReason: "sekuritas_amend_lookup_failed",
+					ClientOrderID: &payload.ClientOrderID, RejectReason: &reason,
+				})
+				return
+			}
+
+			amendErr := sekuritasClient.AmendOrder(c, payload.AccountID, orderMeta.ID, sekuritas.AmendOrderRequest{
+				PriceIDR: payload.PriceIDR,
+				Quantity: payload.Quantity,
+			})
+			if amendErr != nil {
+				logger.Error("Amend order failed", map[string]interface{}{
+					"bot_id": req.BotID, "order_id": orderMeta.ID, "error": amendErr.Error(),
+				})
+				reason := amendErr.Error()
+				recordDecision(decision.DecisionLog{
+					InternalID: optionalUUID(internalID), Strategy: strategy,
+					Action: decision.ActionReject, DecisionReason: "sekuritas_amend_failed",
+					ClientOrderID: &payload.ClientOrderID, RejectReason: &reason,
+					SekuritasOrderID: &orderMeta.ID,
+				})
+			} else {
+				recordDecision(decision.DecisionLog{
+					InternalID: optionalUUID(internalID), Strategy: strategy,
+					Action: decision.ActionAmend, DecisionReason: "sekuritas_amend_accepted",
+					ClientOrderID: &payload.ClientOrderID, SekuritasOrderID: &orderMeta.ID,
+					OrderQuantity: &payload.Quantity, OrderSubmitted: true,
 				})
 			}
 
@@ -749,18 +810,46 @@ func main() {
 		accountLookup, internalIDLookup, sessionSeeder, decisionPipeline,
 	)
 
-	// Bootstrap registered bots that are noise_traders
+	momentumTrader = momentum.NewTrader(
+		dbPool, configMgr, portfolioStore, sched, realismEngine, sessMonitor, orderQ, ruleStore,
+		accountLookup, internalIDLookup, sessionSeeder, decisionPipeline, sentimentService,
+	)
+
+	marketMakerTrader = marketmaker.NewTrader(
+		dbPool, configMgr, portfolioStore, sched, realismEngine, sessMonitor, orderQ, ruleStore,
+		accountLookup, internalIDLookup, sessionSeeder, decisionPipeline,
+	)
+
+	// Bootstrap registered bots that are noise_traders, momentum_traders, or market_makers
 	for _, bot := range registeredBots {
 		cfg, _, err := configMgr.GetDBConfig(ctx, bot.BotID)
-		if err == nil && cfg.StrategyType == "noise_trader" {
-			// Stagger startup across 1–5 s to avoid thundering-herd on order queue.
-			delay := time.Duration(1+time.Now().UnixNano()%4) * time.Second
-			sched.Schedule(&scheduler.Task{
-				BotID:     bot.BotID,
-				ExecuteAt: time.Now().Add(delay),
-				Handler:   noiseTrader.HandleTask,
-			})
-			logger.Info("Bootstrapped Noise Trader bot", map[string]interface{}{"bot_id": bot.BotID})
+		if err == nil {
+			if cfg.StrategyType == "noise_trader" {
+				// Stagger startup across 1–5 s to avoid thundering-herd on order queue.
+				delay := time.Duration(1+time.Now().UnixNano()%4) * time.Second
+				sched.Schedule(&scheduler.Task{
+					BotID:     bot.BotID,
+					ExecuteAt: time.Now().Add(delay),
+					Handler:   noiseTrader.HandleTask,
+				})
+				logger.Info("Bootstrapped Noise Trader bot", map[string]interface{}{"bot_id": bot.BotID})
+			} else if cfg.StrategyType == "momentum_trader" {
+				delay := time.Duration(1+time.Now().UnixNano()%4) * time.Second
+				sched.Schedule(&scheduler.Task{
+					BotID:     bot.BotID,
+					ExecuteAt: time.Now().Add(delay),
+					Handler:   momentumTrader.HandleTask,
+				})
+				logger.Info("Bootstrapped Momentum Trader bot", map[string]interface{}{"bot_id": bot.BotID})
+			} else if cfg.StrategyType == "market_maker" {
+				delay := time.Duration(1+time.Now().UnixNano()%4) * time.Second
+				sched.Schedule(&scheduler.Task{
+					BotID:     bot.BotID,
+					ExecuteAt: time.Now().Add(delay),
+					Handler:   marketMakerTrader.HandleTask,
+				})
+				logger.Info("Bootstrapped Market Maker bot", map[string]interface{}{"bot_id": bot.BotID})
+			}
 		}
 	}
 
@@ -856,6 +945,27 @@ func updateMarketPrice(store *scheduler.SnapshotStore, event mats.Event) {
 	if event.Symbol == "" || len(event.Payload) == 0 {
 		return
 	}
+
+	if event.Type == "depth_snapshot" {
+		var book struct {
+			Bids []scheduler.BookLevel `json:"bids"`
+			Asks []scheduler.BookLevel `json:"asks"`
+		}
+		if err := json.Unmarshal(event.Payload, &book); err == nil {
+			current, ok := store.Get(event.Symbol)
+			if ok && current.LotSize > 0 {
+				current.Bids = book.Bids
+				current.Asks = book.Asks
+				current.LastUpdate = event.OccurredAt
+				if current.LastUpdate.IsZero() {
+					current.LastUpdate = time.Now().UTC()
+				}
+				store.Publish(current)
+			}
+		}
+		return
+	}
+
 	var payload map[string]interface{}
 	decoder := json.NewDecoder(strings.NewReader(string(event.Payload)))
 	decoder.UseNumber()

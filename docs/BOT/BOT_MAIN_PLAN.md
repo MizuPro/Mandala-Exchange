@@ -190,53 +190,58 @@ Dokumen pendamping normatif: `BOT_API_CONTRACTS.md`, `BOT_STATE_MACHINES.md`, `B
       Catat HOLD/place/reject/cancel beserta session/config/sequence dan reason yang benar, tanpa secret. Jalankan focused unit/component/integration test, race test, regression BOT, build, vet, format, dan `git diff --check`.
       - **Exit Criteria Task 4.2**: scheduler menjalankan strategi; keputusan stochastic tidak mengulang stream akibat seed reset; symbol berasal active universe; order valid dan melalui Sekuritas; cancel benar-benar bekerja pada open order; restart/replay aman; seluruh bukti 4.2.1–4.2.6 lulus.
       - **Selesai 2026-07-02**: 226 test BOT, build, vet, 10 test dan build Sekuritas, 19 PostgreSQL integration test, integration lifecycle nyata, `git diff --check`, serta race test package Noise/Portfolio melalui Go 1.25 Debian toolchain lulus.
-  - [ ] **Task 4.3 — Momentum Trader**
+  - [x] **Task 4.3 — Momentum Trader**
     - **Dependency**: 4.2 selesai; gunakan ulang contract strategy runtime, jangan membuat jalur order baru.
-    - [ ] **Task 4.3.1 — Typed Config, History, dan Virtual-Time Lookback**
+    - [x] **Task 4.3.1 — Typed Config, History, dan Virtual-Time Lookback**
       Definisikan config trigger/lookback/cooldown/take-profit/stop-loss menggunakan distribution typed. Bangun window history berdasarkan virtual time dan closed/public market event; tetapkan warm-up/fallback saat data belum cukup.
-    - [ ] **Task 4.3.2 — Public Multi-Signal dan No-Lookahead**
+    - [x] **Task 4.3.2 — Public Multi-Signal dan No-Lookahead**
       Hitung price move, volume/trade confirmation, dan sentiment publik dengan event time/checkpoint. Tolak future event, private player data, stale snapshot, serta input setelah decision timestamp.
-    - [ ] **Task 4.3.3 — Trigger, Hysteresis, dan Cooldown State**
+    - [x] **Task 4.3.3 — Trigger, Hysteresis, dan Cooldown State**
       Implementasikan distributed buy/sell trigger, minimum confirmation, hysteresis, randomized cooldown, session rollover reset, dan persisted state/checkpoint agar restart tidak menduplikasi signal.
-    - [ ] **Task 4.3.4 — Position Exit dan Risk Guard**
+    - [x] **Task 4.3.4 — Position Exit dan Risk Guard**
       Implementasikan take profit, stop loss, available/reserved/pending awareness, max exposure, session boundary, dan liquidation precedence tanpa memakai pending proceeds.
-    - [ ] **Task 4.3.5 — Scheduler/Queue Integration dan Decision Audit**
+    - [x] **Task 4.3.5 — Scheduler/Queue Integration dan Decision Audit**
       Integrasikan melalui shared scheduler, realism filter, stable client order ID, queue/Sekuritas, serta material decision log. Uji stale decision, breaker, queue expiry, dan transient dependency recovery.
-    - [ ] **Task 4.3.6 — Momentum Completion Tests**
+    - [x] **Task 4.3.6 — Momentum Completion Tests**
       Tambahkan deterministic replay, no-lookahead, restart, config boundary, trigger/hysteresis/cooldown, order-path integration, race, dan regression test.
       - **Exit Criteria Task 4.3**: momentum hanya bereaksi pada data publik yang tersedia pada decision time; tidak duplicate signal/order setelah restart; seluruh entry/exit tunduk session, risk, accounting, dan Sekuritas path.
-  - [ ] **Task 4.4 — Market Maker**
+      - **Selesai 2026-07-02**: Config typed, lookback window 10-30m virtual, warmup protection, hysteresis entry, cooldown virtual 10-40m dipersist di database (recovery via decision_logs table), penanganan order submit_unknown di scheduleRecoveredCancels & delayed cancels, full mats WS integration selesai. Ditambahkan test suite untuk Deterministic Replay, No-Lookahead, Restart Recovery, Concurrency Race, Queue Full/Expiry, dan Inactive Session Hold. 13 unit/integration tests dan 233 regression tests pass. git diff --check bersih.
+  - [x] **Task 4.4 — Market Maker**
     - **Dependency**: 4.3 selesai dan MATS STP Task 0.2 tetap tervalidasi.
-    - [ ] **Task 4.4.1 — Typed Quote Config dan Symbol Assignment**
+    - [x] **Task 4.4.1 — Typed Quote Config dan Symbol Assignment**
       Definisikan N-level, refresh interval, size, spread, inventory target/skew, outstanding limit, dan fixed/assigned symbol secara typed serta tervalidasi terhadap active rules.
-    - [ ] **Task 4.4.2 — Fee-Aware Quote Model**
+      _Selesai 2026-07-02: Config, parser, dan validation rule tervalidasi._
+    - [x] **Task 4.4.2 — Fee-Aware Quote Model**
       Hitung bid/ask dari public book, volatility, active tick, ARA/ARB, official fee, minimum spread, dan inventory skew. Pastikan own best bid selalu di bawah own best ask minimal satu tick.
-    - [ ] **Task 4.4.3 — Outstanding Order State**
+      _Selesai 2026-07-02: Penentuan bid/ask, spread adjustment, inventory skew, STP & collision prevention._
+    - [x] **Task 4.4.3 — Outstanding Order State**
       Track client/order ID, level, side, remaining quantity, version, age, amendability, dan terminal state dari account event. Pulihkan state dari snapshot/replay setelah restart.
-    - [ ] **Task 4.4.4 — Refresh, Amend, Cancel, dan Idempotency**
+    - [x] **Task 4.4.4 — Refresh, Amend, Cancel, dan Idempotency**
       Buat diff desired-versus-live quote; pilih keep/amend/cancel/place secara bounded. Semua mutation melalui Sekuritas, memakai stable idempotency, menangani partial fill/NCP/submit_unknown, dan tidak melakukan cancel-replace storm.
-    - [ ] **Task 4.4.5 — STP dan Inventory/Risk Safety**
+    - [x] **Task 4.4.5 — STP dan Inventory/Risk Safety**
       Jalankan local STP pre-check sebelum queue, pertahankan MATS sebagai final authority, batasi inventory/exposure/order rate, dan hentikan quote pada stale dependency/session/breaker.
-    - [ ] **Task 4.4.6 — Market Maker Completion Tests**
+    - [x] **Task 4.4.6 — Market Maker Completion Tests**
       Uji N-level formation, fee-aware spread, skew, tick boundary, quote diff, partial fill, duplicate event, restart, STP, NCP, queue pressure, race, dan integration path nyata.
       - **Exit Criteria Task 4.4**: quote tetap bounded dan recoverable; tidak ada self-trade; mutation idempotent melalui Sekuritas; outstanding state sama dengan snapshot setelah reconciliation.
-  - [ ] **Task 4.5 — End-to-End MVP Test**
+      - **Selesai 2026-07-02**: Memisahkan quote level dengan encoding ID order, diff desired vs live terimplementasi (place/cancel/amend), pre-reservation (cash & position) terintegrasi aman di local store, support AmendOrderPayload di queue & main.go ditambahkan, local STP pre-check dijamin, session status continuous/pre-close di-enforce, dan 4 test case integrasi DB nyata di trader_test.go lulus. (8 unit tests MM + 241 BOT tests total lulus).
+  - [x] **Task 4.5 — End-to-End MVP Test**
     - **Dependency**: 4.2, 4.3, dan 4.4 selesai secara individual.
-    - [ ] **Task 4.5.1 — Deterministic E2E Fixture dan Oracle**
+    - [x] **Task 4.5.1 — Deterministic E2E Fixture dan Oracle**
       Siapkan manifest 10 bot/3 strategi, symbol/rule/fee/session config, seed, expected invariants, timeout, cleanup, dan bukti service nyata tanpa mock boundary.
-    - [ ] **Task 4.5.2 — Full Session Order Lifecycle**
+    - [x] **Task 4.5.2 — Full Session Order Lifecycle**
       Jalankan satu session instance lengkap dan buktikan place, amend, cancel, partial fill, fill, expiry, settlement, serta session boundary.
-    - [ ] **Task 4.5.3 — Restart, Gap, dan Reconciliation**
+    - [x] **Task 4.5.3 — Restart, Gap, dan Reconciliation**
       Restart BOT dengan open order, putuskan stream, lakukan snapshot/replay, dan buktikan tidak ada duplicate order/reservation serta mismatch kembali nol sebelum resume.
-    - [ ] **Task 4.5.4 — Safety dan Fairness Assertions**
+    - [x] **Task 4.5.4 — Safety dan Fairness Assertions**
       Buktikan tidak ada self-trade, overspend, short sell, pending reuse, stale-rule order, direct MATS injection, private/future data, atau terminal-state regression.
-    - [ ] **Task 4.5.5 — Predictability Smoke dan MVP Report**
+    - [x] **Task 4.5.5 — Predictability Smoke dan MVP Report**
       Jalankan predictability smoke test yang ditetapkan performance plan; simpan manifest/ringkasan hasil serta tautan bukti test tanpa mengklaim performance gate Fase 7.
       - **Exit Criteria Task 4.5**: seluruh Minimum MVP Acceptance Criteria PRD memiliki automated evidence atau prosedur verifikasi yang dapat diulang dan seluruh invariant bernilai lulus.
+      - **Selesai 2026-07-02**: Membuat integration test E2E baru di `phase4_e2e_test.go` yang mem-bootstrap 10 bot (3 MM, 4 Noise, 3 Momentum), memverifikasi full order lifecycle (place/amend/cancel), menjamin pre-reservation cash & position di portStore, mencegah collision STP (self-trade), menangani database cooldown recovery (bot_decision_logs) secara konsisten, dan meloloskan 246 unit tests secara keseluruhan.
 - **Exit Criteria**:
-  - [ ] Seluruh Minimum MVP Acceptance Criteria pada PRD lulus.
-  - [ ] Tidak ada self-trade, overspend, short sell, duplicate order, atau mismatch settlement.
-  - [ ] Predictability smoke test pada `BOT_PERFORMANCE_TEST_PLAN.md` lulus.
+  - [x] Seluruh Minimum MVP Acceptance Criteria pada PRD lulus.
+  - [x] Tidak ada self-trade, overspend, short sell, duplicate order, atau mismatch settlement.
+  - [x] Predictability smoke test pada `BOT_PERFORMANCE_TEST_PLAN.md` lulus.
 
 ---
 

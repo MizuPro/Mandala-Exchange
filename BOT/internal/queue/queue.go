@@ -50,6 +50,13 @@ type CancelOrderPayload struct {
 	ClientOrderID string
 }
 
+type AmendOrderPayload struct {
+	AccountID     string
+	ClientOrderID string
+	PriceIDR      int64
+	Quantity      int64
+}
+
 type orderHeap []*OrderRequest
 
 func (h orderHeap) Len() int { return len(h) }

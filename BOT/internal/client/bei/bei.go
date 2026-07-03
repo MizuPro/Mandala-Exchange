@@ -56,6 +56,35 @@ type SessionInstance struct {
 	Version             int64     `json:"version"`
 }
 
+func (s *SessionInstance) UnmarshalJSON(data []byte) error {
+	type Alias SessionInstance
+	aux := &struct {
+		ID        uuid.UUID `json:"id"`
+		SessionID uuid.UUID `json:"session_id"`
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if s.InstanceID == uuid.Nil {
+		if aux.ID != uuid.Nil {
+			s.InstanceID = aux.ID
+		} else if aux.SessionID != uuid.Nil {
+			s.InstanceID = aux.SessionID
+		}
+	}
+	if s.VirtualDurationSecs == 0 {
+		s.VirtualDurationSecs = 21600 // 6 jam virtual
+	}
+	if s.RealDurationSecs == 0 {
+		s.RealDurationSecs = 1800 // 30 menit real
+	}
+	return nil
+}
+
+
 // ── Snapshot ────────────────────────────────────────────────────────────────
 
 // Snapshot holds all BEI data fetched in the last polling cycle.
@@ -126,7 +155,7 @@ func (c *Client) FetchData(ctx context.Context) error {
 		{"/public/securities", false},
 		{"/integration/mats/rules", true},
 		{"/public/fee-schedule", true},
-		{"/integration/mats/sessions/active", true},
+		{"/integration/mats/sessions/instance/active", true},
 		{"/indices/MDX/composition", false},
 		{"/announcements", false},
 	}
@@ -150,10 +179,17 @@ func (c *Client) FetchData(ctx context.Context) error {
 			// Non-critical endpoint failure: log but continue; stale data remains.
 			continue
 		}
-		if len(*targets[i]) == 0 || string(*targets[i]) == "null" {
+		if len(*targets[i]) == 0 || string(*targets[i]) == "null" || string(*targets[i]) == "{}" {
 			if ep.critical {
+				if ep.path == "/integration/mats/sessions/instance/active" {
+					// Transient null during rollover is expected; clear target so we don't update SessionAt.
+					// This allows IsSessionStale to gracefully handle the delay instead of an immediate ERROR log.
+					*targets[i] = nil
+					continue
+				}
 				return errors.New("BEI returned empty response for " + ep.path)
 			}
+			*targets[i] = nil
 		}
 	}
 

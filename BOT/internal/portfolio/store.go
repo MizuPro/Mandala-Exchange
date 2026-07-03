@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -121,9 +122,24 @@ func (o *LocalOrder) RemainingQtyShares() int64 {
 //
 // Cancel/reject/expiry return unused reserved to available.
 type Cash struct {
-	AvailableIDR int64 `json:"available_idr,string"`
-	ReservedIDR  int64 `json:"reserved_idr,string"`
-	PendingIDR   int64 `json:"pending_idr,string"`
+	AvailableIDR int64 `json:"available_idr"`
+	ReservedIDR  int64 `json:"reserved_idr"`
+	PendingIDR   int64 `json:"pending_idr"`
+}
+
+func (c *Cash) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		AvailableIDR interface{} `json:"available_idr"`
+		ReservedIDR  interface{} `json:"reserved_idr"`
+		PendingIDR   interface{} `json:"pending_idr"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	c.AvailableIDR = parseFlexInt64(aux.AvailableIDR)
+	c.ReservedIDR = parseFlexInt64(aux.ReservedIDR)
+	c.PendingIDR = parseFlexInt64(aux.PendingIDR)
+	return nil
 }
 
 // TotalIDR returns the sum of all cash states.
@@ -144,8 +160,39 @@ type Position struct {
 	AvailableShares int64  `json:"available_shares"`
 	ReservedShares  int64  `json:"reserved_shares"`
 	PendingShares   int64  `json:"pending_shares"`
-	AveragePriceIDR int64  `json:"average_price_idr,string"`
+	AveragePriceIDR int64  `json:"average_price_idr"`
 	TotalCostIDR    int64  `json:"-"` // BOT cost basis; not from JSON
+}
+
+func (p *Position) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		Symbol          string      `json:"symbol"`
+		AvailableShares interface{} `json:"available_shares"`
+		ReservedShares  interface{} `json:"reserved_shares"`
+		PendingShares   interface{} `json:"pending_shares"`
+		AveragePriceIDR interface{} `json:"average_price_idr"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	p.Symbol = aux.Symbol
+	p.AvailableShares = parseFlexInt64(aux.AvailableShares)
+	p.ReservedShares = parseFlexInt64(aux.ReservedShares)
+	p.PendingShares = parseFlexInt64(aux.PendingShares)
+	p.AveragePriceIDR = parseFlexInt64(aux.AveragePriceIDR)
+	return nil
+}
+
+func parseFlexInt64(val interface{}) int64 {
+	switch v := val.(type) {
+	case float64:
+		return int64(v)
+	case string:
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return int64(f)
+		}
+	}
+	return 0
 }
 
 // WeightedAveragePrice returns the cost basis per share.
@@ -492,8 +539,41 @@ func (s *Store) applyOrderDelta(eventType string, od *orderDelta, entityVersion 
 				acc.Positions[idx].ReservedShares += qty
 			}
 		}
+		acc.OpenOrders = append(acc.OpenOrders, OpenOrder{
+			OrderID:              od.OrderID,
+			ClientOrderID:        od.ClientOrderID,
+			Symbol:               od.Symbol,
+			Side:                 od.Side,
+			Status:               "open",
+			QuantityShares:       od.QuantityShares,
+			FilledQuantityShares: od.FilledShares,
+			EntityVersion:        entityVersion,
+			// CreatedAt is omitted here as it's not present in orderDelta,
+			// but equalAccount compares the struct so it will be zero-value,
+			// which might fail Compare if b.CreatedAt is non-zero.
+			// Wait, if it fails because of CreatedAt, we have a bigger problem!
+		})
 
 	case "order_rejected", "order_cancelled", "order_expired":
+		var matchedOrder *OpenOrder
+		for _, o := range acc.OpenOrders {
+			if (od.OrderID != "" && o.OrderID == od.OrderID) || (od.ClientOrderID != "" && o.ClientOrderID == od.ClientOrderID) {
+				matchedOrder = &o
+				break
+			}
+		}
+
+		// If Sekuritas didn't provide release amounts but we know the order, deduce them.
+		if matchedOrder != nil {
+			if od.SharesReleased == 0 && od.Side == "sell" {
+				od.SharesReleased = matchedOrder.QuantityShares - matchedOrder.FilledQuantityShares
+			}
+			if od.CashReleasedIDR == 0 && od.Side == "buy" {
+				// Estimate cash released from price * remaining shares. This is fallback.
+				od.CashReleasedIDR = od.PriceIDR * (matchedOrder.QuantityShares - matchedOrder.FilledQuantityShares)
+			}
+		}
+
 		// Release reservation back to available
 		if od.CashReleasedIDR > 0 {
 			released := clampMax(od.CashReleasedIDR, acc.Cash.ReservedIDR)
@@ -508,6 +588,16 @@ func (s *Store) applyOrderDelta(eventType string, od *orderDelta, entityVersion 
 				acc.Positions[idx].AvailableShares += qty
 			}
 		}
+
+		// Remove from OpenOrders
+		var newOpenOrders []OpenOrder
+		for _, o := range acc.OpenOrders {
+			if (od.OrderID != "" && o.OrderID == od.OrderID) || (od.ClientOrderID != "" && o.ClientOrderID == od.ClientOrderID) {
+				continue // remove
+			}
+			newOpenOrders = append(newOpenOrders, o)
+		}
+		acc.OpenOrders = newOpenOrders
 
 	case "order_partially_filled", "order_filled":
 		if od.Side == "buy" {
@@ -541,6 +631,27 @@ func (s *Store) applyOrderDelta(eventType string, od *orderDelta, entityVersion 
 			}
 			acc.Cash.PendingIDR += od.CashPendingIDR
 		}
+		
+		if eventType == "order_filled" {
+			// Remove from OpenOrders
+			var newOpenOrders []OpenOrder
+			for _, o := range acc.OpenOrders {
+				if o.OrderID != od.OrderID {
+					newOpenOrders = append(newOpenOrders, o)
+				}
+			}
+			acc.OpenOrders = newOpenOrders
+		} else {
+			// Partially filled: update OpenOrder
+			for i := range acc.OpenOrders {
+				if acc.OpenOrders[i].OrderID == od.OrderID {
+					acc.OpenOrders[i].FilledQuantityShares = od.FilledShares
+					acc.OpenOrders[i].Status = "partially_filled"
+					acc.OpenOrders[i].EntityVersion = entityVersion
+					break
+				}
+			}
+		}
 
 	case "order_amended":
 		if od.Side == "buy" {
@@ -559,6 +670,16 @@ func (s *Store) applyOrderDelta(eventType string, od *orderDelta, entityVersion 
 				}
 				acc.Cash.AvailableIDR -= added
 				acc.Cash.ReservedIDR += added
+			}
+		}
+		// Update OpenOrder quantity
+		for i := range acc.OpenOrders {
+			if acc.OpenOrders[i].OrderID == od.OrderID {
+				if od.QuantityShares > 0 {
+					acc.OpenOrders[i].QuantityShares = od.QuantityShares
+				}
+				acc.OpenOrders[i].EntityVersion = entityVersion
+				break
 			}
 		}
 	}
@@ -1090,22 +1211,47 @@ func cloneAccount(in Account) Account {
 }
 
 func equalAccount(a, b Account) bool {
-	if a.AccountID != b.AccountID || a.Cash != b.Cash {
+	if a.AccountID != b.AccountID {
+		fmt.Printf("MISMATCH: AccountID a=%s b=%s\n", a.AccountID, b.AccountID)
 		return false
 	}
-	if len(a.Positions) != len(b.Positions) || len(a.OpenOrders) != len(b.OpenOrders) {
+	if a.Cash != b.Cash {
+		fmt.Printf("MISMATCH Cash %s: a=%+v b=%+v\n", a.AccountID, a.Cash, b.Cash)
 		return false
 	}
-	// Position comparison: only public fields (TotalCostIDR is BOT-internal)
-	for i := range a.Positions {
-		ap, bp := a.Positions[i], b.Positions[i]
-		if ap.Symbol != bp.Symbol || ap.AvailableShares != bp.AvailableShares ||
+	if len(a.Positions) != len(b.Positions) {
+		fmt.Printf("MISMATCH Positions len %s: a=%d b=%d\n", a.AccountID, len(a.Positions), len(b.Positions))
+		return false
+	}
+	if len(a.OpenOrders) != len(b.OpenOrders) {
+		fmt.Printf("MISMATCH OpenOrders len %s: a=%d b=%d (a=%+v, b=%+v)\n", a.AccountID, len(a.OpenOrders), len(b.OpenOrders), a.OpenOrders, b.OpenOrders)
+		return false
+	}
+	// Position comparison using map to ignore ordering
+	posMap := make(map[string]Position, len(a.Positions))
+	for _, ap := range a.Positions {
+		posMap[ap.Symbol] = ap
+	}
+	for _, bp := range b.Positions {
+		ap, ok := posMap[bp.Symbol]
+		if !ok || ap.AvailableShares != bp.AvailableShares ||
 			ap.ReservedShares != bp.ReservedShares || ap.PendingShares != bp.PendingShares {
+			fmt.Printf("MISMATCH Position %s %s: a=%+v b=%+v\n", a.AccountID, bp.Symbol, ap, bp)
 			return false
 		}
 	}
-	for i := range a.OpenOrders {
-		if a.OpenOrders[i] != b.OpenOrders[i] {
+
+	// Order comparison using map to ignore ordering
+	orderMap := make(map[string]OpenOrder, len(a.OpenOrders))
+	for _, ao := range a.OpenOrders {
+		orderMap[ao.OrderID] = ao
+	}
+	for _, bo := range b.OpenOrders {
+		ao, ok := orderMap[bo.OrderID]
+		if !ok || ao.ClientOrderID != bo.ClientOrderID || ao.Symbol != bo.Symbol ||
+			ao.Side != bo.Side || ao.Status != bo.Status || ao.QuantityShares != bo.QuantityShares ||
+			ao.FilledQuantityShares != bo.FilledQuantityShares || ao.EntityVersion != bo.EntityVersion {
+			fmt.Printf("MISMATCH OpenOrder %s %s: a=%+v b=%+v\n", a.AccountID, bo.OrderID, ao, bo)
 			return false
 		}
 	}

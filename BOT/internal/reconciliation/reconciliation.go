@@ -55,7 +55,11 @@ func (r *Reconciler) Once(ctx context.Context) error {
 			for range mismatches {
 				metrics.RecordReconciliationMismatch()
 			}
-			return fmt.Errorf("source-of-truth mismatch for %d accounts", len(mismatches))
+			logger.Error("mismatch detected, triggering recovery", map[string]interface{}{"accounts": len(mismatches)})
+			if recErr := r.Recover(ctx); recErr != nil {
+				return fmt.Errorf("source-of-truth mismatch for %d accounts and failed to recover: %w", len(mismatches), recErr)
+			}
+			return fmt.Errorf("source-of-truth mismatch for %d accounts (recovery triggered)", len(mismatches))
 		}
 	}
 	return nil
@@ -63,20 +67,31 @@ func (r *Reconciler) Once(ctx context.Context) error {
 
 func (r *Reconciler) Recover(ctx context.Context) error {
 	var combined portfolio.Snapshot
-	for start := 0; start < len(r.accountIDs); start += 100 {
-		end := start + 100
-		if end > len(r.accountIDs) {
-			end = len(r.accountIDs)
-		}
-		snapshot, err := r.client.BulkSnapshot(ctx, r.accountIDs[start:end])
+
+	if len(r.accountIDs) == 0 {
+		// If there are no accounts, we still need to fetch the AsOfSequence
+		// so the stream consumer doesn't reset its checkpoint to 0.
+		snapshot, err := r.client.BulkSnapshot(ctx, []string{})
 		if err != nil {
 			return err
 		}
-		if snapshot.AsOfSequence > combined.AsOfSequence {
-			combined.AsOfSequence = snapshot.AsOfSequence
+		combined = snapshot
+	} else {
+		for start := 0; start < len(r.accountIDs); start += 100 {
+			end := start + 100
+			if end > len(r.accountIDs) {
+				end = len(r.accountIDs)
+			}
+			snapshot, err := r.client.BulkSnapshot(ctx, r.accountIDs[start:end])
+			if err != nil {
+				return err
+			}
+			if snapshot.AsOfSequence > combined.AsOfSequence {
+				combined.AsOfSequence = snapshot.AsOfSequence
+			}
+			combined.GeneratedAt = snapshot.GeneratedAt
+			combined.Accounts = append(combined.Accounts, snapshot.Accounts...)
 		}
-		combined.GeneratedAt = snapshot.GeneratedAt
-		combined.Accounts = append(combined.Accounts, snapshot.Accounts...)
 	}
 	r.store.Replace(combined)
 	return nil

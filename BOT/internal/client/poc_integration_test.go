@@ -119,7 +119,7 @@ func TestPhase2PoC10Bot(t *testing.T) {
 			w.Write([]byte(`{"lot_size":100,"max_order_qty":200}`))
 		case "/public/fee-schedule":
 			w.Write([]byte(`{"buy_fee_pct":"0.0019","sell_fee_pct":"0.0029"}`))
-		case "/integration/mats/sessions/active":
+		case "/integration/mats/sessions/instance/active":
 			w.Write([]byte(`{
 				"session_instance_id":"11111111-0000-0000-0000-000000000001",
 				"virtual_day_index":1,"virtual_duration_seconds":21600,

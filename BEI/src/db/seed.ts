@@ -177,27 +177,27 @@ async function main() {
     // Session template: idempotent berdasarkan nama unik
     const sessionResult = await pool.query(`
       INSERT INTO session_templates (name, status, settlement_mode, settlement_delay_sessions, post_closing_enabled, is_active)
-      VALUES ('Mandala Regular Session MVP', 'closed', 'end_of_session', 0, true, true)
+      VALUES ('Mandala Looping 1-Min Session', 'closed', 'end_of_session', 0, true, true)
       ON CONFLICT DO NOTHING
       RETURNING id
     `);
     // Jika sudah ada (ON CONFLICT DO NOTHING), ambil id yang existing
     const sessionId = sessionResult.rows[0]?.id ?? (
-      await pool.query(`SELECT id FROM session_templates WHERE name = 'Mandala Regular Session MVP'`)
+      await pool.query(`SELECT id FROM session_templates WHERE name = 'Mandala Looping 1-Min Session'`)
     ).rows[0]?.id;
     if (sessionId) {
       await pool.query(
         `
         INSERT INTO session_segments (template_id, sequence, status, duration_seconds, allow_order_entry, allow_cancel_amend)
         VALUES
-          ($1, 1, 'pre_open', 300, true, true),
-          ($1, 2, 'opening_auction', 60, true, false),
-          ($1, 3, 'continuous', 1800, true, true),
-          ($1, 4, 'pre_close', 180, true, true),
-          ($1, 5, 'non_cancellation', 60, true, false),
-          ($1, 6, 'closing_auction', 60, true, false),
-          ($1, 7, 'post_closing', 300, true, false),
-          ($1, 8, 'closed', 0, false, false)
+          ($1, 1, 'pre_open', 3, true, true),
+          ($1, 2, 'opening_auction', 3, true, false),
+          ($1, 3, 'continuous', 36, true, true),
+          ($1, 4, 'pre_close', 3, true, true),
+          ($1, 5, 'non_cancellation', 3, true, false),
+          ($1, 6, 'closing_auction', 3, true, false),
+          ($1, 7, 'post_closing', 5, true, false),
+          ($1, 8, 'closed', 4, false, false)
         ON CONFLICT (template_id, sequence) DO UPDATE SET
           status = excluded.status,
           duration_seconds = excluded.duration_seconds,

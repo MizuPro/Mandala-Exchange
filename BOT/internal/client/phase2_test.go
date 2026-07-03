@@ -60,7 +60,7 @@ func TestPhase2IntegrationMock(t *testing.T) {
 			w.Write([]byte(`{"rules": true}`))
 		case "/public/fee-schedule":
 			w.Write([]byte(`{"fees": true}`))
-		case "/integration/mats/sessions/active":
+		case "/integration/mats/sessions/instance/active":
 			w.Write([]byte(mockBEISession))
 		case "/indices/MDX/composition":
 			w.Write([]byte(`{"composition": true}`))

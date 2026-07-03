@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -66,6 +67,11 @@ type Trader struct {
 	botSessions     map[string]uuid.UUID
 	cancelScheduled map[string]struct{}
 	cancelEvaluated map[string]struct{}
+
+	// orderSeq is a monotonically increasing counter for stable client_order_id generation.
+	// Initialized from time.Now().UnixNano() to guarantee uniqueness across restarts
+	// even within the same session, avoiding IDEMPOTENCY_CONFLICT from Sekuritas.
+	orderSeq atomic.Int64
 }
 
 // NewTrader creates a new Noise Trader strategy handler.
@@ -85,7 +91,7 @@ func NewTrader(
 	seeder *antipredict.Seeder,
 	decisionPipe DecisionRecorder,
 ) *Trader {
-	return &Trader{
+	t := &Trader{
 		configMgr:       configMgr,
 		portStore:       portStore,
 		sched:           sched,
@@ -103,6 +109,9 @@ func NewTrader(
 		cancelScheduled: make(map[string]struct{}),
 		cancelEvaluated: make(map[string]struct{}),
 	}
+	// Seed orderSeq from current nanoseconds to ensure uniqueness across restarts.
+	t.orderSeq.Store(time.Now().UnixNano())
+	return t
 }
 
 // HandleTask processes a scheduled tick for the noise trader.
@@ -116,6 +125,10 @@ func (t *Trader) HandleTask(ctx context.Context, botID string, payload interface
 
 	if botConfig.StrategyType != "noise_trader" {
 		return fmt.Errorf("invalid strategy type for bot %s: %s", botID, botConfig.StrategyType)
+	}
+
+	if botConfig.Status == "disabled" || botConfig.Status == "bankrupt" {
+		return nil // Stop trading and do NOT reschedule next tick
 	}
 
 	noiseCfg, err := ParseConfig(botConfig.Parameters)
@@ -300,7 +313,9 @@ func (t *Trader) HandleTask(ctx context.Context, botID string, payload interface
 
 	// 8. Enqueue Order — the resolved order from the realism engine has already been
 	// tick-aligned and ARA/ARB-clamped by rules.Resolve inside PlanDecision.
-	clientOrderID := fmt.Sprintf("bot:%s:%s:%d", botID, symbol, rng.Uint64())
+	// orderSeq is a monotonic counter (seeded from UnixNano at startup) that guarantees
+	// a unique client_order_id across restarts within the same session.
+	clientOrderID := fmt.Sprintf("bot:%s:%s:%d", botID, sessionID.String(), t.orderSeq.Add(1))
 	price := plan.Order.PriceIDR
 	qty := plan.Order.QuantityShares
 

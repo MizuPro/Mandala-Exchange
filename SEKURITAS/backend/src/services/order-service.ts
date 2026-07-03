@@ -368,6 +368,10 @@ export async function handleWebhookUpdate(payload: any) {
       : await tx.select().from(orders).where(eq(orders.mats_order_id, matsOrderId)).for('update').limit(1);
     if (!order) return;
 
+    // Serialize all webhooks for this account to prevent concurrent 'authoritativeOrders' reads
+    // from generating mutually inconsistent FAT event payloads (which causes open order mismatches in the BOT).
+    await tx.select().from(broker_accounts).where(eq(broker_accounts.id, order.broker_account_id)).for('update').limit(1);
+
     if (rawStatus === "locked_non_cancellable") {
       await tx.update(orders).set({
         last_action_status: "locked_non_cancellable",

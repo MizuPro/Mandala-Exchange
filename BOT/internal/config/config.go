@@ -254,6 +254,7 @@ func ValidateRiskConfig(r RiskConfig) error {
 type BotConfig struct {
 	ExternalBotID string                 `yaml:"external_bot_id" json:"external_bot_id"`
 	StrategyType  string                 `yaml:"strategy_type" json:"strategy_type"`
+	Status        string                 `yaml:"status" json:"status"`
 	Risk          RiskConfig             `yaml:"risk" json:"risk"`
 	Human         HumanConfig            `yaml:"human" json:"human"`
 	Activity      ActivityConfig         `yaml:"activity" json:"activity"`
@@ -525,20 +526,22 @@ func (m *ConfigManager) ReconcileYAML(ctx context.Context, path string) error {
 // This is Layer 3 of the config precedence: DB config.
 func (m *ConfigManager) GetDBConfig(ctx context.Context, externalBotID string) (*BotConfig, int64, error) {
 	var strategyType string
+	var status string
 	var configVersion int64
 	var configData []byte
 	err := m.db.QueryRow(ctx, `
-		SELECT b.strategy_type, b.config_version, cv.config_data
+		SELECT b.strategy_type, b.status, b.config_version, cv.config_data
 		FROM bots b
 		JOIN config_versions cv ON cv.version = b.config_version
 		WHERE b.external_bot_id = $1
-	`, externalBotID).Scan(&strategyType, &configVersion, &configData)
+	`, externalBotID).Scan(&strategyType, &status, &configVersion, &configData)
 	if err != nil {
 		return nil, 0, err
 	}
 	cfg := &BotConfig{
 		ExternalBotID: externalBotID,
 		StrategyType:  strategyType,
+		Status:        status,
 		Risk:          DefaultRiskConfig(),
 		Human:         DefaultHumanConfig(),
 		Activity:      DefaultActivityConfig(),
@@ -549,6 +552,7 @@ func (m *ConfigManager) GetDBConfig(ctx context.Context, externalBotID string) (
 		for _, candidate := range configs {
 			if candidate.ExternalBotID == externalBotID {
 				cfg = &candidate
+				cfg.Status = status
 				cfg.ConfigVersion = configVersion
 				break
 			}
@@ -560,6 +564,7 @@ func (m *ConfigManager) GetDBConfig(ctx context.Context, externalBotID string) (
 		}
 		if candidate.ExternalBotID == externalBotID {
 			cfg = &candidate
+			cfg.Status = status
 			cfg.ConfigVersion = configVersion
 		}
 	}
@@ -567,6 +572,7 @@ func (m *ConfigManager) GetDBConfig(ctx context.Context, externalBotID string) (
 	if err != nil {
 		return nil, 0, fmt.Errorf("persisted config invalid: %w", err)
 	}
+	normalized.Status = status
 	normalized.ConfigVersion = configVersion
 	return &normalized, configVersion, nil
 }

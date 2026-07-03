@@ -30,7 +30,6 @@ func (d *Daemon) Start(ctx context.Context) {
 	var segmentStartedAt time.Time
 	var activeInstance *bei.SessionInstance
 	var activeTemplate *bei.SessionTemplate
-	var currentVirtualDayIndex int = int(time.Now().Unix() / 86400)
 
 	for {
 		select {
@@ -56,9 +55,6 @@ func (d *Daemon) Start(ctx context.Context) {
 					activeInstance = inst
 					activeTemplate = template
 					currentSegmentIdx = inst.CurrentSegmentSequence
-					if inst.VirtualDayIndex > currentVirtualDayIndex {
-						currentVirtualDayIndex = inst.VirtualDayIndex
-					}
 
 					segmentStartedAt = time.Now()
 					if inst.RealTimeRemainingSecs != nil {
@@ -72,19 +68,22 @@ func (d *Daemon) Start(ctx context.Context) {
 					d.logger.Info("resumed session instance", "instance_id", inst.ID, "segment", currentSegmentIdx)
 				} else {
 					// Buat instance baru
-					virtualDur := 0
+					realDur := 0
 					for _, s := range template.Segments {
-						virtualDur += s.DurationSeconds
+						realDur += s.DurationSeconds
 					}
 
 					// increment agar tidak tabrakan dengan session sebelumnya di memori yang sama
-					currentVirtualDayIndex++
-
+					// (sekarang ditangani otomatis oleh BEI backend jika dikirim 0)
+					
+					// VirtualDurationSeconds di-hardcode ke 8 jam (28800 detik) untuk
+					// mewakili 1 hari perdagangan penuh dalam waktu virtual, sehingga
+					// rasio waktu bot berjalan lebih cepat (time compression).
 					payload := bei.ActivateSessionPayload{
 						SessionTemplateID:      template.ID,
-						VirtualDayIndex:        currentVirtualDayIndex,
-						VirtualDurationSeconds: virtualDur,
-						RealDurationSeconds:    virtualDur,
+						VirtualDayIndex:        0,
+						VirtualDurationSeconds: 28800,
+						RealDurationSeconds:    realDur,
 						MatsNodeID:             "mats-local",
 					}
 					inst, err := d.controller.rules.Client().ActivateSessionInstance(ctx, payload)
@@ -102,7 +101,7 @@ func (d *Daemon) Start(ctx context.Context) {
 					if err := d.controller.rules.Client().UpdateSessionStatus(ctx, template.ID, template.Segments[currentSegmentIdx].Status); err != nil {
 						d.logger.Error("failed to sync session start to BEI", "error", err)
 					}
-					d.logger.Info("activated new session instance", "instance_id", inst.ID, "day", currentVirtualDayIndex)
+					d.logger.Info("activated new session instance", "instance_id", inst.ID, "day", inst.VirtualDayIndex)
 				}
 				continue
 			}

@@ -238,6 +238,10 @@ func (e *Engine) Evaluate(state State, account portfolio.Account, limits Limits,
 		changed = true
 	}
 
+	if state.Status != StatusLiquidating {
+		orders = nil
+	}
+
 	if e.repo != nil && changed {
 		if state.Status == StatusBankrupt {
 			state, err = e.repo.MarkBankrupt(previousVersion, state)
@@ -291,7 +295,16 @@ func (e *Engine) liquidationOrders(account portfolio.Account, limits Limits) ([]
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Symbol < result[j].Symbol })
-	return result, cheapestLotCost > 0 && account.Cash.AvailableIDR >= cheapestLotCost
+	
+	canBuyCheapest := false
+	if cheapestLotCost > 0 {
+		canBuyCheapest = account.Cash.AvailableIDR >= cheapestLotCost
+	} else {
+		// Fallback: If we can't determine the cost of the cheapest lot (no prices yet),
+		// assume we can buy if we have any cash at all.
+		canBuyCheapest = account.Cash.AvailableIDR > 0
+	}
+	return result, canBuyCheapest
 }
 
 func totalShares(account portfolio.Account, symbol string) int64 {

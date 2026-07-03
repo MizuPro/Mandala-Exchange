@@ -525,7 +525,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
   app.post("/integration/mats/sessions/instance/activate", async (request: any, reply) => {
     const bodySchema = z.object({
       session_template_id: z.string().uuid(),
-      virtual_day_index: z.number().int().min(1),
+      virtual_day_index: z.number().int().min(0),
       virtual_duration_seconds: z.number().int().min(1),
       real_duration_seconds: z.number().int().min(1),
       mats_node_id: z.string().optional()
@@ -570,7 +570,13 @@ export async function registerRuleRoutes(app: FastifyInstance) {
         await client.query("COMMIT");
         return reply.status(200).send({ ...active.rows[0], created: false });
       }
-      const existing = await client.query(`SELECT * FROM session_instances WHERE virtual_day_index = $1 LIMIT 1`, [virtual_day_index]);
+      let finalDayIndex = virtual_day_index;
+      if (finalDayIndex === 0) {
+        const maxRes = await client.query(`SELECT MAX(virtual_day_index) as max_idx FROM session_instances`);
+        finalDayIndex = (maxRes.rows[0].max_idx || 0) + 1;
+      }
+
+      const existing = await client.query(`SELECT * FROM session_instances WHERE virtual_day_index = $1 LIMIT 1`, [finalDayIndex]);
       if (existing.rows[0]) {
         await client.query("COMMIT");
         return reply.status(200).send({ ...existing.rows[0], created: false });
@@ -583,7 +589,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
          ) VALUES ($1, $2, 'pre_open', 0, $3, $4::int, $4::int, $5, now(),
                    now() + make_interval(secs => $4::int), 1)
          RETURNING *`,
-        [session_template_id, virtual_day_index, virtual_duration_seconds, real_duration_seconds, mats_node_id || null]
+        [session_template_id, finalDayIndex, virtual_duration_seconds, real_duration_seconds, mats_node_id || null]
       );
       await client.query("COMMIT");
       return reply.status(201).send({ ...insertResult.rows[0], created: true });
