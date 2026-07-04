@@ -114,6 +114,11 @@ func (s *Strategy) Decide(
 		})
 
 		for _, symbol := range shuffledSymbols {
+			segment := matsState.GetSessionSegment()
+			if matsState.IsWarmingUp(symbol) && segment != "opening_auction" {
+				continue
+			}
+
 			isRelevant := false
 			if news.Symbol == symbol {
 				isRelevant = true
@@ -183,6 +188,15 @@ func (s *Strategy) Decide(
 				pos := bot.GetPosition(symbol)
 				if pos.AveragePriceIDR > 0 {
 					lastPrice = pos.AveragePriceIDR
+				}
+			}
+
+			if lastPrice <= 0 && segment == "opening_auction" {
+				for i := range beiSnap.IPOs {
+					if beiSnap.IPOs[i].Symbol == symbol {
+						lastPrice = beiSnap.IPOs[i].OfferingPriceIDR
+						break
+					}
 				}
 			}
 

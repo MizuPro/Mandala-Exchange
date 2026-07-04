@@ -95,6 +95,11 @@ func (s *Strategy) Decide(
 	})
 
 	for _, symbol := range shuffledSymbols {
+		segment := matsState.GetSessionSegment()
+		if matsState.IsWarmingUp(symbol) && segment != "opening_auction" {
+			continue
+		}
+
 		signal, exists := matsState.GetSignal(symbol)
 		if !exists || signal.LastPrice <= 0 {
 			continue

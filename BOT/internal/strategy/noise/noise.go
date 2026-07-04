@@ -162,6 +162,10 @@ func (s *Strategy) Decide(
 		symbol = symbols[s.rng.Intn(len(symbols))]
 	}
 
+	if matsState.IsWarmingUp(symbol) && segment != "opening_auction" {
+		return nil
+	}
+
 	// === Ambil harga referensi ===
 	lastPriceRaw := matsState.GetLastPrice(symbol)
 	lastPrice, err := strconv.ParseInt(lastPriceRaw, 10, 64)
@@ -177,6 +181,14 @@ func (s *Strategy) Decide(
 			pos := bot.GetPosition(symbol)
 			if pos.AveragePriceIDR > 0 {
 				lastPrice = pos.AveragePriceIDR
+			}
+		}
+		if lastPrice <= 0 && segment == "opening_auction" {
+			for i := range beiSnap.IPOs {
+				if beiSnap.IPOs[i].Symbol == symbol {
+					lastPrice = beiSnap.IPOs[i].OfferingPriceIDR
+					break
+				}
 			}
 		}
 		if lastPrice <= 0 {

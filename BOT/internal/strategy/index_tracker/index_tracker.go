@@ -79,10 +79,24 @@ func (s *Strategy) Decide(
 
 	prices := make(map[string]int64)
 	for _, symbol := range symbols {
+		if matsState.IsWarmingUp(symbol) && segment != "opening_auction" {
+			continue
+		}
+		var price int64
 		if signal, exists := matsState.GetSignal(symbol); exists && signal.LastPrice > 0 {
-			prices[symbol] = signal.LastPrice
+			price = signal.LastPrice
+		} else if segment == "opening_auction" {
+			for i := range beiSnap.IPOs {
+				if beiSnap.IPOs[i].Symbol == symbol {
+					price = beiSnap.IPOs[i].OfferingPriceIDR
+					break
+				}
+			}
+		}
+		if price > 0 {
+			prices[symbol] = price
 			pos := bot.GetPosition(symbol)
-			totalPortfolioValue += pos.AvailableShares * signal.LastPrice
+			totalPortfolioValue += pos.AvailableShares * price
 		}
 	}
 

@@ -118,6 +118,11 @@ func (s *Strategy) Decide(
 			return decisions
 		}
 
+		segment := matsState.GetSessionSegment()
+		if matsState.IsWarmingUp(symbol) && segment != "opening_auction" {
+			continue
+		}
+
 		// === 3. Hitung Reference Mid-Price ===
 		var bestBid, bestAsk int64
 		bestBidStr, bestAskStr := matsState.GetBestBidAsk(symbol)
@@ -139,6 +144,14 @@ func (s *Strategy) Decide(
 			} else if summary, ok := matsState.GetSummary(symbol); ok && summary.Close != "" {
 				if v, err := strconv.ParseInt(summary.Close, 10, 64); err == nil && v > 0 {
 					midPrice = v
+				}
+			}
+			if midPrice <= 0 && segment == "opening_auction" {
+				for i := range beiSnap.IPOs {
+					if beiSnap.IPOs[i].Symbol == symbol {
+						midPrice = beiSnap.IPOs[i].OfferingPriceIDR
+						break
+					}
 				}
 			}
 		}

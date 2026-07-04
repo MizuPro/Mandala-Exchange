@@ -87,11 +87,25 @@ func (s *Strategy) Decide(
 			continue
 		}
 
+		segment := matsState.GetSessionSegment()
+		if matsState.IsWarmingUp(symbol) && segment != "opening_auction" {
+			continue
+		}
+
 		// Cari Last Price dari matsState
 		var lastPrice int64
 		if signal, exists := matsState.GetSignal(symbol); exists && signal.LastPrice > 0 {
 			lastPrice = signal.LastPrice
-		} else {
+		} else if segment == "opening_auction" {
+			for i := range beiSnap.IPOs {
+				if beiSnap.IPOs[i].Symbol == symbol {
+					lastPrice = beiSnap.IPOs[i].OfferingPriceIDR
+					break
+				}
+			}
+		}
+
+		if lastPrice <= 0 {
 			continue // skip jika tidak ada reference price
 		}
 
