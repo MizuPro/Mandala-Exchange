@@ -482,9 +482,9 @@ Test minimum:
 
 Exit criteria:
 
-- [ ] Listing terdeteksi dan masuk universe tanpa restart.
-- [ ] BOT menerima market data simbol baru.
-- [ ] Tidak ada order sebelum tradability readiness lengkap.
+- [x] Listing terdeteksi dan masuk universe tanpa restart.
+- [x] BOT menerima market data simbol baru.
+- [x] Tidak ada order sebelum tradability readiness lengkap.
 
 ## 6.5 Subfase 5E - Public IPO Frontend
 
