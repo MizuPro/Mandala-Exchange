@@ -20,6 +20,7 @@ import { toNumber } from "../lib/number.js";
 import { postSekuritasWebhook } from "../services/sekuritas-webhook.js";
 import { enqueueIpoLifecycleEvent } from "../services/ipo-outbox.js";
 import { listPublicIpos, publicIpoProjectionSql } from "../services/ipo-public.js";
+import { publishMarketUpdate } from "../lib/redis.js";
 
 const corporateActionBody = z.object({
   securityId: z.string().uuid(),
@@ -874,6 +875,7 @@ export async function registerCorporateActionRoutes(app: FastifyInstance) {
         payload: listingPayload
       });
     });
+    await publishMarketUpdate("security_updated", { symbol: security.symbol });
     return { id: event.id, status: "listed" };
   });
 

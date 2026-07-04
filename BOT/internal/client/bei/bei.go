@@ -17,6 +17,8 @@ type Security struct {
 	Board           string   `json:"board"`
 	Status          string   `json:"status"`
 	ActiveNotations []string `json:"active_notations"`
+	ReferencePrice  int64    `json:"reference_price"`
+	PreviousClose   int64    `json:"previous_close"`
 }
 
 type TradingRuleProfile struct {
