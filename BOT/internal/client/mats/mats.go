@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,6 +138,7 @@ type MarketState struct {
 	DepthSnapshots map[string]DepthPayload
 	Summaries      map[string]MarketSummaryPayload
 	Signals        map[string]MarketSignal
+	WarmingUp      map[string]bool
 	LastHeartbeat  time.Time
 }
 
@@ -169,7 +172,20 @@ func NewMarketState() *MarketState {
 		DepthSnapshots: make(map[string]DepthPayload),
 		Summaries:      make(map[string]MarketSummaryPayload),
 		Signals:        make(map[string]MarketSignal),
+		WarmingUp:      make(map[string]bool),
 	}
+}
+
+func (s *MarketState) IsWarmingUp(symbol string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.WarmingUp[symbol]
+}
+
+func (s *MarketState) SetWarmingUp(symbol string, warming bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.WarmingUp[symbol] = warming
 }
 
 func (s *MarketState) GetSessionSegment() string {
@@ -287,16 +303,54 @@ func (c *Client) Stop() {
 	c.subscribersMu.Unlock()
 }
 
-func (c *Client) connectLoop(ctx context.Context) {
-	u, err := url.Parse(c.wsURL)
-	if err != nil {
-		logger.Error("Invalid MATS WS URL", "url", c.wsURL, "error", err.Error())
-		return
-	}
-	q := u.Query()
-	q.Set("symbols", strings.Join(c.symbols, ","))
-	u.RawQuery = q.Encode()
+func (c *Client) UpdateSymbols(symbols []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
+	// Normalize: trim, upper, remove empty, sort, deduplicate
+	normalized := make([]string, 0, len(symbols))
+	seen := make(map[string]bool)
+	for _, s := range symbols {
+		s = strings.ToUpper(strings.TrimSpace(s))
+		if s != "" && !seen[s] {
+			seen[s] = true
+			normalized = append(normalized, s)
+		}
+	}
+	sort.Strings(normalized)
+
+	// Compare with existing (existing should also be sorted)
+	existingSorted := make([]string, len(c.symbols))
+	copy(existingSorted, c.symbols)
+	sort.Strings(existingSorted)
+
+	if reflect.DeepEqual(normalized, existingSorted) {
+		return // No change, no-op
+	}
+
+	// Find newly added symbols to mark them as warming up
+	c.state.mu.Lock()
+	existingMap := make(map[string]bool)
+	for _, s := range c.symbols {
+		existingMap[s] = true
+	}
+	for _, s := range normalized {
+		if !existingMap[s] {
+			c.state.WarmingUp[s] = true
+			logger.Info("New listed symbol discovered, marking as warming up", "symbol", s)
+		}
+	}
+	c.state.mu.Unlock()
+
+	c.symbols = normalized
+	logger.Info("MATS Client symbols updated, reconnecting...", "count", len(normalized))
+
+	if c.conn != nil {
+		c.conn.Close(websocket.StatusNormalClosure, "symbols_updated_reconnect")
+	}
+}
+
+func (c *Client) connectLoop(ctx context.Context) {
 	backoff := 1 * time.Second
 
 	for {
@@ -305,6 +359,21 @@ func (c *Client) connectLoop(ctx context.Context) {
 			return
 		default:
 		}
+
+		u, err := url.Parse(c.wsURL)
+		if err != nil {
+			logger.Error("Invalid MATS WS URL", "url", c.wsURL, "error", err.Error())
+			return
+		}
+
+		c.mu.Lock()
+		currentSymbols := make([]string, len(c.symbols))
+		copy(currentSymbols, c.symbols)
+		c.mu.Unlock()
+
+		q := u.Query()
+		q.Set("symbols", strings.Join(currentSymbols, ","))
+		u.RawQuery = q.Encode()
 
 		logger.Info("Connecting to MATS WebSocket", "url", u.String())
 		headers := http.Header{}
@@ -383,6 +452,7 @@ func (c *Client) processEvent(ev Event) {
 	case "depth_snapshot":
 		var p DepthPayload
 		if err := json.Unmarshal(ev.Payload, &p); err == nil {
+			delete(c.state.WarmingUp, ev.Symbol)
 			c.state.DepthSnapshots[ev.Symbol] = p
 			if len(p.Bids) > 0 {
 				c.state.BestBids[ev.Symbol] = p.Bids[0].Price
@@ -399,6 +469,7 @@ func (c *Client) processEvent(ev Event) {
 			if symbol == "" {
 				symbol = p.Symbol
 			}
+			delete(c.state.WarmingUp, symbol)
 			if p.BestBid != nil {
 				c.state.BestBids[symbol] = p.BestBid.Price
 			} else {
@@ -414,6 +485,7 @@ func (c *Client) processEvent(ev Event) {
 	case "last_price":
 		var p LastPricePayload
 		if err := json.Unmarshal(ev.Payload, &p); err == nil {
+			delete(c.state.WarmingUp, ev.Symbol)
 			c.state.LastPrices[ev.Symbol] = p.Last
 			c.updateLastPriceSignal(ev.Symbol, p.Last, ev.OccurredAt)
 		}

@@ -416,6 +416,7 @@ func TestSchedulerTransition(t *testing.T) {
 		bc, sc, reg, nil,
 		config.SchedulerConfig{}, 1*time.Second,
 		nil,
+		nil,
 	)
 	sched.Start(ctx)
 

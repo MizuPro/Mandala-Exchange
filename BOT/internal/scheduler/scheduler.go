@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Mandala-Exchange/bot-v2/internal/client/bei"
+	"github.com/Mandala-Exchange/bot-v2/internal/client/mats"
 	"github.com/Mandala-Exchange/bot-v2/internal/client/sekuritas"
 	"github.com/Mandala-Exchange/bot-v2/internal/config"
 	"github.com/Mandala-Exchange/bot-v2/internal/ipo"
@@ -23,6 +24,7 @@ type Scheduler struct {
 	cfg             config.SchedulerConfig
 	pollInterval    time.Duration
 	ipoManager      *ipo.Manager // nil jika fitur IPO dinonaktifkan
+	matsClient      *mats.Client // nil jika dinonaktifkan
 
 	lastSegment      string
 	cancelContinuous context.CancelFunc // untuk stop continuous ticker goroutine
@@ -40,6 +42,7 @@ func NewScheduler(
 	cfg config.SchedulerConfig,
 	pollInterval time.Duration,
 	ipoManager *ipo.Manager,
+	matsClient *mats.Client,
 ) *Scheduler {
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
@@ -52,6 +55,7 @@ func NewScheduler(
 		cfg:             cfg,
 		pollInterval:    pollInterval,
 		ipoManager:      ipoManager,
+		matsClient:      matsClient,
 		planner:         NewPlanner(cfg.Seed, cfg.Intervals),
 	}
 }
@@ -327,5 +331,26 @@ func (s *Scheduler) tickIPO(ctx context.Context) {
 		logger.Warn("IPO lifecycle poll failed", "error", err.Error())
 		return
 	}
-	s.ipoManager.OnPollResult(ctx, ipos)
+	diff := s.ipoManager.OnPollResult(ctx, ipos)
+
+	if len(diff.NowListed) > 0 {
+		logger.Info("IPO listing detected! Triggering fast active-security refresh...", "count", len(diff.NowListed))
+		securities, err := s.beiClient.PollSecurities(ctx)
+		if err != nil {
+			logger.Error("Failed to fast-poll active securities", "error", err.Error())
+			return
+		}
+
+		var activeSymbols []string
+		for _, sec := range securities {
+			if sec.Status == "listed" {
+				activeSymbols = append(activeSymbols, sec.Symbol)
+			}
+		}
+
+		if s.matsClient != nil {
+			s.matsClient.UpdateSymbols(activeSymbols)
+			logger.Info("MATS dynamic resubscription complete", "active_count", len(activeSymbols))
+		}
+	}
 }

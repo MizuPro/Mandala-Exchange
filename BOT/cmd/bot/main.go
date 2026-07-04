@@ -69,14 +69,9 @@ func main() {
 
 	// 3. Init clients
 	beiClient := bei.NewClient(cfg.BEI.BaseURL, cfg.BEI.ServiceToken)
-	matsClient := mats.NewClient(cfg.MATS.WSURL, cfg.MATS.ServiceToken, cfg.MATS.Symbols)
 	sekuritasClient := sekuritas.NewClient(cfg.Sekuritas.BaseURL, cfg.Sekuritas.ServiceToken)
 	reg := registry.NewRegistry()
 	sessionMetrics := metrics.NewManager()
-
-	// Init IPO Manager
-	ipoReg := ipo.NewIPORegistry()
-	ipoManager := ipo.NewManager(ipoReg, sekuritasClient, reg, cfg.Scheduler.IPO, sessionMetrics)
 
 	// 4. Initial fast/slow poll of BEI state
 	logger.Info("Performing initial BEI data sync...")
@@ -89,6 +84,22 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("Initial BEI data sync completed successfully")
+
+	initialSymbols := cfg.MATS.Symbols
+	if len(initialSymbols) == 0 {
+		for _, s := range beiClient.GetSnapshot().Securities {
+			if s.Status == "listed" {
+				initialSymbols = append(initialSymbols, s.Symbol)
+			}
+		}
+		logger.Info("Bootstrap MATS symbols from active listed securities", "symbols", initialSymbols)
+	}
+
+	matsClient := mats.NewClient(cfg.MATS.WSURL, cfg.MATS.ServiceToken, initialSymbols)
+
+	// Init IPO Manager
+	ipoReg := ipo.NewIPORegistry()
+	ipoManager := ipo.NewManager(ipoReg, sekuritasClient, reg, cfg.Scheduler.IPO, sessionMetrics)
 
 	// 5. Bot Provisioning (Sekuritas)
 	logger.Info("Provisioning bots on Sekuritas...")
@@ -337,6 +348,7 @@ func main() {
 		cfg.Scheduler,
 		5*time.Second,
 		ipoManager,
+		matsClient,
 	)
 	sched.Start(mainCtx)
 

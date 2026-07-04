@@ -103,3 +103,47 @@ func TestMarketSignalAggregatesReturnVolumeDepthAndImbalance(t *testing.T) {
 		t.Fatalf("expected positive short return, got %f", signal.ShortReturn)
 	}
 }
+
+func TestUpdateSymbolsAndWarmingUp(t *testing.T) {
+	client := NewClient("ws://example.invalid", "", []string{"MNDL", "NUSA"})
+
+	// Verify initial symbols
+	client.mu.Lock()
+	if len(client.symbols) != 2 || client.symbols[0] != "MNDL" || client.symbols[1] != "NUSA" {
+		client.mu.Unlock()
+		t.Fatalf("unexpected initial symbols: %v", client.symbols)
+	}
+	client.mu.Unlock()
+
+	// Update symbols with new ones: BARA and duplicate MNDL (lowercase)
+	client.UpdateSymbols([]string{"mndl", "NUSA", "BARA", "bara"})
+
+	// Check normalization: BARA, MNDL, NUSA
+	client.mu.Lock()
+	if len(client.symbols) != 3 || client.symbols[0] != "BARA" || client.symbols[1] != "MNDL" || client.symbols[2] != "NUSA" {
+		client.mu.Unlock()
+		t.Fatalf("unexpected normalized symbols: %v", client.symbols)
+	}
+	client.mu.Unlock()
+
+	// BARA should be warming up (as it is new)
+	if !client.GetState().IsWarmingUp("BARA") {
+		t.Fatalf("expected BARA to be warming up")
+	}
+	// MNDL and NUSA should NOT be warming up (they were existing)
+	if client.GetState().IsWarmingUp("MNDL") {
+		t.Fatalf("expected MNDL to not be warming up")
+	}
+
+	// Send market data event for BARA
+	client.processEvent(Event{
+		Type:    "last_price",
+		Symbol:  "BARA",
+		Payload: json.RawMessage(`{"symbol":"BARA","last":150}`),
+	})
+
+	// BARA should no longer be warming up
+	if client.GetState().IsWarmingUp("BARA") {
+		t.Fatalf("expected BARA to be warmed up after market data event")
+	}
+}

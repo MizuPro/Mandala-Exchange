@@ -57,9 +57,9 @@ func NewManager(
 
 // OnPollResult dipanggil scheduler setiap kali ada hasil poll GET /bot/ipo-lifecycle.
 // Memproses diff, mengevaluasi eligibility semua bot, dan menjalankan executor.
-func (m *Manager) OnPollResult(ctx context.Context, incoming []bei.IPOLifecycle) {
+func (m *Manager) OnPollResult(ctx context.Context, incoming []bei.IPOLifecycle) DiffResult {
 	if !m.cfg.EnableIPOSubscription {
-		return
+		return DiffResult{}
 	}
 
 	m.mu.Lock()
@@ -108,6 +108,8 @@ func (m *Manager) OnPollResult(ctx context.Context, incoming []bei.IPOLifecycle)
 		}
 		m.evaluateAndSubscribe(ctx, ipo)
 	}
+
+	return diff
 }
 
 // evaluateAndSubscribe mengevaluasi semua bot untuk satu IPO dan menjalankan subscription.
