@@ -1,6 +1,6 @@
-import "dotenv/config";
+import "./load-env.js";
 import { z } from "zod";
-import type { ServiceIdentity } from "./types/auth.js";
+import type { AuthScope, ServiceIdentity } from "./types/auth.js";
 
 const authScopeSchema = z.enum([
   "admin:*",
@@ -93,6 +93,28 @@ const configSchema = z.object({
 
 export const config = configSchema.parse(process.env);
 
+function validateRequiredServiceScopes() {
+  const requirements: Record<string, AuthScope[]> = {
+    mats: ["market:read", "rules:read", "trade:capture", "market-summary:write", "session:write"],
+    sekuritas: ["ipo:read", "ipo:write", "custody:read", "custody:write", "corporate-action:read"],
+    bot: ["market:read", "rules:read", "ipo:read"]
+  };
+  const errors: string[] = [];
+  for (const [name, scopes] of Object.entries(requirements)) {
+    const identity = config.BEI_SERVICE_TOKENS.find((service) => service.name === name);
+    if (!identity) {
+      errors.push(`BEI_SERVICE_TOKENS must define the ${name} service`);
+      continue;
+    }
+    for (const scope of scopes) {
+      if (!identity.scopes.includes(scope)) errors.push(`BEI_SERVICE_TOKENS.${name} is missing scope ${scope}`);
+    }
+  }
+  if (errors.length > 0) throw new Error(`Invalid BEI service-token scopes:\n- ${errors.join("\n- ")}`);
+}
+
+if (config.NODE_ENV !== "test") validateRequiredServiceScopes();
+
 const weakTokenPattern = /(change-me|replace-with|^dev-|^local-)/i;
 if (config.NODE_ENV === "production" || config.APP_ENV === "production") {
   const errors: string[] = [];
@@ -108,6 +130,9 @@ if (config.NODE_ENV === "production" || config.APP_ENV === "production") {
   }
   if (!config.BEI_TO_SEKURITAS_TOKEN || config.BEI_TO_SEKURITAS_TOKEN.length < 32 || weakTokenPattern.test(config.BEI_TO_SEKURITAS_TOKEN)) {
     errors.push("BEI_TO_SEKURITAS_TOKEN must use a strong production token");
+  }
+  if (!config.SEKURITAS_CORPORATE_ACTION_WEBHOOK_URL) {
+    errors.push("SEKURITAS_CORPORATE_ACTION_WEBHOOK_URL is required in production");
   }
   if (errors.length > 0) {
     throw new Error(`Invalid BEI production environment:\n- ${errors.join("\n- ")}`);

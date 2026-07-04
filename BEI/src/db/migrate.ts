@@ -5,7 +5,7 @@ import { config } from "../config.js";
 const { Pool } = pg;
 
 const enumStatements = [
-  "CREATE TYPE listing_status AS ENUM ('listed','suspended','delisted')",
+  "CREATE TYPE listing_status AS ENUM ('prelisted','listed','suspended','delisted')",
   "CREATE TYPE board_type AS ENUM ('main','development','acceleration','new_economy','watchlist','derivatives')",
   "CREATE TYPE market_mechanism AS ENUM ('regular','call_auction','cash','negotiated')",
   "CREATE TYPE notation_type AS ENUM ('watchlist','special_monitoring','suspend','delisting_risk','unusual_condition','admin_note')",
@@ -21,6 +21,7 @@ const enumStatements = [
   "CREATE TYPE ledger_entry_type AS ENUM ('ipo_allocation','trade_settlement','cash_settlement','cash_dividend','stock_split','reverse_split','bonus_share','rights_issue','warrant','adjustment','reversal')",
   "CREATE TYPE ledger_asset_type AS ENUM ('cash','security','right','warrant')",
   "CREATE TYPE ipo_status AS ENUM ('draft','bookbuilding','subscription','allocation','listed','cancelled')",
+  "CREATE TYPE ipo_archetype AS ENUM ('hot_ipo','normal_ipo','overpriced_ipo','quiet_ipo','failed_hype_ipo')",
   // BOT-v2 enums
   "CREATE TYPE fair_value_confidence AS ENUM ('low','medium','high')",
   "CREATE TYPE global_regime AS ENUM ('neutral','mild_positive','mild_negative','strong_positive','strong_negative','event_driven','panic')",
@@ -622,9 +623,54 @@ CREATE TABLE IF NOT EXISTS bot_genesis_custody_runs (
   completed_at timestamptz
 );
 ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS underwriter_broker_id uuid REFERENCES broker_members(id);
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS listing_at timestamptz;
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS ipo_hype_score integer NOT NULL DEFAULT 50;
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS ipo_archetype ipo_archetype NOT NULL DEFAULT 'normal_ipo';
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS oversubscription_ratio numeric(12,4);
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS float_ratio level_type NOT NULL DEFAULT 'medium';
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS sector_sentiment text NOT NULL DEFAULT 'neutral';
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS listing_sentiment text NOT NULL DEFAULT 'neutral';
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS subscription_lot_size integer NOT NULL DEFAULT 100;
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS published_at timestamptz;
+ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS initial_fair_value_id uuid;
+ALTER TABLE ipo_events DROP CONSTRAINT IF EXISTS ipo_events_hype_score_check;
+ALTER TABLE ipo_events ADD CONSTRAINT ipo_events_hype_score_check
+  CHECK (ipo_hype_score BETWEEN 0 AND 100);
+ALTER TABLE ipo_events DROP CONSTRAINT IF EXISTS ipo_events_subscription_lot_size_check;
+ALTER TABLE ipo_events ADD CONSTRAINT ipo_events_subscription_lot_size_check
+  CHECK (subscription_lot_size > 0);
+ALTER TABLE ipo_events DROP CONSTRAINT IF EXISTS ipo_events_offered_shares_check;
+ALTER TABLE ipo_events ADD CONSTRAINT ipo_events_offered_shares_check
+  CHECK (offered_shares > 0);
+ALTER TABLE ipo_events DROP CONSTRAINT IF EXISTS ipo_events_offering_price_check;
+ALTER TABLE ipo_events ADD CONSTRAINT ipo_events_offering_price_check
+  CHECK (offering_price > 0);
+CREATE INDEX IF NOT EXISTS ipo_events_status_window_idx
+  ON ipo_events(status, subscription_start, subscription_end);
+CREATE INDEX IF NOT EXISTS ipo_events_published_idx
+  ON ipo_events(published_at) WHERE published_at IS NOT NULL;
 ALTER TABLE ipo_allocations ADD COLUMN IF NOT EXISTS allocation_key text;
 CREATE UNIQUE INDEX IF NOT EXISTS ipo_allocations_allocation_key_uq
   ON ipo_allocations(allocation_key) WHERE allocation_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS ipo_lifecycle_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_key text NOT NULL UNIQUE,
+  ipo_event_id uuid NOT NULL REFERENCES ipo_events(id),
+  event_type text NOT NULL,
+  target text NOT NULL DEFAULT 'corporate_action',
+  payload jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  attempts integer NOT NULL DEFAULT 0,
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  delivered_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ipo_lifecycle_outbox_delivery_idx
+  ON ipo_lifecycle_outbox(status, next_attempt_at);
 
 -- BOT-v2 Fase 1: Fair Value
 CREATE TABLE IF NOT EXISTS fair_values (
@@ -716,6 +762,7 @@ async function createEnums(pool: pg.Pool) {
 // ALTER TYPE ADD VALUE harus dijalankan di luar transaksi di PostgreSQL
 async function alterEnums(pool: pg.Pool) {
   await pool.query("ALTER TYPE board_type ADD VALUE IF NOT EXISTS 'derivatives'");
+  await pool.query("ALTER TYPE listing_status ADD VALUE IF NOT EXISTS 'prelisted' BEFORE 'listed'");
 }
 
 async function main() {

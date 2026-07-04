@@ -520,6 +520,28 @@ Menjalankan dan meresmikan instruksi pemindahan kepemilikan kas & saham yang ada
 
 ## 7. Pengelolaan IPO & Corporate Action (`/v1/ipo-events` & `/v1/corporate-actions`)
 
+> Mulai BOT-v2 Fase 5A, IPO selalu dibuat sebagai `draft`, security kandidat
+> harus berstatus `prelisted`, lalu IPO dipublikasikan melalui endpoint publish.
+> Draft tidak muncul pada feed BOT/player. Field hype, archetype, lot size,
+> lifecycle window, dan initial fair value divalidasi oleh BEI.
+
+### Lifecycle endpoint Fase 5A
+
+| Method | Path | Fungsi |
+|---|---|---|
+| `POST` | `/v1/ipo-events` | Membuat draft IPO dan initial fair value |
+| `PATCH` | `/v1/ipo-events/:id` | Mengubah draft/bookbuilding/subscription dan menaikkan version |
+| `POST` | `/v1/ipo-events/:id/publish` | Mempublikasikan IPO sebagai `bookbuilding` atau `subscription` |
+| `GET` | `/v1/ipo-events` | Feed IPO publik `{ items, as_of }` |
+| `GET` | `/v1/ipo-events/:id` | Detail IPO; draft hanya dapat dibaca admin |
+| `POST` | `/v1/ipo-events/:id/allocate` | Allocation lot-safe dan supply-capped |
+| `POST` | `/v1/ipo-events/:id/list` | Mengaktifkan security/reference price/fair value dan enqueue listing event |
+| `POST` | `/v1/ipo-events/:id/cancel` | Membatalkan/reversal dan enqueue lifecycle event |
+
+Event allocation, listing, cancellation, dan reversal disimpan terlebih dahulu
+di `ipo_lifecycle_outbox`. Worker BEI mengirimkannya ke Sekuritas dengan retry
+dan exponential backoff sehingga kegagalan webhook tidak menghilangkan event.
+
 ### 7.1. Membuat Event Initial Public Offering (IPO) Baru
 Mendaftarkan rencana penawaran saham perdana perusahaan baru ke publik.
 
@@ -782,4 +804,3 @@ Melihat log alarm transaksi mencurigakan hasil pemindaian sistem surveillance.
     *   `status` (opsional, e.g. `open`)
     *   `limit` (angka, default 100)
 *   **Response (200 OK):** Array objek surveillance alert.
-

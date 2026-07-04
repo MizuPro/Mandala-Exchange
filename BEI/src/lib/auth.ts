@@ -73,13 +73,17 @@ const routePermissions: RoutePermission[] = [
   { method: "GET", path: "/v1/reconciliation/:brokerCode/:investorId", scopes: ["custody:read"] },
   { method: "GET", path: "/v1/corporate-actions", scopes: ["corporate-action:read"] },
   { method: "GET", path: "/v1/ipo-events", scopes: ["corporate-action:read", "ipo:read"] },
+  { method: "POST", path: "/v1/ipo-events", scopes: ["admin:*"] },
   // Task 0.7: IPO subscription endpoints
   { method: "GET", path: "/v1/ipo-events/:id", scopes: ["corporate-action:read", "ipo:read"] },
+  { method: "PATCH", path: "/v1/ipo-events/:id", scopes: ["admin:*"] },
+  { method: "POST", path: "/v1/ipo-events/:id/publish", scopes: ["admin:*"] },
   { method: "GET", path: "/v1/ipo-events/:id/subscriptions", scopes: ["ipo:read"] },
   { method: "POST", path: "/v1/ipo-events/:id/subscriptions", scopes: ["ipo:write"] },
   { method: "POST", path: "/v1/ipo-events/:id/subscriptions/:subscriptionId/cancel", scopes: ["ipo:write"] },
   { method: "POST", path: "/v1/ipo-events/:id/allocate", scopes: ["ipo:write"] },
   { method: "POST", path: "/v1/ipo-events/:id/list", scopes: ["ipo:write"] },
+  { method: "POST", path: "/v1/ipo-events/:id/cancel", scopes: ["ipo:write"] },
   { method: "GET", path: "/v1/surveillance/alerts", scopes: ["surveillance:read"] },
 
   { method: "GET", path: "/v1/reports/trades/:sessionId", scopes: ["report:read"] },

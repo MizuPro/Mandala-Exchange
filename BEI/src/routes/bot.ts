@@ -5,6 +5,7 @@ import { fairValues, marketRegimes, securityLiquidityProfiles } from "../db/sche
 import { actorFromRequest, correlationIdFromRequest, writeAudit } from "../lib/audit.js";
 import { badRequest } from "../lib/errors.js";
 import { config } from "../config.js";
+import { listPublicIpos } from "../services/ipo-public.js";
 
 // Validation schema untuk set fair value
 const fairValueBody = z.object({
@@ -136,18 +137,7 @@ export async function registerBotRoutes(app: FastifyInstance) {
   });
 
   // 5. GET /bot/ipo-lifecycle
-  app.get("/bot/ipo-lifecycle", async () => {
-    const result = await pool.query(`
-      SELECT 
-        e.*,
-        s.symbol AS security_symbol,
-        s.name AS security_name
-      FROM ipo_events e
-      JOIN listed_securities s ON s.id = e.security_id
-      ORDER BY e.created_at DESC;
-    `);
-    return result.rows;
-  });
+  app.get("/bot/ipo-lifecycle", async (_request, reply) => listPublicIpos(reply));
 
   // 6. GET /bot/corporate-action-minimal
   app.get("/bot/corporate-action-minimal", async () => {

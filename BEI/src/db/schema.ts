@@ -21,6 +21,7 @@ import {
   corporateActionTypes,
   fairValueConfidences,
   globalRegimes,
+  ipoArchetypes,
   ipoStatuses,
   ledgerAssetTypes,
   ledgerEntryTypes,
@@ -55,6 +56,7 @@ export const brokerStatusEnum = pgEnum("broker_status", brokerStatuses);
 export const ledgerEntryTypeEnum = pgEnum("ledger_entry_type", ledgerEntryTypes);
 export const ledgerAssetTypeEnum = pgEnum("ledger_asset_type", ledgerAssetTypes);
 export const ipoStatusEnum = pgEnum("ipo_status", ipoStatuses);
+export const ipoArchetypeEnum = pgEnum("ipo_archetype", ipoArchetypes);
 
 // BOT-v2 enums
 export const fairValueConfidenceEnum = pgEnum("fair_value_confidence", fairValueConfidences);
@@ -535,8 +537,19 @@ export const ipoEvents = pgTable("ipo_events", {
   subscriptionStart: timestamp("subscription_start", { withTimezone: true }),
   subscriptionEnd: timestamp("subscription_end", { withTimezone: true }),
   listingDate: date("listing_date"),
+  listingAt: timestamp("listing_at", { withTimezone: true }),
   status: ipoStatusEnum("status").notNull().default("draft"),
   underwriterBrokerId: uuid("underwriter_broker_id").references(() => brokerMembers.id),
+  hypeScore: integer("ipo_hype_score").notNull().default(50),
+  archetype: ipoArchetypeEnum("ipo_archetype").notNull().default("normal_ipo"),
+  oversubscriptionRatio: numeric("oversubscription_ratio", { precision: 12, scale: 4 }),
+  floatRatio: levelTypeEnum("float_ratio").notNull().default("medium"),
+  sectorSentiment: text("sector_sentiment").notNull().default("neutral"),
+  listingSentiment: text("listing_sentiment").notNull().default("neutral"),
+  subscriptionLotSize: integer("subscription_lot_size").notNull().default(100),
+  version: integer("version").notNull().default(1),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  initialFairValueId: uuid("initial_fair_value_id"),
   metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
   ...timestamps
 });
@@ -561,6 +574,28 @@ export const ipoAllocations = pgTable("ipo_allocations", {
   allocationKey: text("allocation_key"),
   ...timestamps
 });
+
+export const ipoLifecycleOutbox = pgTable(
+  "ipo_lifecycle_outbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventKey: text("event_key").notNull(),
+    ipoEventId: uuid("ipo_event_id").notNull().references(() => ipoEvents.id),
+    eventType: text("event_type").notNull(),
+    target: text("target").notNull().default("corporate_action"),
+    payload: jsonb("payload").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    ...timestamps
+  },
+  (table) => ({
+    eventKeyUq: uniqueIndex("ipo_lifecycle_outbox_event_key_uq").on(table.eventKey),
+    deliveryIdx: index("ipo_lifecycle_outbox_delivery_idx").on(table.status, table.nextAttemptAt)
+  })
+);
 
 export const surveillanceAlerts = pgTable("surveillance_alerts", {
   id: uuid("id").primaryKey().defaultRandom(),

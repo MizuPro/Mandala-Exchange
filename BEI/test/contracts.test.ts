@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { config } from "../src/config.js";
-import { closeDb } from "../src/db/index.js";
+import { closeDb, pool } from "../src/db/index.js";
 import { findIdentity, serviceCanAccess } from "../src/lib/auth.js";
 
 function tokenFor(serviceName: string) {
@@ -121,6 +121,189 @@ describe("BEI integration contract guard", () => {
       expect(serviceCanAccess(bot, "GET", "/bot/fair-value-module")).toBe(true);
       expect(serviceCanAccess(bot, "GET", "/bot/market-regime")).toBe(true);
       expect(serviceCanAccess(bot, "GET", "/bot/liquidity-profile")).toBe(true);
+    });
+
+    it("publishes a typed IPO contract and enforces subscription lot size", async () => {
+      const suffix = Date.now().toString().slice(-8);
+      const issuerCode = `I${suffix}`.slice(0, 12);
+      const symbol = `S${suffix}`.slice(0, 12);
+      const brokerCode = `B${suffix}`.slice(0, 12);
+      const issuer = await pool.query(
+        `INSERT INTO issuers (code, name, sector) VALUES ($1, $2, 'Technology') RETURNING id`,
+        [issuerCode, `IPO Contract ${suffix} Tbk`]
+      );
+      const broker = await pool.query(
+        `INSERT INTO broker_members (code, name, service_identifier) VALUES ($1, $2, $3) RETURNING id`,
+        [brokerCode, `Broker ${suffix}`, `ipo-contract-${suffix}`]
+      );
+      const security = await pool.query(
+        `INSERT INTO listed_securities
+          (issuer_id, symbol, name, sector, shares_outstanding, reference_price, status)
+         VALUES ($1, $2, $3, 'Technology', 20000000, 200, 'prelisted')
+         RETURNING id`,
+        [issuer.rows[0].id, symbol, `IPO Contract ${suffix}`]
+      );
+
+      let ipoId = "";
+      let fairValueId = "";
+      try {
+        const now = Date.now();
+        const created = await app.inject({
+          method: "POST",
+          url: "/v1/ipo-events",
+          headers: { "x-service-token": tokenFor("admin") },
+          payload: {
+            issuerId: issuer.rows[0].id,
+            securityId: security.rows[0].id,
+            offeredShares: 1000000,
+            offeringPrice: 200,
+            bookbuildingStart: new Date(now - 120_000).toISOString(),
+            bookbuildingEnd: new Date(now - 90_000).toISOString(),
+            subscriptionStart: new Date(now - 60_000).toISOString(),
+            subscriptionEnd: new Date(now + 60_000).toISOString(),
+            listingAt: new Date(now + 120_000).toISOString(),
+            underwriterBrokerId: broker.rows[0].id,
+            hypeScore: 88,
+            archetype: "hot_ipo",
+            floatRatio: "low",
+            sectorSentiment: "positive",
+            listingSentiment: "high",
+            subscriptionLotSize: 100,
+            initialFairValue: 260,
+            fairValueConfidence: "low"
+          }
+        });
+        expect(created.statusCode).toBe(201);
+        ipoId = created.json().id;
+        fairValueId = created.json().initialFairValueId;
+
+        const draftFeed = await app.inject({
+          method: "GET",
+          url: "/bot/ipo-lifecycle",
+          headers: { "x-service-token": tokenFor("bot") }
+        });
+        expect(draftFeed.json().items.some((item: any) => item.id === ipoId)).toBe(false);
+
+        const published = await app.inject({
+          method: "POST",
+          url: `/v1/ipo-events/${ipoId}/publish`,
+          headers: { "x-service-token": tokenFor("admin") },
+          payload: { status: "subscription" }
+        });
+        expect(published.statusCode).toBe(200);
+
+        const feed = await app.inject({
+          method: "GET",
+          url: "/bot/ipo-lifecycle",
+          headers: { "x-service-token": tokenFor("bot") }
+        });
+        expect(feed.statusCode).toBe(200);
+        expect(typeof feed.json().as_of).toBe("string");
+        const publicIpo = feed.json().items.find((item: any) => item.id === ipoId);
+        expect(publicIpo).toMatchObject({
+          symbol,
+          status: "subscription",
+          ipo_hype_score: 88,
+          ipo_archetype: "hot_ipo",
+          subscription_lot_size: 100,
+          fair_value_initial: "260.00",
+          fair_value_confidence: "low"
+        });
+
+        const invalidLot = await app.inject({
+          method: "POST",
+          url: `/v1/ipo-events/${ipoId}/subscriptions`,
+          headers: { "x-service-token": tokenFor("admin") },
+          payload: {
+            brokerCode,
+            investorId: `investor-${suffix}`,
+            requestedShares: 150,
+            idempotencyKey: `ipo-contract-invalid-${suffix}`
+          }
+        });
+        expect(invalidLot.statusCode).toBe(400);
+
+        const valid = await app.inject({
+          method: "POST",
+          url: `/v1/ipo-events/${ipoId}/subscriptions`,
+          headers: { "x-service-token": tokenFor("admin") },
+          payload: {
+            brokerCode,
+            investorId: `investor-${suffix}`,
+            requestedShares: 200,
+            idempotencyKey: `ipo-contract-valid-${suffix}`
+          }
+        });
+        expect(valid.statusCode).toBe(201);
+
+        await pool.query(
+          `UPDATE ipo_events
+           SET subscription_end = now() - interval '1 minute',
+               listing_at = now() - interval '1 second'
+           WHERE id = $1`,
+          [ipoId]
+        );
+        const allocated = await app.inject({
+          method: "POST",
+          url: `/v1/ipo-events/${ipoId}/allocate`,
+          headers: { "x-service-token": tokenFor("admin") },
+          payload: { allocationRatio: 0 }
+        });
+        expect(allocated.statusCode).toBe(200);
+        expect(allocated.json().allocations).toHaveLength(1);
+        expect(allocated.json().allocations[0].allocatedShares).toBe("0");
+
+        const duplicateAllocation = await app.inject({
+          method: "POST",
+          url: `/v1/ipo-events/${ipoId}/allocate`,
+          headers: { "x-service-token": tokenFor("admin") },
+          payload: { allocationRatio: 1 }
+        });
+        expect(duplicateAllocation.statusCode).toBe(200);
+        expect(duplicateAllocation.json().idempotent).toBe(true);
+
+        const listed = await app.inject({
+          method: "POST",
+          url: `/v1/ipo-events/${ipoId}/list`,
+          headers: { "x-service-token": tokenFor("admin") }
+        });
+        expect(listed.statusCode).toBe(200);
+        const securityAfterListing = await pool.query(
+          `SELECT status, reference_price, ipo_price FROM listed_securities WHERE id = $1`,
+          [security.rows[0].id]
+        );
+        expect(securityAfterListing.rows[0]).toMatchObject({
+          status: "listed",
+          reference_price: "200.00",
+          ipo_price: "200.00"
+        });
+        const outbox = await pool.query(
+          `SELECT event_type FROM ipo_lifecycle_outbox WHERE ipo_event_id = $1 ORDER BY event_type`,
+          [ipoId]
+        );
+        expect(outbox.rows.map((row) => row.event_type)).toEqual(["ipo_allocation", "ipo_listing"]);
+      } finally {
+        if (ipoId) {
+          await pool.query(`DELETE FROM ipo_lifecycle_outbox WHERE ipo_event_id = $1`, [ipoId]);
+          await pool.query(
+            `DELETE FROM custody_ledger_entries
+             WHERE custody_account_id IN (SELECT id FROM custody_accounts WHERE broker_id = $1)`,
+            [broker.rows[0].id]
+          );
+          await pool.query(`DELETE FROM custody_accounts WHERE broker_id = $1`, [broker.rows[0].id]);
+          await pool.query(
+            `DELETE FROM ipo_allocations
+             WHERE ipo_subscription_id IN (SELECT id FROM ipo_subscriptions WHERE ipo_event_id = $1)`,
+            [ipoId]
+          );
+          await pool.query(`DELETE FROM ipo_subscriptions WHERE ipo_event_id = $1`, [ipoId]);
+          await pool.query(`DELETE FROM ipo_events WHERE id = $1`, [ipoId]);
+        }
+        if (fairValueId) await pool.query(`DELETE FROM fair_values WHERE id = $1`, [fairValueId]);
+        await pool.query(`DELETE FROM listed_securities WHERE id = $1`, [security.rows[0].id]);
+        await pool.query(`DELETE FROM broker_members WHERE id = $1`, [broker.rows[0].id]);
+        await pool.query(`DELETE FROM issuers WHERE id = $1`, [issuer.rows[0].id]);
+      }
     });
 
     it("denies bot service access to admin endpoints", () => {

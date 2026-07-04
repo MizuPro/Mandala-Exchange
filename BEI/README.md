@@ -48,7 +48,7 @@ x-service-token: <secure-service-token>
 Daftar token internal dikonfigurasi melalui variabel lingkungan `BEI_SERVICE_TOKENS` di file `.env` dengan format array JSON:
 
 ```env
-BEI_SERVICE_TOKENS=[{"name":"admin","token":"replace-with-admin-token","scopes":["admin:*"]},{"name":"mats","token":"replace-with-mats-token","scopes":["market:read","rules:read","broker:read","trade:capture","market-summary:write"]},{"name":"sekuritas","token":"replace-with-sekuritas-token","scopes":["market:read","rules:read","broker:read","settlement:read","custody:read","corporate-action:read","report:read"]},{"name":"readonly","token":"replace-with-readonly-token","scopes":["market:read","rules:read","broker:read","corporate-action:read","report:read"]}]
+BEI_SERVICE_TOKENS=[{"name":"admin","token":"replace-with-admin-token","scopes":["admin:*"]},{"name":"mats","token":"replace-with-mats-token","scopes":["market:read","rules:read","broker:read","trade:capture","market-summary:write","session:write"]},{"name":"sekuritas","token":"replace-with-sekuritas-token","scopes":["market:read","rules:read","broker:read","settlement:read","custody:read","custody:write","corporate-action:read","ipo:read","ipo:write","report:read"]},{"name":"readonly","token":"replace-with-readonly-token","scopes":["market:read","rules:read","broker:read","corporate-action:read","report:read"]},{"name":"bot","token":"replace-with-bot-token","scopes":["market:read","rules:read","corporate-action:read","ipo:read"]}]
 ```
 
 ### Tabel Lingkup Hak Akses (Scopes)

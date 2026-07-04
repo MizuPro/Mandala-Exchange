@@ -1,4 +1,4 @@
-export const listingStatuses = ["listed", "suspended", "delisted"] as const;
+export const listingStatuses = ["prelisted", "listed", "suspended", "delisted"] as const;
 export const boardTypes = ["main", "development", "acceleration", "new_economy", "watchlist"] as const;
 export const marketMechanisms = ["regular", "call_auction", "cash", "negotiated"] as const;
 export const notationTypes = ["watchlist", "special_monitoring", "suspend", "delisting_risk", "unusual_condition", "admin_note"] as const;
@@ -15,6 +15,7 @@ export const tradeSides = ["buy", "sell"] as const;
 export const ledgerEntryTypes = ["ipo_allocation", "trade_settlement", "cash_settlement", "cash_dividend", "stock_split", "reverse_split", "bonus_share", "rights_issue", "warrant", "adjustment", "reversal"] as const;
 export const ledgerAssetTypes = ["cash", "security", "right", "warrant"] as const;
 export const ipoStatuses = ["draft", "bookbuilding", "subscription", "allocation", "listed", "cancelled"] as const;
+export const ipoArchetypes = ["hot_ipo", "normal_ipo", "overpriced_ipo", "quiet_ipo", "failed_hype_ipo"] as const;
 
 // BOT-v2: Fair Value, Market Regime, Liquidity Profile
 export const fairValueConfidences = ["low", "medium", "high"] as const;
