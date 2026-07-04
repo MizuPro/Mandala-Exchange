@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/db.js";
-import { users, broker_accounts, bot_metadata, internal_idempotency, cash_balances, securities_positions, orders, bot_account_events, bot_audit_logs, bot_genesis_runs, bot_genesis_cash_entries, bot_genesis_position_entries } from "../db/schema.js";
+import { users, broker_accounts, bot_metadata, internal_idempotency, cash_balances, securities_positions, orders, bot_account_events, bot_audit_logs, bot_genesis_runs, bot_genesis_cash_entries, bot_genesis_position_entries, ipo_investor_subscriptions } from "../db/schema.js";
 import { requireBotServiceToken, signBotToken } from "../lib/auth.js";
 import { createBrokerAccount, setupRDNForUser } from "../services/account-service.js";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -469,6 +469,9 @@ export default async function botRoutes(app: FastifyInstance) {
             inArray(orders.status, ["pending", "submit_unknown", "accepted", "open", "partially_filled", "amended", "locked_non_cancellable"])
           ))
         : [];
+      const ipoSubscriptions = accIds.length
+        ? await tx.select().from(ipo_investor_subscriptions).where(inArray(ipo_investor_subscriptions.broker_account_id, accIds))
+        : [];
       const [checkpoint] = await tx.select({
         sequence: sql<number>`coalesce(max(${bot_account_events.sequence}), 0)`
       }).from(bot_account_events);
@@ -499,6 +502,21 @@ export default async function botRoutes(app: FastifyInstance) {
             entity_version: order.last_mats_event_sequence,
             created_at: order.created_at,
           })),
+          ipo_subscriptions: ipoSubscriptions
+            .filter((subscription: any) => subscription.broker_account_id === accountId)
+            .map((subscription: any) => ({
+              subscription_id: subscription.id,
+              ipo_event_id: subscription.ipo_event_id,
+              symbol: subscription.symbol,
+              status: subscription.status,
+              requested_shares: subscription.requested_shares,
+              allocated_shares: subscription.allocated_shares,
+              reserved_cash_idr: String(subscription.reserved_cash_idr),
+              actual_debit_idr: String(subscription.actual_debit_idr),
+              official_fee_idr: String(subscription.official_fee_idr),
+              event_version: subscription.event_version,
+              updated_at: subscription.updated_at,
+            })),
         };
       });
       return {

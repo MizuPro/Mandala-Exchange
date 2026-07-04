@@ -74,6 +74,9 @@ export default async function beiWebhookRoutes(app: FastifyInstance) {
     try {
       if (["ipo_allocation", "ipo_listing", "ipo_reversal", "ipo_cancellation"].includes(parsed.data.action_type)) {
         const result = await processIpoLifecycle(parsed.data);
+        if (result.status === "deferred") {
+          return reply.status(202).send({ success: false, ...result });
+        }
         return reply.send({ success: true, ...result });
       }
       const result = await processCorporateAction(parsed.data as any);

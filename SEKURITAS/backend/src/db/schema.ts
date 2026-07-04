@@ -354,11 +354,33 @@ export const ipo_investor_subscriptions = pgTable("ipo_investor_subscriptions", 
   status: text("status").notNull(),
   bei_subscription_id: text("bei_subscription_id"),
   event_version: integer("event_version").notNull().default(1),
+  symbol: text("symbol"),
+  forward_attempts: integer("forward_attempts").notNull().default(0),
+  next_retry_at: timestamp("next_retry_at", { withTimezone: true }),
+  last_forward_error: text("last_forward_error"),
+  submitted_at: timestamp("submitted_at", { withTimezone: true }),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   idempotencyUq: uniqueIndex("ipo_investor_subscriptions_idempotency_uq").on(table.idempotency_key),
   accountEventIdx: index("ipo_investor_subscriptions_account_event_idx").on(table.broker_account_id, table.ipo_event_id),
+}));
+
+export const ipo_lifecycle_inbox = pgTable("ipo_lifecycle_inbox", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  event_key: text("event_key").notNull(),
+  ipo_event_id: uuid("ipo_event_id").notNull(),
+  event_type: text("event_type").notNull(),
+  payload: jsonb("payload").notNull().default({}),
+  status: text("status").notNull().default("received"),
+  attempts: integer("attempts").notNull().default(0),
+  last_error: text("last_error"),
+  processed_at: timestamp("processed_at", { withTimezone: true }),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  eventKeyUq: uniqueIndex("ipo_lifecycle_inbox_event_key_uq").on(table.event_key),
+  statusCreatedIdx: index("ipo_lifecycle_inbox_status_created_idx").on(table.status, table.created_at),
 }));
 
 export const bot_ipo_subscriptions = pgTable("bot_ipo_subscriptions", {

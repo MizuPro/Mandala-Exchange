@@ -16,6 +16,7 @@ import { reconcileSubmitUnknownOrders } from "./services/order-service.js";
 import { closeMarketWsProxy } from "./services/market-ws-proxy.js";
 import { reconcileAllUsers } from "./services/reconciliation-service.js";
 import { env } from "./config/env.js";
+import { retryDueIpoSubscriptions } from "./services/ipo-subscription-service.js";
 
 export async function createApp() {
   const app = Fastify({
@@ -86,9 +87,23 @@ export async function createApp() {
     }
   }, 600000); // 10 menit
 
+  let ipoRetryInProgress = false;
+  const ipoRetryInterval = setInterval(async () => {
+    if (ipoRetryInProgress) return;
+    ipoRetryInProgress = true;
+    try {
+      await retryDueIpoSubscriptions();
+    } catch (err) {
+      console.error("IPO subscription forward retry failed", err);
+    } finally {
+      ipoRetryInProgress = false;
+    }
+  }, 10000);
+
   app.addHook("onClose", async () => {
     clearInterval(reconcileInterval);
     clearInterval(rdnReconcileInterval);
+    clearInterval(ipoRetryInterval);
     closeMarketWsProxy();
   });
 

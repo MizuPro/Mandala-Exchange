@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { bot_account_events, broker_accounts, cash_balances, orders, securities_positions } from "../db/schema.js";
+import { bot_account_events, broker_accounts, cash_balances, ipo_investor_subscriptions, orders, securities_positions } from "../db/schema.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 export async function botAccountSnapshotTx(tx: any, brokerAccountId: string) {
@@ -11,6 +11,8 @@ export async function botAccountSnapshotTx(tx: any, brokerAccountId: string) {
     eq(orders.broker_account_id, brokerAccountId),
     inArray(orders.status, ["pending", "submit_unknown", "accepted", "open", "partially_filled", "amended", "locked_non_cancellable"])
   ));
+  const ipoSubscriptions = await tx.select().from(ipo_investor_subscriptions)
+    .where(eq(ipo_investor_subscriptions.broker_account_id, brokerAccountId));
   return {
     account_id: brokerAccountId,
     cash: {
@@ -35,6 +37,19 @@ export async function botAccountSnapshotTx(tx: any, brokerAccountId: string) {
       filled_quantity_shares: order.filled_quantity,
       entity_version: order.last_mats_event_sequence,
       created_at: order.created_at,
+    })),
+    ipo_subscriptions: ipoSubscriptions.map((subscription: any) => ({
+      subscription_id: subscription.id,
+      ipo_event_id: subscription.ipo_event_id,
+      symbol: subscription.symbol,
+      status: subscription.status,
+      requested_shares: subscription.requested_shares,
+      allocated_shares: subscription.allocated_shares,
+      reserved_cash_idr: String(subscription.reserved_cash_idr),
+      actual_debit_idr: String(subscription.actual_debit_idr),
+      official_fee_idr: String(subscription.official_fee_idr),
+      event_version: subscription.event_version,
+      updated_at: subscription.updated_at,
     })),
   };
 }
