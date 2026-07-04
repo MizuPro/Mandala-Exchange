@@ -1,0 +1,111 @@
+bei:
+  base_url: "http://localhost:4100"
+  service_token: "dev-bot-service-token-change-me-2026"
+  poll_interval: "30s"
+
+mats:
+  ws_url: "ws://localhost:8082/v1/market-data/ws"
+  service_token: "dev-bot-service-token-change-me-2026"
+  symbols:
+    - "MNDL"
+    - "NUSA"
+    - "BARA"
+
+sekuritas:
+  base_url: "http://localhost:3002"
+  service_token: "dev-bot-service-token-change-me-2026"
+
+queue:
+  buffer_size: 500
+  ttl: "30s"
+
+executor:
+  orders_per_minute: 60
+
+scheduler:
+  scan_interval: "1s"
+  seed: 20260704
+  intervals:
+    noise_trader:
+      min_seconds: 30
+      max_seconds: 90
+
+admin:
+  port: 4200
+
+population:
+  enabled: false
+  size: 50
+  seed: 20260704
+  composition:
+    noise_trader: 16
+    momentum_trader: 9
+    contrarian: 7
+    market_maker: 4
+    value_investor: 4
+    event_driven: 6
+    index_tracker: 2
+    bandar: 2
+
+strategy:
+  noise_trader:
+    inactive_rate: 0.15          # 15% chance bot skip satu sesi (tidak order)
+    max_orders_per_session: 2    # max order per bot per sesi
+    max_lots_per_order: 5        # max lot per single order
+    price_noise_pct: 0.02        # noise harga +/- 2% dari last_price
+    opening_auction_rate: 0.15   # 15% bot aktif di opening auction
+    closing_auction_rate: 0.08   # 8% bot aktif di closing auction
+    continuous_tick_interval_min: 30  # min interval evaluasi di continuous (detik)
+    continuous_tick_interval_max: 90  # max interval evaluasi di continuous (detik)
+
+bots:
+  - external_bot_id: "noise-0001"
+    email: "noise-0001@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 10000000 # Rp10.000.000
+  - external_bot_id: "noise-0002"
+    email: "noise-0002@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 15000000
+  - external_bot_id: "noise-0003"
+    email: "noise-0003@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 20000000
+  - external_bot_id: "noise-0004"
+    email: "noise-0004@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 25000000
+  - external_bot_id: "noise-0005"
+    email: "noise-0005@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 12000000
+  - external_bot_id: "noise-0006"
+    email: "noise-0006@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 8000000
+  - external_bot_id: "noise-0007"
+    email: "noise-0007@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 9000000
+  - external_bot_id: "noise-0008"
+    email: "noise-0008@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 30000000
+  - external_bot_id: "noise-0009"
+    email: "noise-0009@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 18000000
+  - external_bot_id: "noise-0010"
+    email: "noise-0010@bot.internal"
+    strategy: "noise_trader"
+    tier: "retail"
+    initial_cash: 22000000

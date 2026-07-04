@@ -131,31 +131,31 @@ Tujuan fase ini adalah membuat service Go yang hidup tetapi belum memiliki strat
 
 ### 4.1 Komponen awal
 
-1. Config loader.
-2. Bot registry.
-3. Sekuritas client.
-4. BEI client.
-5. MATS market data client.
-6. Portfolio snapshot loader.
-7. Account event consumer.
-8. Scheduler sederhana.
-9. Order queue.
-10. Order executor.
-11. Admin start/stop.
-12. Basic logging.
+- [x] 1. Config loader.
+- [x] 2. Bot registry.
+- [x] 3. Sekuritas client.
+- [x] 4. BEI client.
+- [x] 5. MATS market data client.
+- [x] 6. Portfolio snapshot loader.
+- [x] 7. Account event consumer.
+- [x] 8. Scheduler sederhana.
+- [x] 9. Order queue.
+- [x] 10. Order executor.
+- [x] 11. Admin start/stop.
+- [x] 12. Basic logging.
 
 ### 4.2 Exit criteria fase 2
 
 Fase 2 selesai jika:
 
-1. BOT service bisa start.
-2. BOT service bisa connect ke BEI.
-3. BOT service bisa connect ke MATS market data.
-4. BOT service bisa snapshot portfolio dari Sekuritas.
-5. BOT service bisa menerima account event.
-6. BOT service bisa menaruh order decision ke queue.
-7. Queue bisa submit order ke Sekuritas.
-8. Service bisa stop dengan aman.
+- [x] 1. BOT service bisa start.
+- [x] 2. BOT service bisa connect ke BEI.
+- [x] 3. BOT service bisa connect ke MATS market data.
+- [x] 4. BOT service bisa snapshot portfolio dari Sekuritas.
+- [x] 5. BOT service bisa menerima account event.
+- [x] 6. BOT service bisa menaruh order decision ke queue.
+- [x] 7. Queue bisa submit order ke Sekuritas.
+- [x] 8. Service bisa stop dengan aman.
 
 ## 5. Fase 3 - 10 Noise Trader Functional Test
 
@@ -172,15 +172,16 @@ Tujuan fase ini adalah membuktikan BOT bisa hidup dari awal sampai akhir session
 
 ### 5.2 Validasi
 
-1. Bot bisa buy.
-2. Bot bisa sell jika punya saham.
-3. Bot tidak bisa beli jika cash kurang.
-4. Bot tidak bisa jual jika saham tidak ada.
-5. Bot tidak order di segment terlarang.
-6. Portfolio update benar.
-7. Tidak ada cash minus.
-8. Tidak ada saham minus.
-9. Restart service tidak merusak state.
+- [x] 1. Bot bisa buy.
+- [x] 2. Bot bisa sell jika punya saham.
+- [x] 3. Bot tidak bisa beli jika cash kurang.
+- [x] 4. Bot tidak bisa jual jika saham tidak ada.
+- [x] 5. Bot tidak order di segment terlarang.
+- [x] 6. Portfolio update benar.
+- [x] 7. Tidak ada cash minus.
+- [x] 8. Tidak ada saham minus.
+- [x] 9. Restart service tidak merusak state.
+
 
 ## 6. Fase 4 - 50 sampai 100 Bot dengan 3 Saham
 

@@ -29,6 +29,7 @@ const routePermissions: RoutePermission[] = [
   // Task 0.1: Session instance endpoints
   { method: "GET", path: "/v1/integration/mats/sessions/instance/active", scopes: ["rules:read"] },
   { method: "POST", path: "/v1/integration/mats/sessions/instance/activate", scopes: ["session:write"] },
+  { method: "POST", path: "/v1/integration/mats/sessions/instance/progress", scopes: ["session:write"] },
   { method: "POST", path: "/v1/integration/mats/sessions/instance/finalize", scopes: ["session:write"] },
   { method: "GET", path: "/v1/brokers/:code/validate", scopes: ["broker:read"] },
   { method: "POST", path: "/v1/trades/capture", scopes: ["trade:capture"] },

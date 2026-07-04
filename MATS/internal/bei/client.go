@@ -60,21 +60,21 @@ type LotSizeRule struct {
 }
 
 type TickSizeRule struct {
-	MinPrice domain.NumericInt     `json:"min_price"`
+	MinPrice domain.NumericInt         `json:"min_price"`
 	MaxPrice domain.NullableNumericInt `json:"max_price"`
-	TickSize domain.NumericInt     `json:"tick_size"`
+	TickSize domain.NumericInt         `json:"tick_size"`
 }
 
 type PriceBandRule struct {
 	MinReferencePrice domain.NumericInt         `json:"min_reference_price"`
-	MaxReferencePrice domain.NullableNumericInt  `json:"max_reference_price"`
-	ARAPercent        domain.NumericFloat        `json:"ara_percent"`
-	ARBPercent        domain.NumericFloat        `json:"arb_percent"`
-	MinPrice          domain.NumericInt          `json:"min_price"`
+	MaxReferencePrice domain.NullableNumericInt `json:"max_reference_price"`
+	ARAPercent        domain.NumericFloat       `json:"ara_percent"`
+	ARBPercent        domain.NumericFloat       `json:"arb_percent"`
+	MinPrice          domain.NumericInt         `json:"min_price"`
 }
 
 type AutoRejectionRule struct {
-	MaxLotsPerOrder        int64                      `json:"max_lots_per_order"`
+	MaxLotsPerOrder        int64                       `json:"max_lots_per_order"`
 	MaxListedSharesPercent domain.NullableNumericFloat `json:"max_listed_shares_percent"`
 }
 
@@ -120,6 +120,13 @@ type ActivateSessionPayload struct {
 	MatsNodeID             string `json:"mats_node_id,omitempty"`
 }
 
+type UpdateSessionInstanceProgressPayload struct {
+	InstanceID               string               `json:"instance_id"`
+	Status                   domain.SessionStatus `json:"status"`
+	CurrentSegmentSequence   int                  `json:"current_segment_sequence"`
+	RealTimeRemainingSeconds int                  `json:"real_time_remaining_seconds"`
+}
+
 type FinalizeSessionPayload struct {
 	InstanceID string `json:"instance_id"`
 	Version    int    `json:"version"`
@@ -131,24 +138,24 @@ type BrokerValidation struct {
 }
 
 type TradeCapturePayload struct {
-	MATSTradeID    string    `json:"matsTradeId"`
-	SequenceNumber int64     `json:"sequenceNumber"`
-	SessionID      string    `json:"sessionId"`
-	Symbol         string    `json:"symbol"`
-	Price          int64     `json:"price"`
-	Quantity       int64     `json:"quantity"`
-	BuyBrokerCode  string    `json:"buyBrokerCode"`
-	SellBrokerCode string    `json:"sellBrokerCode"`
-	BuyInvestorID  string    `json:"buyInvestorId"`
-	SellInvestorID string    `json:"sellInvestorId"`
-	BuyOrderID     string    `json:"buyOrderId"`
-	SellOrderID    string    `json:"sellOrderId"`
-	OccurredAt     time.Time `json:"occurredAt"`
-	IdempotencyKey string    `json:"idempotencyKey"`
-	SessionState   string    `json:"sessionState"`
-	SecurityStatus string    `json:"securityStatus"`
-	BuyBrokerState string    `json:"buyBrokerState"`
-	SellBrokerState string   `json:"sellBrokerState"`
+	MATSTradeID     string    `json:"matsTradeId"`
+	SequenceNumber  int64     `json:"sequenceNumber"`
+	SessionID       string    `json:"sessionId"`
+	Symbol          string    `json:"symbol"`
+	Price           int64     `json:"price"`
+	Quantity        int64     `json:"quantity"`
+	BuyBrokerCode   string    `json:"buyBrokerCode"`
+	SellBrokerCode  string    `json:"sellBrokerCode"`
+	BuyInvestorID   string    `json:"buyInvestorId"`
+	SellInvestorID  string    `json:"sellInvestorId"`
+	BuyOrderID      string    `json:"buyOrderId"`
+	SellOrderID     string    `json:"sellOrderId"`
+	OccurredAt      time.Time `json:"occurredAt"`
+	IdempotencyKey  string    `json:"idempotencyKey"`
+	SessionState    string    `json:"sessionState"`
+	SecurityStatus  string    `json:"securityStatus"`
+	BuyBrokerState  string    `json:"buyBrokerState"`
+	SellBrokerState string    `json:"sellBrokerState"`
 }
 
 func (c *Client) Securities(ctx context.Context) ([]Security, error) {
@@ -204,6 +211,10 @@ func (c *Client) ActivateSessionInstance(ctx context.Context, payload ActivateSe
 	var instance SessionInstance
 	err := c.post(ctx, "/integration/mats/sessions/instance/activate", payload, &instance)
 	return &instance, err
+}
+
+func (c *Client) UpdateSessionInstanceProgress(ctx context.Context, payload UpdateSessionInstanceProgressPayload) error {
+	return c.post(ctx, "/integration/mats/sessions/instance/progress", payload, nil)
 }
 
 func (c *Client) FinalizeSessionInstance(ctx context.Context, payload FinalizeSessionPayload) (*SessionInstance, error) {

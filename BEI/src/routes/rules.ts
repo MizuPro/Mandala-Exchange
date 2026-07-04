@@ -499,7 +499,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
        FROM session_instances si
        JOIN session_templates st ON st.id = si.session_template_id
        LEFT JOIN session_segments ss ON ss.template_id = si.session_template_id
-       WHERE si.status != 'closed'
+       WHERE si.finalized_at IS NULL
        GROUP BY si.id, st.name, st.settlement_mode
        ORDER BY si.virtual_day_index DESC
        LIMIT 1`
@@ -586,7 +586,15 @@ export async function registerRuleRoutes(app: FastifyInstance) {
            session_template_id, virtual_day_index, status, current_segment_sequence,
            virtual_duration_seconds, real_duration_seconds, real_time_remaining_seconds,
            mats_node_id, started_at, expected_end_at, version
-         ) VALUES ($1, $2, 'pre_open', 0, $3, $4::int, $4::int, $5, now(),
+         ) VALUES ($1, $2, 'pre_open', 0, $3, $4::int,
+                   COALESCE((
+                     SELECT duration_seconds
+                     FROM session_segments
+                     WHERE template_id = $1
+                     ORDER BY sequence
+                     LIMIT 1
+                   ), $4::int),
+                   $5, now(),
                    now() + make_interval(secs => $4::int), 1)
          RETURNING *`,
         [session_template_id, finalDayIndex, virtual_duration_seconds, real_duration_seconds, mats_node_id || null]
@@ -599,6 +607,39 @@ export async function registerRuleRoutes(app: FastifyInstance) {
     } finally {
       client.release();
     }
+  });
+
+  app.post("/integration/mats/sessions/instance/progress", async (request: any, reply) => {
+    const body = z.object({
+      instance_id: z.string().uuid(),
+      status: z.enum(sessionStatuses),
+      current_segment_sequence: z.number().int().min(0),
+      real_time_remaining_seconds: z.number().int().min(0)
+    }).parse(request.body);
+
+    const updateResult = await pool.query(
+      `UPDATE session_instances
+       SET status = $2,
+           current_segment_sequence = $3,
+           real_time_remaining_seconds = $4,
+           updated_at = now()
+       WHERE id = $1 AND finalized_at IS NULL
+       RETURNING *`,
+      [body.instance_id, body.status, body.current_segment_sequence, body.real_time_remaining_seconds]
+    );
+
+    if (!updateResult.rows[0]) {
+      return reply.status(404).send({
+        error: {
+          code: "NOT_FOUND",
+          message: `Active session instance ${body.instance_id} not found`,
+          retryable: false,
+          details: {}
+        }
+      });
+    }
+
+    return reply.status(200).send(updateResult.rows[0]);
   });
 
   /**
@@ -634,7 +675,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
     const updateResult = await pool.query(
       `UPDATE session_instances
        SET status = 'closed', finalized_at = now(), version = version + 1, updated_at = now()
-       WHERE id = $1 AND version = $2 AND status != 'closed'
+       WHERE id = $1 AND version = $2 AND finalized_at IS NULL
        RETURNING *`,
       [instance_id, version]
     );
@@ -642,7 +683,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
     if (!updateResult.rows[0]) {
       // Cek apakah sudah closed (idempotent)
       const checkResult = await pool.query(
-        `SELECT id, status, version FROM session_instances WHERE id = $1 LIMIT 1`,
+        `SELECT id, status, version, finalized_at FROM session_instances WHERE id = $1 LIMIT 1`,
         [instance_id]
       );
       const inst = checkResult.rows[0];
@@ -652,7 +693,7 @@ export async function registerRuleRoutes(app: FastifyInstance) {
           error: { code: "NOT_FOUND", message: `Session instance ${instance_id} not found`, retryable: false, details: {} }
         });
       }
-      if (inst.status === "closed") {
+      if (inst.finalized_at !== null) {
         return reply.status(200).send({ id: inst.id, status: "closed", already_finalized: true });
       }
       return reply.status(409).send({

@@ -138,6 +138,11 @@ BOT-v2 menembak WebSocket MATS secara langsung untuk memperoleh aliran data pasa
     }
   }
   ```
+* **`session_timer`** memperbarui status dan sisa waktu segment setiap detik.
+* **`best_bid_ask`** memperbarui harga bid/ask terbaik setelah order book berubah.
+* **`order_status`**, **`auction_order_status`**, **`trade_tape`**, dan **`iep_iev`**
+  adalah event pasar valid. BOT boleh mengabaikannya jika strategi aktif belum
+  membutuhkan payload tersebut, tetapi event tidak boleh dicatat sebagai event tidak dikenal.
 
 ---
 
@@ -176,4 +181,3 @@ Digunakan oleh masing-masing BOT Instance untuk melakukan aktivitas trading di p
 |---|---|---|---|
 | `POST` | `/bot/ipo/:id/subscribe` | Melakukan pemesanan (*subscription*) IPO emiten baru sebelum listing. | Path Parameter: `id` (IPO Event ID), Body: `requested_shares` |
 | `POST` | `/bot/ipo/:id/subscriptions/:subscriptionId/cancel` | Membatalkan pemesanan IPO yang masih aktif (dalam masa bookbuilding/subscription). | Path Parameter: `id`, `subscriptionId` |
-
