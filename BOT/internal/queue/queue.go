@@ -8,8 +8,10 @@ import (
 )
 
 type OrderDecision struct {
+	Action        string // "place" (default/empty), "cancel", "amend"
 	AccountID     string
 	ClientOrderID string
+	TargetOrderID string // sekuritas_order_id yang ingin dicancel/amend
 	Symbol        string
 	Side          string // "buy" | "sell"
 	OrderType     string // "limit"
@@ -93,3 +95,8 @@ func (q *OrderQueue) Dequeue(ctx context.Context) (OrderDecision, error) {
 func (q *OrderQueue) Close() {
 	close(q.queueChan)
 }
+
+func (q *OrderQueue) Size() int {
+	return len(q.queueChan)
+}
+

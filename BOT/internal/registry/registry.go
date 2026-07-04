@@ -34,6 +34,9 @@ type BotInstance struct {
 	LastSessionID      string
 	ActivitySessionID  string
 	InactiveForSession bool
+
+	// News Tracking
+	ProcessedNewsIDs map[string]struct{}
 }
 
 func (b *BotInstance) IsInactiveForSession(sessionID string, inactiveRate, roll float64) bool {
@@ -48,12 +51,13 @@ func (b *BotInstance) IsInactiveForSession(sessionID string, inactiveRate, roll 
 
 func NewBotInstance(botID, accountID, strategy string) *BotInstance {
 	return &BotInstance{
-		ExternalBotID: botID,
-		AccountID:     accountID,
-		Strategy:      strategy,
-		Status:        "active",
-		Positions:     make(map[string]PositionEntry),
-		OpenOrderIDs:  make(map[string]string),
+		ExternalBotID:    botID,
+		AccountID:        accountID,
+		Strategy:         strategy,
+		Status:           "active",
+		Positions:        make(map[string]PositionEntry),
+		OpenOrderIDs:     make(map[string]string),
+		ProcessedNewsIDs: make(map[string]struct{}),
 	}
 }
 
@@ -198,3 +202,45 @@ func (r *Registry) ListBots() []*BotInstance {
 	}
 	return list
 }
+
+func (b *BotInstance) HasProcessedNews(newsID string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	_, ok := b.ProcessedNewsIDs[newsID]
+	return ok
+}
+
+func (b *BotInstance) MarkNewsProcessed(newsID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ProcessedNewsIDs[newsID] = struct{}{}
+}
+
+func (b *BotInstance) ClearProcessedNews() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ProcessedNewsIDs = make(map[string]struct{})
+}
+
+func (b *BotInstance) DeleteOpenOrderBySekuritasID(orderID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for clientID, targetID := range b.OpenOrderIDs {
+		if targetID == orderID {
+			delete(b.OpenOrderIDs, clientID)
+			break
+		}
+	}
+}
+
+func (b *BotInstance) GetAndClearOpenOrderIDs() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	ids := make([]string, 0, len(b.OpenOrderIDs))
+	for clientID, orderID := range b.OpenOrderIDs {
+		ids = append(ids, orderID)
+		delete(b.OpenOrderIDs, clientID)
+	}
+	return ids
+}
+

@@ -12,6 +12,7 @@ import (
 	"github.com/Mandala-Exchange/bot-v2/internal/client/sekuritas"
 	"github.com/Mandala-Exchange/bot-v2/internal/executor"
 	"github.com/Mandala-Exchange/bot-v2/internal/logger"
+	"github.com/Mandala-Exchange/bot-v2/internal/metrics"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -22,18 +23,27 @@ type Server struct {
 	sekuritasClient *sekuritas.Client
 	exec            *executor.Executor
 	stopFunc        context.CancelFunc
+	metricsManager  *metrics.Manager
 
 	httpServer *http.Server
 	mu         sync.Mutex
 }
 
-func NewServer(port int, beiClient *bei.Client, sekuritasClient *sekuritas.Client, exec *executor.Executor, stopFunc context.CancelFunc) *Server {
+func NewServer(
+	port int,
+	beiClient *bei.Client,
+	sekuritasClient *sekuritas.Client,
+	exec *executor.Executor,
+	stopFunc context.CancelFunc,
+	metricsManager *metrics.Manager,
+) *Server {
 	return &Server{
 		port:            port,
 		beiClient:       beiClient,
 		sekuritasClient: sekuritasClient,
 		exec:            exec,
 		stopFunc:        stopFunc,
+		metricsManager:  metricsManager,
 	}
 }
 
@@ -59,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/health", s.handleHealth)
+	r.Get("/metrics", s.handleMetrics)
 	r.Post("/admin/pause", s.handlePause)
 	r.Post("/admin/resume", s.handleResume)
 	r.Post("/admin/stop", s.handleStop)
@@ -128,3 +139,11 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 		s.stopFunc()
 	}()
 }
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	snap := s.metricsManager.Snapshot()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(snap)
+}
+

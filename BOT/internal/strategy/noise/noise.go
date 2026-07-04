@@ -100,12 +100,67 @@ func (s *Strategy) Decide(
 	tradingRules := common.ParseTradingRules(beiSnap)
 	lotSize := rules.GetDefaultLotSize(tradingRules.LotSizes) // biasanya 100
 
-	// === Pilih simbol secara random dari daftar simbol MATS ===
 	symbols := common.ListedSymbols(beiSnap)
 	if len(symbols) == 0 {
 		return nil
 	}
-	symbol := symbols[s.rng.Intn(len(symbols))]
+
+	// === Evaluasi Berita Baru (Secondary Responder) ===
+	var symbol string
+	var side string
+
+	for i := range beiSnap.News {
+		news := beiSnap.News[i]
+		if bot.HasProcessedNews(news.ID) {
+			continue
+		}
+
+		// Hitung probabilitas reaksi noise
+		var prob float64
+		switch news.Intensity {
+		case "low":
+			prob = 0.025
+		case "medium":
+			prob = 0.08
+		case "high":
+			prob = 0.18
+		case "extreme":
+			prob = 0.30
+		default:
+			prob = 0.08
+		}
+
+		roll := s.rng.Float64()
+		bot.MarkNewsProcessed(news.ID) // tandai terproses agar tidak di-roll terus menerus
+
+		if roll < prob {
+			// Bereaksi ke berita!
+			if news.Symbol != "" {
+				for _, sym := range symbols {
+					if sym == news.Symbol {
+						symbol = sym
+						break
+					}
+				}
+			}
+			if symbol == "" {
+				// news global atau symbol tidak aktif, pilih acak
+				symbol = symbols[s.rng.Intn(len(symbols))]
+			}
+
+			if news.Sentiment == "positive" {
+				side = "buy"
+			} else if news.Sentiment == "negative" {
+				side = "sell"
+			}
+			break // proses satu berita saja
+		}
+	}
+
+	// Jika tidak bereaksi ke berita, pilih simbol secara acak dan tentukan sisi order acak
+	if symbol == "" {
+		symbol = symbols[s.rng.Intn(len(symbols))]
+	}
 
 	// === Ambil harga referensi ===
 	lastPriceRaw := matsState.GetLastPrice(symbol)
@@ -133,32 +188,48 @@ func (s *Strategy) Decide(
 		}
 	}
 
-	// === Pilih side secara random ===
+	// === Pilih side (jika belum ditentukan oleh berita) ===
 	// Jika bot tidak punya posisi, hanya bisa buy
 	availCash, _, _ := bot.GetCash()
 	pos := bot.GetPosition(symbol)
 	canSell := pos.AvailableShares >= lotSize
 	canBuy := availCash >= lastPrice*lotSize // rough check
 
-	var side string
-	if canSell && canBuy {
-		if s.rng.Intn(2) == 0 {
-			side = "buy"
-		} else {
-			side = "sell"
+	if side != "" {
+		// Validasi apakah bot mampu melakukan order sesuai sisi berita
+		if side == "buy" && !canBuy {
+			logger.Debug("Noise Trader: skip — news sentiment is positive (buy) but insufficient cash",
+				"bot_id", bot.ExternalBotID,
+				"symbol", symbol,
+			)
+			return nil
 		}
-	} else if canBuy {
-		side = "buy"
-	} else if canSell {
-		side = "sell"
+		if side == "sell" && !canSell {
+			logger.Debug("Noise Trader: skip — news sentiment is negative (sell) but insufficient shares",
+				"bot_id", bot.ExternalBotID,
+				"symbol", symbol,
+			)
+			return nil
+		}
 	} else {
-		logger.Debug("Noise Trader: skip — neither can buy nor sell",
-			"bot_id", bot.ExternalBotID,
-			"symbol", symbol,
-			"cash", availCash,
-			"available_shares", pos.AvailableShares,
-		)
-		return nil
+		// Tentukan side acak seperti biasa
+		if canSell && canBuy {
+			if s.rng.Intn(2) == 0 {
+				side = "buy"
+			} else {
+				side = "sell"
+			}
+		} else if canBuy {
+			side = "buy"
+		} else if canSell {
+			side = "sell"
+		} else {
+			logger.Debug("Noise Trader: skip — neither can buy nor sell",
+				"bot_id", bot.ExternalBotID,
+				"symbol", symbol,
+			)
+			return nil
+		}
 	}
 
 	// === Hitung harga dengan noise ===

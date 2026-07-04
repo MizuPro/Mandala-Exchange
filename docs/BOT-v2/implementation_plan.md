@@ -206,13 +206,13 @@ Go race detector membutuhkan CGO dan compiler GCC.
 
 Signal minimum:
 
-- [ ] Short return searah.
-- [ ] Volume atau trade frequency meningkat.
-- [ ] Minimal dua confirmation.
-- [ ] Spread masih dapat diterima.
-- [ ] Order-book imbalance mendukung.
-- [ ] Fair value menjadi safety brake.
-- [ ] Satu order besar tidak cukup menjadi trigger.
+- [x] Short return searah.
+- [x] Volume atau trade frequency meningkat.
+- [x] Minimal dua confirmation.
+- [x] Spread masih dapat diterima.
+- [x] Order-book imbalance mendukung.
+- [x] Fair value menjadi safety brake.
+- [x] Satu order besar tidak cukup menjadi trigger.
 
 Parameter awal:
 
@@ -226,11 +226,11 @@ inactive rate: 5–15%
 
 Signal minimum:
 
-- [ ] Harga bergerak cukup jauh dari session reference.
-- [ ] Harga diskon/premium terhadap fair value.
-- [ ] Momentum mulai melemah atau imbalance berbalik.
-- [ ] Fundamental news buruk dapat memblokir buy.
-- [ ] Entry dilakukan bertahap.
+- [x] Harga bergerak cukup jauh dari session reference.
+- [x] Harga diskon/premium terhadap fair value.
+- [x] Momentum mulai melemah atau imbalance berbalik.
+- [x] Fundamental news buruk dapat memblokir buy.
+- [x] Entry dilakukan bertahap.
 
 Parameter awal:
 
@@ -252,33 +252,33 @@ Gunakan 20 bot campuran:
 
 Skenario:
 
-- [ ] Neutral market tanpa news.
-- [ ] Satu order besar tanpa confirmation.
-- [ ] Sustained price dan volume movement.
-- [ ] Harga jauh di bawah fair value.
-- [ ] Harga jauh di atas fair value.
-- [ ] Thin order book.
+- [x] Neutral market tanpa news.
+- [x] Satu order besar tanpa confirmation.
+- [x] Sustained price dan volume movement.
+- [x] Harga jauh di bawah fair value.
+- [x] Harga jauh di atas fair value.
+- [x] Thin order book.
 
 ### 6.4 Exit criteria Fase 4B
 
-- [ ] Momentum tidak bereaksi pada satu order besar.
-- [ ] Momentum bereaksi pada movement terkonfirmasi.
-- [ ] Contrarian tidak selalu melawan trend.
-- [ ] Contrarian mempertimbangkan fair value dan news.
-- [ ] Tidak semua strategi memilih side yang sama.
-- [ ] Tidak ada order invalid atau accounting error.
+- [x] Momentum tidak bereaksi pada satu order besar.
+- [x] Momentum bereaksi pada movement terkonfirmasi.
+- [x] Contrarian tidak selalu melawan trend.
+- [x] Contrarian mempertimbangkan fair value dan news.
+- [x] Tidak semua strategi memilih side yang sama.
+- [x] Tidak ada order invalid atau accounting error.
 
 ## 7. Fase 4C — Event-Driven dan News Calibration
 
 ### 7.1 Scope
 
-- [ ] Normalize news signal.
-- [ ] Filter published news.
-- [ ] Filter effective session dan expiry.
-- [ ] Support scope symbol, sector, dan market.
-- [ ] Map sentiment menjadi directional bias.
-- [ ] Map intensity menjadi reaction probability dan size.
-- [ ] Track news yang sudah diproses per bot.
+- [x] Normalize news signal.
+- [x] Filter published news.
+- [x] Filter effective session dan expiry.
+- [x] Support scope symbol, sector, dan market.
+- [x] Map sentiment menjadi directional bias.
+- [x] Map intensity menjadi reaction probability dan size.
+- [x] Track news yang sudah diproses per bot.
 
 ### 7.2 Reaction target
 
@@ -293,23 +293,23 @@ Momentum tetap membutuhkan price/volume confirmation.
 
 ### 7.3 Test Fase 4C
 
-- [ ] Draft news tidak dibaca.
-- [ ] Future news tidak dibaca.
-- [ ] Expired news tidak memicu order.
-- [ ] Low news tidak membuat market ekstrem.
-- [ ] Medium news memberi efek kecil atau sedang.
-- [ ] High news memberi efek kuat.
-- [ ] High news tidak selalu membuat ARA/ARB.
-- [ ] Negative news menghasilkan sell bias.
-- [ ] News tidak mengubah harga secara langsung.
+- [x] Draft news tidak dibaca.
+- [x] Future news tidak dibaca.
+- [x] Expired news tidak memicu order.
+- [x] Low news tidak membuat market ekstrem.
+- [x] Medium news memberi efek kecil atau sedang.
+- [x] High news memberi efek kuat.
+- [x] High news tidak selalu membuat ARA/ARB.
+- [x] Negative news menghasilkan sell bias.
+- [x] News tidak mengubah harga secara langsung.
 
 ### 7.4 Exit criteria Fase 4C
 
-- [ ] Event-Driven menjadi first responder.
-- [ ] Bot lain menjadi secondary responder.
-- [ ] Reaction rate sesuai rentang konfigurasi dalam repeated test.
-- [ ] Satu news tidak diproses berulang tanpa batas.
-- [ ] Tidak ada akses draft atau future data.
+- [x] Event-Driven menjadi first responder.
+- [x] Bot lain menjadi secondary responder.
+- [x] Reaction rate sesuai rentang konfigurasi dalam repeated test.
+- [x] Satu news tidak diproses berulang tanpa batas.
+- [x] Tidak ada akses draft atau future data.
 
 ## 8. Fase 4D — Market Maker dan Action Queue
 
@@ -325,25 +325,25 @@ amend
 
 Guardrail:
 
-- [ ] Action memiliki account ID dan correlation/client ID.
-- [ ] Cancel/amend hanya untuk open order milik bot.
-- [ ] Tidak cancel/amend pada `non_cancellation`.
-- [ ] Tidak retry buta dengan ID baru.
-- [ ] Unknown outcome direconcile.
-- [ ] Terminal order dihapus dari open-order registry.
+- [x] Action memiliki account ID dan correlation/client ID.
+- [x] Cancel/amend hanya untuk open order milik bot.
+- [x] Tidak cancel/amend pada `non_cancellation`.
+- [x] Tidak retry buta dengan ID baru.
+- [x] Unknown outcome direconcile.
+- [x] Terminal order dihapus dari open-order registry.
 
 ### 8.2 Market Maker dasar
 
-- [ ] Quote bid dan offer di sekitar reference mid.
-- [ ] Spread berdasarkan liquidity dan volatility.
-- [ ] Quote price selalu valid tick dan price-band.
-- [ ] Inventory limit per symbol.
-- [ ] Cash exposure limit.
-- [ ] Quote size configurable.
-- [ ] Widen spread ketika volatilitas naik.
-- [ ] Withdraw sementara saat extreme news.
-- [ ] Refresh quote melalui amend atau cancel-place.
-- [ ] Hindari self-trade.
+- [x] Quote bid dan offer di sekitar reference mid.
+- [x] Spread berdasarkan liquidity dan volatility.
+- [x] Quote price selalu valid tick dan price-band.
+- [x] Inventory limit per symbol.
+- [x] Cash exposure limit.
+- [x] Quote size configurable.
+- [x] Widen spread ketika volatilitas naik.
+- [x] Withdraw sementara saat extreme news.
+- [x] Refresh quote melalui amend atau cancel-place.
+- [x] Hindari self-trade.
 
 Parameter awal:
 
@@ -355,46 +355,46 @@ population: maksimal 8% total bot
 
 ### 8.3 Test Fase 4D
 
-- [ ] Quote tidak crossing tanpa alasan.
-- [ ] Quote lama dibatalkan atau di-amend.
-- [ ] Inventory limit menghentikan quote searah.
-- [ ] News high melebarkan spread.
-- [ ] News extreme dapat menarik quote.
-- [ ] Market Maker dapat rugi.
-- [ ] Market Maker tidak selalu menyediakan likuiditas.
-- [ ] Self-trade prevention tidak menjadi status mayoritas.
+- [x] Quote tidak crossing tanpa alasan.
+- [x] Quote lama dibatalkan atau di-amend.
+- [x] Inventory limit menghentikan quote searah.
+- [x] News high melebarkan spread.
+- [x] News extreme dapat menarik quote.
+- [x] Market Maker dapat rugi.
+- [x] Market Maker tidak selalu menyediakan likuiditas.
+- [x] Self-trade prevention tidak menjadi status mayoritas.
 
 ### 8.4 Exit criteria Fase 4D
 
-- [ ] Order book memiliki bid dan offer.
-- [ ] Spread tetap wajar tetapi tidak selalu sempurna.
-- [ ] Quote lifecycle tidak meninggalkan stale order.
-- [ ] Cancel/amend mematuhi session.
-- [ ] Tidak ada inventory atau cash minus.
+- [x] Order book memiliki bid dan offer.
+- [x] Spread tetap wajar tetapi tidak selalu sempurna.
+- [x] Quote lifecycle tidak meninggalkan stale order.
+- [x] Cancel/amend mematuhi session.
+- [x] Tidak ada inventory atau cash minus.
 
 ## 9. Fase 4E — Strategi Pelengkap dan 50 Bot
 
 ### 9.1 Value Investor sederhana
 
-- [ ] Buy berdasarkan margin of safety.
-- [ ] Sell berdasarkan premium.
-- [ ] Maksimal 0–1 order per session.
-- [ ] Inactive rate 30–60%.
+- [x] Buy berdasarkan margin of safety.
+- [x] Sell berdasarkan premium.
+- [x] Maksimal 0–1 order per session.
+- [x] Inactive rate 30–60%.
 
 ### 9.2 Index Tracker sederhana
 
-- [ ] Aktivitas utama mendekati akhir session.
-- [ ] Maksimal 0–1 order per session.
-- [ ] Tidak bereaksi langsung pada news biasa.
-- [ ] Belum membutuhkan indeks kompleks.
+- [x] Aktivitas utama mendekati akhir session.
+- [x] Maksimal 0–1 order per session.
+- [x] Tidak bereaksi langsung pada news biasa.
+- [x] Belum membutuhkan indeks kompleks.
 
 ### 9.3 Bandar sederhana
 
-- [ ] Maksimal 0–2 keputusan besar per session.
-- [ ] Tidak selalu aktif.
-- [ ] Membutuhkan inventory dan cash yang cukup.
-- [ ] Memakai fair value dan liquidity sebagai guardrail.
-- [ ] Belum menerapkan fase manipulasi advanced.
+- [x] Maksimal 0–2 keputusan besar per session.
+- [x] Tidak selalu aktif.
+- [x] Membutuhkan inventory dan cash yang cukup.
+- [x] Memakai fair value dan liquidity sebagai guardrail.
+- [x] Belum menerapkan fase manipulasi advanced.
 
 ### 9.4 Genesis per strategi
 
@@ -413,21 +413,21 @@ population: maksimal 8% total bot
 
 Jalankan minimal:
 
-- [ ] 10 neutral sessions.
-- [ ] 5 medium-news sessions.
-- [ ] 5 high-news sessions.
-- [ ] 3 negative-news sessions.
-- [ ] Restart test.
-- [ ] Player interaction test.
+- [x] 10 neutral sessions.
+- [x] 5 medium-news sessions.
+- [x] 5 high-news sessions.
+- [x] 3 negative-news sessions.
+- [x] Restart test.
+- [x] Player interaction test.
 
 ### 9.6 Exit criteria Fase 4E
 
-- [ ] 50 bot aktif dengan komposisi tepat.
-- [ ] Tidak ada strategi yang mendominasi seluruh volume.
-- [ ] Order book tidak kosong.
-- [ ] Market menghasilkan volume dan transaksi.
-- [ ] Player tetap dapat bertransaksi.
-- [ ] Tidak ada cash/position minus.
+- [x] 50 bot aktif dengan komposisi tepat.
+- [x] Tidak ada strategi yang mendominasi seluruh volume.
+- [x] Order book tidak kosong.
+- [x] Market menghasilkan volume dan transaksi.
+- [x] Player tetap dapat bertransaksi.
+- [x] Tidak ada cash/position minus.
 
 ## 10. Fase 4F — Calibration dan Scaling ke 100 Bot
 
@@ -435,33 +435,33 @@ Jalankan minimal:
 
 Per session dan per strategi:
 
-- [ ] Decision count.
-- [ ] Enqueued dan dropped count.
-- [ ] Place, cancel, dan amend count.
-- [ ] Accepted, rejected, filled, cancelled, dan expired.
-- [ ] Reject reason.
-- [ ] Fill ratio.
-- [ ] Order latency.
-- [ ] Queue depth.
-- [ ] Event stream lag.
-- [ ] Volume dan trade count per simbol.
-- [ ] Average spread.
-- [ ] Average depth.
-- [ ] Return per simbol.
-- [ ] ARA/ARB occurrence.
-- [ ] CPU dan memory BOT.
+- [x] Decision count.
+- [x] Enqueued dan dropped count.
+- [x] Place, cancel, dan amend count.
+- [x] Accepted, rejected, filled, cancelled, dan expired.
+- [x] Reject reason.
+- [x] Fill ratio.
+- [x] Order latency.
+- [x] Queue depth.
+- [x] Event stream lag.
+- [x] Volume dan trade count per simbol.
+- [x] Average spread.
+- [x] Average depth.
+- [x] Return per simbol.
+- [x] ARA/ARB occurrence.
+- [x] CPU dan memory BOT.
 
 ### 10.2 Scaling gates
 
 Naik dari 50 ke 100 hanya jika:
 
-- [ ] Reject rate rendah dan dapat dijelaskan.
-- [ ] Queue tidak menumpuk.
-- [ ] Sekuritas latency stabil.
-- [ ] MATS tidak overload.
-- [ ] CPU dan memory BOT stabil.
-- [ ] Tidak ada accounting error.
-- [ ] Market neutral tidak sering ARA/ARB.
+- [x] Reject rate rendah dan dapat dijelaskan.
+- [x] Queue tidak menumpuk.
+- [x] Sekuritas latency stabil.
+- [x] MATS tidak overload.
+- [x] CPU dan memory BOT stabil.
+- [x] Tidak ada accounting error.
+- [x] Market neutral tidak sering ARA/ARB.
 
 ### 10.3 Rate limit
 
@@ -474,14 +474,14 @@ Rate limit dinaikkan berdasarkan hasil pengukuran, bukan hanya jumlah bot.
 
 ### 10.4 Exit criteria Fase 4F
 
-- [ ] 100 bot dapat berjalan stabil.
-- [ ] Market tidak terlalu sepi atau terlalu padat.
-- [ ] News medium memberi efek kecil–sedang.
-- [ ] News high memberi efek kuat tetapi tidak selalu ARA.
-- [ ] Bot tidak spam order.
-- [ ] Player tetap bisa berinteraksi secara wajar.
-- [ ] Tidak ada cash atau position minus.
-- [ ] Seluruh exit criteria Fase 4 terpenuhi.
+- [x] 100 bot dapat berjalan stabil.
+- [x] Market tidak terlalu sepi atau terlalu padat.
+- [x] News medium memberi efek kecil–sedang.
+- [x] News high memberi efek kuat tetapi tidak selalu ARA.
+- [x] Bot tidak spam order.
+- [x] Player tetap bisa berinteraksi secara wajar.
+- [x] Tidak ada cash atau position minus.
+- [x] Seluruh exit criteria Fase 4 terpenuhi.
 
 ## 11. Definition of Done Fase 4
 

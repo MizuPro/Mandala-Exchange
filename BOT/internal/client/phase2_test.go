@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/Mandala-Exchange/bot-v2/internal/client/sekuritas"
 	"github.com/Mandala-Exchange/bot-v2/internal/config"
 	"github.com/Mandala-Exchange/bot-v2/internal/executor"
+	"github.com/Mandala-Exchange/bot-v2/internal/metrics"
 	"github.com/Mandala-Exchange/bot-v2/internal/queue"
 	"github.com/Mandala-Exchange/bot-v2/internal/registry"
 	"github.com/Mandala-Exchange/bot-v2/internal/scheduler"
@@ -283,7 +285,7 @@ func TestOrderExecutorAndReconcile(t *testing.T) {
 	_ = bc.PollAllState(ctx)
 
 	ordQueue := queue.NewOrderQueue(10, 1*time.Second)
-	exec := executor.NewExecutor(bc, sc, reg, ordQueue, 60)
+	exec := executor.NewExecutor(bc, sc, reg, ordQueue, 60, metrics.NewManager(), config.StrategyConfig{})
 	exec.Start(ctx)
 
 	// Inject order decision that will fail and trigger reconcile
@@ -319,9 +321,9 @@ func TestAdminServer(t *testing.T) {
 	sc := sekuritas.NewClient("http://localhost:9999", "secret")
 	reg := registry.NewRegistry()
 	ordQueue := queue.NewOrderQueue(10, 1*time.Second)
-	exec := executor.NewExecutor(bc, sc, reg, ordQueue, 60)
+	exec := executor.NewExecutor(bc, sc, reg, ordQueue, 60, metrics.NewManager(), config.StrategyConfig{})
 
-	server := admin.NewServer(4200, bc, sc, exec, cancel)
+	server := admin.NewServer(4200, bc, sc, exec, cancel, metrics.NewManager())
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
 
@@ -333,6 +335,20 @@ func TestAdminServer(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200 health status, got %d", resp.StatusCode)
+	}
+
+	// Test GET /metrics
+	respMetrics, err := http.Get(httpServer.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("metrics endpoint failed: %v", err)
+	}
+	defer respMetrics.Body.Close()
+	if respMetrics.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 metrics status, got %d", respMetrics.StatusCode)
+	}
+	var metricsSnap metrics.Snapshot
+	if err := json.NewDecoder(respMetrics.Body).Decode(&metricsSnap); err != nil {
+		t.Fatalf("failed to decode metrics response: %v", err)
 	}
 
 	// Test POST /admin/pause

@@ -25,7 +25,14 @@ import (
 	"github.com/Mandala-Exchange/bot-v2/internal/runner"
 	"github.com/Mandala-Exchange/bot-v2/internal/scheduler"
 	"github.com/Mandala-Exchange/bot-v2/internal/strategy"
+	"github.com/Mandala-Exchange/bot-v2/internal/strategy/bandar"
+	"github.com/Mandala-Exchange/bot-v2/internal/strategy/contrarian"
+	"github.com/Mandala-Exchange/bot-v2/internal/strategy/event_driven"
+	"github.com/Mandala-Exchange/bot-v2/internal/strategy/index_tracker"
+	"github.com/Mandala-Exchange/bot-v2/internal/strategy/market_maker"
+	"github.com/Mandala-Exchange/bot-v2/internal/strategy/momentum"
 	"github.com/Mandala-Exchange/bot-v2/internal/strategy/noise"
+	"github.com/Mandala-Exchange/bot-v2/internal/strategy/value_investor"
 	"github.com/google/uuid"
 )
 
@@ -289,13 +296,22 @@ func main() {
 
 	// 10. Start Order Queue dan Executor
 	ordQueue := queue.NewOrderQueue(cfg.Queue.BufferSize, cfg.Queue.TTL)
-	exec := executor.NewExecutor(beiClient, sekuritasClient, reg, ordQueue, cfg.Executor.OrdersPerMinute)
+	exec := executor.NewExecutor(beiClient, sekuritasClient, reg, ordQueue, cfg.Executor.OrdersPerMinute, sessionMetrics, cfg.Strategy)
 	exec.Start(mainCtx)
 
 	// 11. Build Strategy Registry dan Runner
 	strategyReg := strategy.NewStrategyRegistry()
 	strategyReg.Register("noise_trader", noise.New(cfg.Strategy.NoiseTrader))
-	logger.Info("Strategy registry built", "registered", []string{"noise_trader"})
+	strategyReg.Register("momentum_trader", momentum.New(cfg.Strategy.MomentumTrader))
+	strategyReg.Register("contrarian", contrarian.New(cfg.Strategy.Contrarian))
+	strategyReg.Register("event_driven", eventdriven.New(cfg.Strategy.EventDriven))
+	strategyReg.Register("market_maker", marketmaker.New(cfg.Strategy.MarketMaker))
+	strategyReg.Register("value_investor", valueinvestor.New(cfg.Strategy.ValueInvestor))
+	strategyReg.Register("index_tracker", indextracker.New(cfg.Strategy.IndexTracker))
+	strategyReg.Register("bandar", bandar.New(cfg.Strategy.Bandar))
+	logger.Info("Strategy registry built", "registered", []string{
+		"noise_trader", "momentum_trader", "contrarian", "event_driven", "market_maker", "value_investor", "index_tracker", "bandar",
+	})
 
 	botRunner := runner.New(reg, beiClient, matsClient, ordQueue, strategyReg)
 	botRunner.SetMetrics(sessionMetrics)
@@ -313,7 +329,7 @@ func main() {
 	sched.Start(mainCtx)
 
 	// 13. Start Admin HTTP Server
-	adminServer := admin.NewServer(cfg.Admin.Port, beiClient, sekuritasClient, exec, mainCancel)
+	adminServer := admin.NewServer(cfg.Admin.Port, beiClient, sekuritasClient, exec, mainCancel, sessionMetrics)
 	adminServer.Start()
 
 	logger.Info("BOT-v2 Service initialized successfully and running")

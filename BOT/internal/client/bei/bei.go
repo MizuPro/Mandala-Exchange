@@ -116,8 +116,11 @@ type CorporateAction struct {
 }
 
 type News struct {
+	ID          string    `json:"id"`
 	Title       string    `json:"title"`
 	Body        string    `json:"body"`
+	Symbol      string    `json:"symbol"`
+	Sector      string    `json:"sector"`
 	Sentiment   string    `json:"sentiment"`
 	Intensity   string    `json:"intensity"`
 	PublishedAt time.Time `json:"published_at"`

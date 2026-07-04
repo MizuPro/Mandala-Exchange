@@ -75,7 +75,14 @@ type StrategyIntervalConfig struct {
 
 // StrategyConfig menampung konfigurasi semua jenis strategy.
 type StrategyConfig struct {
-	NoiseTrader NoiseTraderConfig `yaml:"noise_trader"`
+	NoiseTrader    NoiseTraderConfig    `yaml:"noise_trader"`
+	MomentumTrader MomentumTraderConfig `yaml:"momentum_trader"`
+	Contrarian     ContrarianConfig     `yaml:"contrarian"`
+	EventDriven    EventDrivenConfig    `yaml:"event_driven"`
+	MarketMaker    MarketMakerConfig    `yaml:"market_maker"`
+	ValueInvestor  ValueInvestorConfig  `yaml:"value_investor"`
+	IndexTracker   IndexTrackerConfig   `yaml:"index_tracker"`
+	Bandar         BandarConfig         `yaml:"bandar"`
 }
 
 // NoiseTraderConfig adalah parameter konfigurasi untuk Noise Trader strategy.
@@ -96,6 +103,96 @@ type NoiseTraderConfig struct {
 	ContinuousTickIntervalMin int `yaml:"continuous_tick_interval_min"`
 	// ContinuousTickIntervalMax adalah interval maksimum (detik) antar evaluasi di continuous.
 	ContinuousTickIntervalMax int `yaml:"continuous_tick_interval_max"`
+}
+
+// MomentumTraderConfig adalah parameter konfigurasi untuk Momentum Trader strategy.
+type MomentumTraderConfig struct {
+	InactiveRate             float64 `yaml:"inactive_rate"`
+	MaxOrdersPerSession      int     `yaml:"max_orders_per_session"`
+	MaxLotsPerOrder          int64   `yaml:"max_lots_per_order"`
+	SpreadThresholdPct       float64 `yaml:"spread_threshold_pct"`
+	ImbalanceThreshold       float64 `yaml:"imbalance_threshold"`
+	ReturnThreshold          float64 `yaml:"return_threshold"`
+	FairValueBrakeMultiplier float64 `yaml:"fair_value_brake_multiplier"`
+	OpeningAuctionRate       float64 `yaml:"opening_auction_rate"`
+	ClosingAuctionRate       float64 `yaml:"closing_auction_rate"`
+	ContinuousTickIntervalMin int    `yaml:"continuous_tick_interval_min"`
+	ContinuousTickIntervalMax int    `yaml:"continuous_tick_interval_max"`
+}
+
+// ContrarianConfig adalah parameter konfigurasi untuk Contrarian Trader strategy.
+type ContrarianConfig struct {
+	InactiveRate               float64 `yaml:"inactive_rate"`
+	MaxOrdersPerSession        int     `yaml:"max_orders_per_session"`
+	MaxLotsPerOrder            int64   `yaml:"max_lots_per_order"`
+	DiscountThreshold          float64 `yaml:"discount_threshold"`
+	PremiumThreshold           float64 `yaml:"premium_threshold"`
+	ReferenceDeviationThreshold float64 `yaml:"reference_deviation_threshold"`
+	OpeningAuctionRate         float64 `yaml:"opening_auction_rate"`
+	ClosingAuctionRate         float64 `yaml:"closing_auction_rate"`
+	ContinuousTickIntervalMin   int    `yaml:"continuous_tick_interval_min"`
+	ContinuousTickIntervalMax   int    `yaml:"continuous_tick_interval_max"`
+}
+
+// EventDrivenConfig adalah parameter konfigurasi untuk Event-Driven strategy.
+type EventDrivenConfig struct {
+	InactiveRate             float64 `yaml:"inactive_rate"`
+	MaxOrdersPerSession      int     `yaml:"max_orders_per_session"`
+	MaxLotsPerOrder          int64   `yaml:"max_lots_per_order"`
+	OpeningAuctionRate       float64 `yaml:"opening_auction_rate"`
+	ClosingAuctionRate       float64 `yaml:"closing_auction_rate"`
+	ContinuousTickIntervalMin int    `yaml:"continuous_tick_interval_min"`
+	ContinuousTickIntervalMax int    `yaml:"continuous_tick_interval_max"`
+}
+
+// MarketMakerConfig adalah parameter konfigurasi untuk Market Maker strategy.
+type MarketMakerConfig struct {
+	InactiveRate             float64 `yaml:"inactive_rate"`
+	MaxOrdersPerSession      int     `yaml:"max_orders_per_session"`
+	MaxLotsPerOrder          int64   `yaml:"max_lots_per_order"`
+	BaseSpreadTicks          int     `yaml:"base_spread_ticks"`
+	MaxInventoryShares       int64   `yaml:"max_inventory_shares"`
+	OpeningAuctionRate       float64 `yaml:"opening_auction_rate"`
+	ClosingAuctionRate       float64 `yaml:"closing_auction_rate"`
+	ContinuousTickIntervalMin int    `yaml:"continuous_tick_interval_min"`
+	ContinuousTickIntervalMax int    `yaml:"continuous_tick_interval_max"`
+}
+
+// ValueInvestorConfig adalah parameter konfigurasi untuk Value Investor strategy.
+type ValueInvestorConfig struct {
+	InactiveRate              float64 `yaml:"inactive_rate"`
+	MaxOrdersPerSession       int     `yaml:"max_orders_per_session"`
+	MaxLotsPerOrder           int64   `yaml:"max_lots_per_order"`
+	DiscountThreshold         float64 `yaml:"discount_threshold"`
+	PremiumThreshold          float64 `yaml:"premium_threshold"`
+	OpeningAuctionRate        float64 `yaml:"opening_auction_rate"`
+	ClosingAuctionRate        float64 `yaml:"closing_auction_rate"`
+	ContinuousTickIntervalMin int     `yaml:"continuous_tick_interval_min"`
+	ContinuousTickIntervalMax int     `yaml:"continuous_tick_interval_max"`
+}
+
+// IndexTrackerConfig adalah parameter konfigurasi untuk Index Tracker strategy.
+type IndexTrackerConfig struct {
+	InactiveRate              float64 `yaml:"inactive_rate"`
+	MaxOrdersPerSession       int     `yaml:"max_orders_per_session"`
+	MaxLotsPerOrder           int64   `yaml:"max_lots_per_order"`
+	OpeningAuctionRate        float64 `yaml:"opening_auction_rate"`
+	ClosingAuctionRate        float64 `yaml:"closing_auction_rate"`
+	ContinuousTickIntervalMin int     `yaml:"continuous_tick_interval_min"`
+	ContinuousTickIntervalMax int     `yaml:"continuous_tick_interval_max"`
+}
+
+// BandarConfig adalah parameter konfigurasi untuk Bandar strategy.
+type BandarConfig struct {
+	InactiveRate              float64 `yaml:"inactive_rate"`
+	MaxOrdersPerSession       int     `yaml:"max_orders_per_session"`
+	MaxLotsPerOrder           int64   `yaml:"max_lots_per_order"`
+	FairValueBrakeMultiplier  float64 `yaml:"fair_value_brake_multiplier"`
+	BrakeDiscount             float64 `yaml:"brake_discount"`
+	OpeningAuctionRate        float64 `yaml:"opening_auction_rate"`
+	ClosingAuctionRate        float64 `yaml:"closing_auction_rate"`
+	ContinuousTickIntervalMin int     `yaml:"continuous_tick_interval_min"`
+	ContinuousTickIntervalMax int     `yaml:"continuous_tick_interval_max"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -198,6 +295,248 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.Scheduler.Intervals["noise_trader"] = StrategyIntervalConfig{
 			MinSeconds: cfg.Strategy.NoiseTrader.ContinuousTickIntervalMin,
 			MaxSeconds: cfg.Strategy.NoiseTrader.ContinuousTickIntervalMax,
+		}
+	}
+
+	// Momentum Trader defaults
+	if cfg.Strategy.MomentumTrader.InactiveRate <= 0 {
+		cfg.Strategy.MomentumTrader.InactiveRate = 0.10
+	}
+	if cfg.Strategy.MomentumTrader.MaxOrdersPerSession <= 0 {
+		cfg.Strategy.MomentumTrader.MaxOrdersPerSession = 3
+	}
+	if cfg.Strategy.MomentumTrader.MaxLotsPerOrder <= 0 {
+		cfg.Strategy.MomentumTrader.MaxLotsPerOrder = 10
+	}
+	if cfg.Strategy.MomentumTrader.SpreadThresholdPct <= 0 {
+		cfg.Strategy.MomentumTrader.SpreadThresholdPct = 0.05
+	}
+	if cfg.Strategy.MomentumTrader.ImbalanceThreshold <= 0 {
+		cfg.Strategy.MomentumTrader.ImbalanceThreshold = 0.10
+	}
+	if cfg.Strategy.MomentumTrader.ReturnThreshold <= 0 {
+		cfg.Strategy.MomentumTrader.ReturnThreshold = 0.005
+	}
+	if cfg.Strategy.MomentumTrader.FairValueBrakeMultiplier <= 0 {
+		cfg.Strategy.MomentumTrader.FairValueBrakeMultiplier = 1.5
+	}
+	if cfg.Strategy.MomentumTrader.OpeningAuctionRate <= 0 {
+		cfg.Strategy.MomentumTrader.OpeningAuctionRate = 0.20
+	}
+	if cfg.Strategy.MomentumTrader.ClosingAuctionRate <= 0 {
+		cfg.Strategy.MomentumTrader.ClosingAuctionRate = 0.10
+	}
+	if cfg.Strategy.MomentumTrader.ContinuousTickIntervalMin <= 0 {
+		cfg.Strategy.MomentumTrader.ContinuousTickIntervalMin = 10
+	}
+	if cfg.Strategy.MomentumTrader.ContinuousTickIntervalMax <= 0 {
+		cfg.Strategy.MomentumTrader.ContinuousTickIntervalMax = 30
+	}
+	if _, ok := cfg.Scheduler.Intervals["momentum_trader"]; !ok {
+		cfg.Scheduler.Intervals["momentum_trader"] = StrategyIntervalConfig{
+			MinSeconds: cfg.Strategy.MomentumTrader.ContinuousTickIntervalMin,
+			MaxSeconds: cfg.Strategy.MomentumTrader.ContinuousTickIntervalMax,
+		}
+	}
+
+	// Contrarian Trader defaults
+	if cfg.Strategy.Contrarian.InactiveRate <= 0 {
+		cfg.Strategy.Contrarian.InactiveRate = 0.15
+	}
+	if cfg.Strategy.Contrarian.MaxOrdersPerSession <= 0 {
+		cfg.Strategy.Contrarian.MaxOrdersPerSession = 2
+	}
+	if cfg.Strategy.Contrarian.MaxLotsPerOrder <= 0 {
+		cfg.Strategy.Contrarian.MaxLotsPerOrder = 8
+	}
+	if cfg.Strategy.Contrarian.DiscountThreshold <= 0 {
+		cfg.Strategy.Contrarian.DiscountThreshold = 0.10
+	}
+	if cfg.Strategy.Contrarian.PremiumThreshold <= 0 {
+		cfg.Strategy.Contrarian.PremiumThreshold = 0.10
+	}
+	if cfg.Strategy.Contrarian.ReferenceDeviationThreshold <= 0 {
+		cfg.Strategy.Contrarian.ReferenceDeviationThreshold = 0.05
+	}
+	if cfg.Strategy.Contrarian.OpeningAuctionRate <= 0 {
+		cfg.Strategy.Contrarian.OpeningAuctionRate = 0.10
+	}
+	if cfg.Strategy.Contrarian.ClosingAuctionRate <= 0 {
+		cfg.Strategy.Contrarian.ClosingAuctionRate = 0.05
+	}
+	if cfg.Strategy.Contrarian.ContinuousTickIntervalMin <= 0 {
+		cfg.Strategy.Contrarian.ContinuousTickIntervalMin = 30
+	}
+	if cfg.Strategy.Contrarian.ContinuousTickIntervalMax <= 0 {
+		cfg.Strategy.Contrarian.ContinuousTickIntervalMax = 90
+	}
+	if _, ok := cfg.Scheduler.Intervals["contrarian"]; !ok {
+		cfg.Scheduler.Intervals["contrarian"] = StrategyIntervalConfig{
+			MinSeconds: cfg.Strategy.Contrarian.ContinuousTickIntervalMin,
+			MaxSeconds: cfg.Strategy.Contrarian.ContinuousTickIntervalMax,
+		}
+	}
+
+	// Event-Driven defaults
+	if cfg.Strategy.EventDriven.InactiveRate <= 0 {
+		cfg.Strategy.EventDriven.InactiveRate = 0.05 // sangat aktif
+	}
+	if cfg.Strategy.EventDriven.MaxOrdersPerSession <= 0 {
+		cfg.Strategy.EventDriven.MaxOrdersPerSession = 5
+	}
+	if cfg.Strategy.EventDriven.MaxLotsPerOrder <= 0 {
+		cfg.Strategy.EventDriven.MaxLotsPerOrder = 15
+	}
+	if cfg.Strategy.EventDriven.OpeningAuctionRate <= 0 {
+		cfg.Strategy.EventDriven.OpeningAuctionRate = 0.30
+	}
+	if cfg.Strategy.EventDriven.ClosingAuctionRate <= 0 {
+		cfg.Strategy.EventDriven.ClosingAuctionRate = 0.15
+	}
+	if cfg.Strategy.EventDriven.ContinuousTickIntervalMin <= 0 {
+		cfg.Strategy.EventDriven.ContinuousTickIntervalMin = 5
+	}
+	if cfg.Strategy.EventDriven.ContinuousTickIntervalMax <= 0 {
+		cfg.Strategy.EventDriven.ContinuousTickIntervalMax = 15
+	}
+	if _, ok := cfg.Scheduler.Intervals["event_driven"]; !ok {
+		cfg.Scheduler.Intervals["event_driven"] = StrategyIntervalConfig{
+			MinSeconds: cfg.Strategy.EventDriven.ContinuousTickIntervalMin,
+			MaxSeconds: cfg.Strategy.EventDriven.ContinuousTickIntervalMax,
+		}
+	}
+
+	// Market Maker defaults
+	if cfg.Strategy.MarketMaker.InactiveRate <= 0 {
+		cfg.Strategy.MarketMaker.InactiveRate = 0.05
+	}
+	if cfg.Strategy.MarketMaker.MaxOrdersPerSession <= 0 {
+		cfg.Strategy.MarketMaker.MaxOrdersPerSession = 6
+	}
+	if cfg.Strategy.MarketMaker.MaxLotsPerOrder <= 0 {
+		cfg.Strategy.MarketMaker.MaxLotsPerOrder = 10
+	}
+	if cfg.Strategy.MarketMaker.BaseSpreadTicks <= 0 {
+		cfg.Strategy.MarketMaker.BaseSpreadTicks = 3
+	}
+	if cfg.Strategy.MarketMaker.MaxInventoryShares <= 0 {
+		cfg.Strategy.MarketMaker.MaxInventoryShares = 5000
+	}
+	if cfg.Strategy.MarketMaker.OpeningAuctionRate <= 0 {
+		cfg.Strategy.MarketMaker.OpeningAuctionRate = 0.50
+	}
+	if cfg.Strategy.MarketMaker.ClosingAuctionRate <= 0 {
+		cfg.Strategy.MarketMaker.ClosingAuctionRate = 0.30
+	}
+	if cfg.Strategy.MarketMaker.ContinuousTickIntervalMin <= 0 {
+		cfg.Strategy.MarketMaker.ContinuousTickIntervalMin = 10
+	}
+	if cfg.Strategy.MarketMaker.ContinuousTickIntervalMax <= 0 {
+		cfg.Strategy.MarketMaker.ContinuousTickIntervalMax = 25
+	}
+	if _, ok := cfg.Scheduler.Intervals["market_maker"]; !ok {
+		cfg.Scheduler.Intervals["market_maker"] = StrategyIntervalConfig{
+			MinSeconds: cfg.Strategy.MarketMaker.ContinuousTickIntervalMin,
+			MaxSeconds: cfg.Strategy.MarketMaker.ContinuousTickIntervalMax,
+		}
+	}
+
+	// Value Investor defaults
+	if cfg.Strategy.ValueInvestor.InactiveRate <= 0 {
+		cfg.Strategy.ValueInvestor.InactiveRate = 0.40 // MOS mencari diskon tinggi, sering inaktif
+	}
+	if cfg.Strategy.ValueInvestor.MaxOrdersPerSession <= 0 {
+		cfg.Strategy.ValueInvestor.MaxOrdersPerSession = 1
+	}
+	if cfg.Strategy.ValueInvestor.MaxLotsPerOrder <= 0 {
+		cfg.Strategy.ValueInvestor.MaxLotsPerOrder = 5
+	}
+	if cfg.Strategy.ValueInvestor.DiscountThreshold <= 0 {
+		cfg.Strategy.ValueInvestor.DiscountThreshold = 0.15
+	}
+	if cfg.Strategy.ValueInvestor.PremiumThreshold <= 0 {
+		cfg.Strategy.ValueInvestor.PremiumThreshold = 0.15
+	}
+	if cfg.Strategy.ValueInvestor.OpeningAuctionRate <= 0 {
+		cfg.Strategy.ValueInvestor.OpeningAuctionRate = 0.20
+	}
+	if cfg.Strategy.ValueInvestor.ClosingAuctionRate <= 0 {
+		cfg.Strategy.ValueInvestor.ClosingAuctionRate = 0.10
+	}
+	if cfg.Strategy.ValueInvestor.ContinuousTickIntervalMin <= 0 {
+		cfg.Strategy.ValueInvestor.ContinuousTickIntervalMin = 30
+	}
+	if cfg.Strategy.ValueInvestor.ContinuousTickIntervalMax <= 0 {
+		cfg.Strategy.ValueInvestor.ContinuousTickIntervalMax = 90
+	}
+	if _, ok := cfg.Scheduler.Intervals["value_investor"]; !ok {
+		cfg.Scheduler.Intervals["value_investor"] = StrategyIntervalConfig{
+			MinSeconds: cfg.Strategy.ValueInvestor.ContinuousTickIntervalMin,
+			MaxSeconds: cfg.Strategy.ValueInvestor.ContinuousTickIntervalMax,
+		}
+	}
+
+	// Index Tracker defaults
+	if cfg.Strategy.IndexTracker.InactiveRate <= 0 {
+		cfg.Strategy.IndexTracker.InactiveRate = 0.10
+	}
+	if cfg.Strategy.IndexTracker.MaxOrdersPerSession <= 0 {
+		cfg.Strategy.IndexTracker.MaxOrdersPerSession = 1
+	}
+	if cfg.Strategy.IndexTracker.MaxLotsPerOrder <= 0 {
+		cfg.Strategy.IndexTracker.MaxLotsPerOrder = 8
+	}
+	if cfg.Strategy.IndexTracker.OpeningAuctionRate <= 0 {
+		cfg.Strategy.IndexTracker.OpeningAuctionRate = 0.0 // Hanya aktif di closing
+	}
+	if cfg.Strategy.IndexTracker.ClosingAuctionRate <= 0 {
+		cfg.Strategy.IndexTracker.ClosingAuctionRate = 0.80 // Sangat aktif di closing
+	}
+	if cfg.Strategy.IndexTracker.ContinuousTickIntervalMin <= 0 {
+		cfg.Strategy.IndexTracker.ContinuousTickIntervalMin = 20
+	}
+	if cfg.Strategy.IndexTracker.ContinuousTickIntervalMax <= 0 {
+		cfg.Strategy.IndexTracker.ContinuousTickIntervalMax = 60
+	}
+	if _, ok := cfg.Scheduler.Intervals["index_tracker"]; !ok {
+		cfg.Scheduler.Intervals["index_tracker"] = StrategyIntervalConfig{
+			MinSeconds: cfg.Strategy.IndexTracker.ContinuousTickIntervalMin,
+			MaxSeconds: cfg.Strategy.IndexTracker.ContinuousTickIntervalMax,
+		}
+	}
+
+	// Bandar defaults
+	if cfg.Strategy.Bandar.InactiveRate <= 0 {
+		cfg.Strategy.Bandar.InactiveRate = 0.20
+	}
+	if cfg.Strategy.Bandar.MaxOrdersPerSession <= 0 {
+		cfg.Strategy.Bandar.MaxOrdersPerSession = 2
+	}
+	if cfg.Strategy.Bandar.MaxLotsPerOrder <= 0 {
+		cfg.Strategy.Bandar.MaxLotsPerOrder = 50
+	}
+	if cfg.Strategy.Bandar.FairValueBrakeMultiplier <= 0 {
+		cfg.Strategy.Bandar.FairValueBrakeMultiplier = 1.5
+	}
+	if cfg.Strategy.Bandar.BrakeDiscount <= 0 {
+		cfg.Strategy.Bandar.BrakeDiscount = 0.50
+	}
+	if cfg.Strategy.Bandar.OpeningAuctionRate <= 0 {
+		cfg.Strategy.Bandar.OpeningAuctionRate = 0.40
+	}
+	if cfg.Strategy.Bandar.ClosingAuctionRate <= 0 {
+		cfg.Strategy.Bandar.ClosingAuctionRate = 0.20
+	}
+	if cfg.Strategy.Bandar.ContinuousTickIntervalMin <= 0 {
+		cfg.Strategy.Bandar.ContinuousTickIntervalMin = 15
+	}
+	if cfg.Strategy.Bandar.ContinuousTickIntervalMax <= 0 {
+		cfg.Strategy.Bandar.ContinuousTickIntervalMax = 45
+	}
+	if _, ok := cfg.Scheduler.Intervals["bandar"]; !ok {
+		cfg.Scheduler.Intervals["bandar"] = StrategyIntervalConfig{
+			MinSeconds: cfg.Strategy.Bandar.ContinuousTickIntervalMin,
+			MaxSeconds: cfg.Strategy.Bandar.ContinuousTickIntervalMax,
 		}
 	}
 

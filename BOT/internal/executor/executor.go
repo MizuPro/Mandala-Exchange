@@ -9,7 +9,9 @@ import (
 	"github.com/Mandala-Exchange/bot-v2/internal/client"
 	"github.com/Mandala-Exchange/bot-v2/internal/client/bei"
 	"github.com/Mandala-Exchange/bot-v2/internal/client/sekuritas"
+	"github.com/Mandala-Exchange/bot-v2/internal/config"
 	"github.com/Mandala-Exchange/bot-v2/internal/logger"
+	"github.com/Mandala-Exchange/bot-v2/internal/metrics"
 	"github.com/Mandala-Exchange/bot-v2/internal/queue"
 	"github.com/Mandala-Exchange/bot-v2/internal/registry"
 	"golang.org/x/time/rate"
@@ -21,13 +23,22 @@ type Executor struct {
 	reg             *registry.Registry
 	ordQueue        *queue.OrderQueue
 	rateLimiter     *rate.Limiter
+	metricsManager  *metrics.Manager
+	stratCfg        config.StrategyConfig
 
-	paused    bool
-	pausedMu  sync.RWMutex
-	maxOrders int // max orders per session per bot (e.g., 3)
+	paused   bool
+	pausedMu sync.RWMutex
 }
 
-func NewExecutor(beiClient *bei.Client, sekuritasClient *sekuritas.Client, reg *registry.Registry, ordQueue *queue.OrderQueue, ordersPerMin int) *Executor {
+func NewExecutor(
+	beiClient *bei.Client,
+	sekuritasClient *sekuritas.Client,
+	reg *registry.Registry,
+	ordQueue *queue.OrderQueue,
+	ordersPerMin int,
+	metricsManager *metrics.Manager,
+	stratCfg config.StrategyConfig,
+) *Executor {
 	if ordersPerMin <= 0 {
 		ordersPerMin = 60 // Default 60 orders/minute
 	}
@@ -39,8 +50,49 @@ func NewExecutor(beiClient *bei.Client, sekuritasClient *sekuritas.Client, reg *
 		reg:             reg,
 		ordQueue:        ordQueue,
 		rateLimiter:     limiter,
-		maxOrders:       3, // Default MVP max orders per bot per session
+		metricsManager:  metricsManager,
+		stratCfg:        stratCfg,
 	}
+}
+
+func (e *Executor) getMaxOrdersForBot(strategy string) int {
+	// Fallback default ke 3 jika limit dari config belum diinisialisasi (misal di mock unit test)
+	limit := 3
+	switch strategy {
+	case "noise_trader":
+		if e.stratCfg.NoiseTrader.MaxOrdersPerSession > 0 {
+			limit = e.stratCfg.NoiseTrader.MaxOrdersPerSession
+		}
+	case "momentum_trader":
+		if e.stratCfg.MomentumTrader.MaxOrdersPerSession > 0 {
+			limit = e.stratCfg.MomentumTrader.MaxOrdersPerSession
+		}
+	case "contrarian":
+		if e.stratCfg.Contrarian.MaxOrdersPerSession > 0 {
+			limit = e.stratCfg.Contrarian.MaxOrdersPerSession
+		}
+	case "event_driven":
+		if e.stratCfg.EventDriven.MaxOrdersPerSession > 0 {
+			limit = e.stratCfg.EventDriven.MaxOrdersPerSession
+		}
+	case "market_maker":
+		if e.stratCfg.MarketMaker.MaxOrdersPerSession > 0 {
+			limit = e.stratCfg.MarketMaker.MaxOrdersPerSession
+		}
+	case "value_investor":
+		if e.stratCfg.ValueInvestor.MaxOrdersPerSession > 0 {
+			limit = e.stratCfg.ValueInvestor.MaxOrdersPerSession
+		}
+	case "index_tracker":
+		if e.stratCfg.IndexTracker.MaxOrdersPerSession > 0 {
+			limit = e.stratCfg.IndexTracker.MaxOrdersPerSession
+		}
+	case "bandar":
+		if e.stratCfg.Bandar.MaxOrdersPerSession > 0 {
+			limit = e.stratCfg.Bandar.MaxOrdersPerSession
+		}
+	}
+	return limit
 }
 
 func (e *Executor) SetPaused(p bool) {
@@ -79,6 +131,16 @@ func (e *Executor) workerLoop(ctx context.Context) {
 			logger.Error("Error dequeuing order decision", "error", err.Error())
 			continue
 		}
+
+		// Record Queue Depth
+		beiSnap := e.beiClient.GetSnapshot()
+		sessID := ""
+		if beiSnap.Session != nil && beiSnap.Session.ID != "" {
+			sessID = beiSnap.Session.ID
+		} else {
+			sessID = time.Now().Format("2006-01-02")
+		}
+		e.metricsManager.RecordQueueDepth(sessID, int64(e.ordQueue.Size()))
 
 		// Wait on rate limiter
 		if err := e.rateLimiter.Wait(ctx); err != nil {
@@ -143,14 +205,31 @@ func (e *Executor) workerLoop(ctx context.Context) {
 			sessionID = snapshot.Session.ID
 		}
 		ordersCount := bot.GetOrdersThisSession(sessionID)
-		if ordersCount >= e.maxOrders {
+		limit := e.getMaxOrdersForBot(bot.Strategy)
+		if ordersCount >= limit {
 			logger.Warn("Bot session order limit reached. Dropping order decision.",
-				"account_id", dec.AccountID, "limit", e.maxOrders, "segment", sessionSegment)
+				"account_id", dec.AccountID, "limit", limit, "segment", sessionSegment)
 			continue
 		}
 
-		// Execute place order
-		e.executeOrder(ctx, bot, dec)
+		// Guardrail: tidak cancel/amend pada non_cancellation segment
+		if dec.Action == "cancel" || dec.Action == "amend" {
+			if sessionSegment == "non_cancellation" {
+				logger.Warn("Cancel/Amend blocked: Session segment is non_cancellation",
+					"action", dec.Action, "target_order_id", dec.TargetOrderID)
+				continue
+			}
+		}
+
+		// Execute based on Action
+		switch dec.Action {
+		case "cancel":
+			e.executeCancel(ctx, bot, dec)
+		case "amend":
+			e.executeAmend(ctx, bot, dec)
+		default:
+			e.executeOrder(ctx, bot, dec)
+		}
 	}
 }
 
@@ -173,7 +252,19 @@ func (e *Executor) executeOrder(ctx context.Context, bot *registry.BotInstance, 
 		"qty", dec.Quantity,
 	)
 
+	beiSnap := e.beiClient.GetSnapshot()
+	sessID := ""
+	if beiSnap.Session != nil && beiSnap.Session.ID != "" {
+		sessID = beiSnap.Session.ID
+	} else {
+		sessID = time.Now().Format("2006-01-02")
+	}
+
+	start := time.Now()
 	resp, err := e.sekuritasClient.PlaceOrder(ctx, dec.AccountID, req)
+	latencyMs := time.Since(start).Milliseconds()
+	e.metricsManager.RecordLatency(sessID, bot.Strategy, latencyMs)
+
 	if err != nil {
 		if errors.Is(err, sekuritas.ErrTokenExpired) || errors.Is(err, sekuritas.ErrTokenNotFound) {
 			logger.Error("Order submit blocked: Invalid token", "account_id", dec.AccountID, "error", err.Error())
@@ -187,6 +278,7 @@ func (e *Executor) executeOrder(ctx context.Context, bot *registry.BotInstance, 
 		}
 
 		logger.Error("Order submission rejected by Sekuritas", "client_order_id", dec.ClientOrderID, "error", err.Error())
+		e.metricsManager.RecordRejectReason(sessID, bot.Strategy, err.Error())
 		return
 	}
 
@@ -196,11 +288,13 @@ func (e *Executor) executeOrder(ctx context.Context, bot *registry.BotInstance, 
 			"sekuritas_order_id", resp.ID,
 			"reject_reason", resp.RejectReason,
 		)
+		e.metricsManager.RecordRejectReason(sessID, bot.Strategy, resp.RejectReason)
 		return
 	}
 
 	// Success
 	bot.SetOpenOrderID(dec.ClientOrderID, resp.ID)
+	e.metricsManager.RecordAction(sessID, bot.Strategy, "place")
 
 	logger.Info("Order placed successfully",
 		"client_order_id", dec.ClientOrderID,
@@ -249,3 +343,98 @@ func (e *Executor) reconcileOrderOutcome(ctx context.Context, bot *registry.BotI
 
 	logger.Error("Reconcile FAILED after max attempts. Order state remains unknown.", "client_order_id", dec.ClientOrderID)
 }
+
+func (e *Executor) executeCancel(ctx context.Context, bot *registry.BotInstance, dec queue.OrderDecision) {
+	if dec.TargetOrderID == "" {
+		logger.Error("Cancel blocked: TargetOrderID is empty", "account_id", dec.AccountID)
+		return
+	}
+
+	beiSnap := e.beiClient.GetSnapshot()
+	sessID := ""
+	if beiSnap.Session != nil && beiSnap.Session.ID != "" {
+		sessID = beiSnap.Session.ID
+	} else {
+		sessID = time.Now().Format("2006-01-02")
+	}
+
+	logger.Info("Submitting cancel order request to Sekuritas",
+		"account_id", dec.AccountID,
+		"target_order_id", dec.TargetOrderID,
+	)
+
+	start := time.Now()
+	err := e.sekuritasClient.CancelOrder(ctx, dec.AccountID, dec.TargetOrderID)
+	latencyMs := time.Since(start).Milliseconds()
+	e.metricsManager.RecordLatency(sessID, bot.Strategy, latencyMs)
+
+	if err != nil {
+		logger.Error("Cancel order failed in Sekuritas",
+			"account_id", dec.AccountID,
+			"target_order_id", dec.TargetOrderID,
+			"error", err.Error(),
+		)
+		e.metricsManager.RecordRejectReason(sessID, bot.Strategy, err.Error())
+		return
+	}
+
+	bot.DeleteOpenOrderBySekuritasID(dec.TargetOrderID)
+	e.metricsManager.RecordAction(sessID, bot.Strategy, "cancel")
+
+	logger.Info("Order cancelled successfully",
+		"account_id", dec.AccountID,
+		"target_order_id", dec.TargetOrderID,
+	)
+}
+
+func (e *Executor) executeAmend(ctx context.Context, bot *registry.BotInstance, dec queue.OrderDecision) {
+	if dec.TargetOrderID == "" {
+		logger.Error("Amend blocked: TargetOrderID is empty", "account_id", dec.AccountID)
+		return
+	}
+
+	beiSnap := e.beiClient.GetSnapshot()
+	sessID := ""
+	if beiSnap.Session != nil && beiSnap.Session.ID != "" {
+		sessID = beiSnap.Session.ID
+	} else {
+		sessID = time.Now().Format("2006-01-02")
+	}
+
+	logger.Info("Submitting amend order request to Sekuritas",
+		"account_id", dec.AccountID,
+		"target_order_id", dec.TargetOrderID,
+		"price", dec.Price,
+		"qty", dec.Quantity,
+	)
+
+	req := sekuritas.AmendOrderRequest{
+		PriceIDR: dec.Price,
+		Quantity: dec.Quantity,
+	}
+
+	start := time.Now()
+	err := e.sekuritasClient.AmendOrder(ctx, dec.AccountID, dec.TargetOrderID, req)
+	latencyMs := time.Since(start).Milliseconds()
+	e.metricsManager.RecordLatency(sessID, bot.Strategy, latencyMs)
+
+	if err != nil {
+		logger.Error("Amend order failed in Sekuritas",
+			"account_id", dec.AccountID,
+			"target_order_id", dec.TargetOrderID,
+			"error", err.Error(),
+		)
+		e.metricsManager.RecordRejectReason(sessID, bot.Strategy, err.Error())
+		return
+	}
+
+	e.metricsManager.RecordAction(sessID, bot.Strategy, "amend")
+
+	logger.Info("Order amended successfully",
+		"account_id", dec.AccountID,
+		"target_order_id", dec.TargetOrderID,
+		"new_price", dec.Price,
+		"new_qty", dec.Quantity,
+	)
+}
+
