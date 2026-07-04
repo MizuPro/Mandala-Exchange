@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/Mandala-Exchange/bot-v2/internal/client/bei"
 	"github.com/Mandala-Exchange/bot-v2/internal/config"
 )
 
@@ -18,11 +19,16 @@ func TestGenerateIsDeterministicAndMatchesComposition(t *testing.T) {
 			"contrarian":      5,
 		},
 	}
-	first, err := Generate(cfg)
+	dummySecs := []bei.Security{
+		{Symbol: "MNDL", Status: "listed", ReferencePrice: 320},
+		{Symbol: "NUSA", Status: "listed", ReferencePrice: 735},
+		{Symbol: "BARA", Status: "listed", ReferencePrice: 190},
+	}
+	first, err := Generate(cfg, dummySecs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Generate(cfg)
+	second, err := Generate(cfg, dummySecs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +54,7 @@ func TestGenerateRejectsCompositionMismatch(t *testing.T) {
 		Enabled:     true,
 		Size:        50,
 		Composition: map[string]int{"noise_trader": 49},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected composition mismatch error")
 	}

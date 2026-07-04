@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Mandala-Exchange/bot-v2/internal/client/bei"
 	"github.com/Mandala-Exchange/bot-v2/internal/config"
 )
 
@@ -26,7 +27,7 @@ var strategyCashRanges = map[string]cashRange{
 	"bandar":          {1_000_000_000, 10_000_000_000, "institutional"},
 }
 
-func Generate(cfg config.PopulationConfig) ([]config.BotConfig, error) {
+func Generate(cfg config.PopulationConfig, activeSecurities []bei.Security) ([]config.BotConfig, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
@@ -58,6 +59,13 @@ func Generate(cfg config.PopulationConfig) ([]config.BotConfig, error) {
 	}
 	sort.Strings(strategies)
 
+	var listedSecurities []bei.Security
+	for _, sec := range activeSecurities {
+		if sec.Status == "listed" {
+			listedSecurities = append(listedSecurities, sec)
+		}
+	}
+
 	bots := make([]config.BotConfig, 0, cfg.Size)
 	for _, strategy := range strategies {
 		cash := strategyCashRanges[strategy]
@@ -75,27 +83,29 @@ func Generate(cfg config.PopulationConfig) ([]config.BotConfig, error) {
 				Tier:             cash.tier,
 				RiskProfile:      riskProfile(strategy),
 				InitialCash:      initialCash,
-				InitialPositions: generatedPositions(rng, strategy),
+				InitialPositions: generatedPositions(rng, strategy, listedSecurities),
 			})
 		}
 	}
 	return bots, nil
 }
 
-func generatedPositions(rng *rand.Rand, strategy string) []config.GenesisPosition {
+func generatedPositions(rng *rand.Rand, strategy string, securities []bei.Security) []config.GenesisPosition {
 	minLots, maxLots := int64(5), int64(10)
 	if strategy == "market_maker" || strategy == "index_tracker" || strategy == "bandar" {
 		minLots, maxLots = 20, 50
 	}
-	prices := map[string]int64{"BARA": 190, "NUSA": 735, "MNDL": 320}
-	symbols := []string{"BARA", "NUSA", "MNDL"}
-	positions := make([]config.GenesisPosition, 0, len(symbols))
-	for _, symbol := range symbols {
+	positions := make([]config.GenesisPosition, 0, len(securities))
+	for _, sec := range securities {
 		lots := minLots + rng.Int63n(maxLots-minLots+1)
+		refPrice := sec.ReferencePrice
+		if refPrice <= 0 {
+			refPrice = 100 // fallback safe price
+		}
 		positions = append(positions, config.GenesisPosition{
-			Symbol:       symbol,
+			Symbol:       sec.Symbol,
 			Quantity:     lots * 100,
-			AveragePrice: prices[symbol],
+			AveragePrice: refPrice,
 		})
 	}
 	return positions

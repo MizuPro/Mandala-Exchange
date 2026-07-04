@@ -51,18 +51,7 @@ func main() {
 		logger.Error("Failed to load config", "error", err.Error())
 		os.Exit(1)
 	}
-	if cfg.Population.Enabled {
-		generatedBots, err := population.Generate(cfg.Population)
-		if err != nil {
-			logger.Error("Failed to generate bot population", "error", err.Error())
-			os.Exit(1)
-		}
-		cfg.Bots = generatedBots
-		logger.Info("Generated deterministic bot population",
-			"size", len(cfg.Bots),
-			"seed", cfg.Population.Seed,
-		)
-	}
+
 
 	mainCtx, mainCancel := context.WithCancel(context.Background())
 	defer mainCancel()
@@ -84,6 +73,20 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("Initial BEI data sync completed successfully")
+
+	if cfg.Population.Enabled {
+		snap := beiClient.GetSnapshot()
+		generatedBots, err := population.Generate(cfg.Population, snap.Securities)
+		if err != nil {
+			logger.Error("Failed to generate bot population", "error", err.Error())
+			os.Exit(1)
+		}
+		cfg.Bots = generatedBots
+		logger.Info("Generated deterministic bot population from dynamic universe",
+			"size", len(cfg.Bots),
+			"seed", cfg.Population.Seed,
+		)
+	}
 
 	initialSymbols := cfg.MATS.Symbols
 	if len(initialSymbols) == 0 {
@@ -153,10 +156,18 @@ func main() {
 		initialCash := botConfig.InitialCash
 		initialPositions := botConfig.InitialPositions
 		if len(initialPositions) == 0 {
-			initialPositions = []config.GenesisPosition{
-				{Symbol: "BARA", Quantity: 1000, AveragePrice: 190},
-				{Symbol: "NUSA", Quantity: 1000, AveragePrice: 735},
-				{Symbol: "MNDL", Quantity: 1000, AveragePrice: 320},
+			for _, sec := range beiClient.GetSnapshot().Securities {
+				if sec.Status == "listed" {
+					refPrice := sec.ReferencePrice
+					if refPrice <= 0 {
+						refPrice = 100
+					}
+					initialPositions = append(initialPositions, config.GenesisPosition{
+						Symbol:       sec.Symbol,
+						Quantity:     1000,
+						AveragePrice: refPrice,
+					})
+				}
 			}
 		}
 		positionPayload := make([]map[string]interface{}, 0, len(initialPositions))
