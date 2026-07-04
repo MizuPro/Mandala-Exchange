@@ -11,6 +11,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:seed:reset-market": "set SEED_RESET_MARKET=true&& tsx src/db/seed.ts",
+    "db:seed:looping-5min": "tsx src/add_looping_5min_template.ts",
+    "db:seed:fast-5min": "tsx src/add_fast_template.ts",
     "test": "vitest run"
   },
   "dependencies": {

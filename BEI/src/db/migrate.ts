@@ -20,7 +20,15 @@ const enumStatements = [
   "CREATE TYPE broker_status AS ENUM ('active','suspended','inactive')",
   "CREATE TYPE ledger_entry_type AS ENUM ('ipo_allocation','trade_settlement','cash_settlement','cash_dividend','stock_split','reverse_split','bonus_share','rights_issue','warrant','adjustment','reversal')",
   "CREATE TYPE ledger_asset_type AS ENUM ('cash','security','right','warrant')",
-  "CREATE TYPE ipo_status AS ENUM ('draft','bookbuilding','subscription','allocation','listed','cancelled')"
+  "CREATE TYPE ipo_status AS ENUM ('draft','bookbuilding','subscription','allocation','listed','cancelled')",
+  // BOT-v2 enums
+  "CREATE TYPE fair_value_confidence AS ENUM ('low','medium','high')",
+  "CREATE TYPE global_regime AS ENUM ('neutral','mild_positive','mild_negative','strong_positive','strong_negative','event_driven','panic')",
+  "CREATE TYPE volatility_regime AS ENUM ('low','normal','high','extreme')",
+  "CREATE TYPE level_type AS ENUM ('low','medium','high')",
+  "CREATE TYPE news_sentiment AS ENUM ('very_negative','negative','neutral','positive','very_positive')",
+  "CREATE TYPE news_intensity AS ENUM ('low','medium','high','extreme')",
+  "CREATE TYPE news_status AS ENUM ('draft','published','expired','archived')"
 ];
 
 const tableSql = `
@@ -617,6 +625,76 @@ ALTER TABLE ipo_events ADD COLUMN IF NOT EXISTS underwriter_broker_id uuid REFER
 ALTER TABLE ipo_allocations ADD COLUMN IF NOT EXISTS allocation_key text;
 CREATE UNIQUE INDEX IF NOT EXISTS ipo_allocations_allocation_key_uq
   ON ipo_allocations(allocation_key) WHERE allocation_key IS NOT NULL;
+
+-- BOT-v2 Fase 1: Fair Value
+CREATE TABLE IF NOT EXISTS fair_values (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  symbol text NOT NULL,
+  fair_value numeric(18,2) NOT NULL,
+  confidence fair_value_confidence NOT NULL DEFAULT 'medium',
+  method text NOT NULL DEFAULT 'admin_estimate',
+  effective_from_session integer,
+  effective_until_session integer,
+  version integer NOT NULL DEFAULT 1,
+  notes text,
+  visible_to_player boolean NOT NULL DEFAULT true,
+  visible_to_bot boolean NOT NULL DEFAULT true,
+  created_by text NOT NULL DEFAULT 'admin',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS fair_values_symbol_idx ON fair_values(symbol);
+CREATE UNIQUE INDEX IF NOT EXISTS fair_values_symbol_version_uq ON fair_values(symbol, version);
+
+-- BOT-v2 Fase 1: Market Regime
+CREATE TABLE IF NOT EXISTS market_regimes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id integer,
+  global_regime global_regime NOT NULL DEFAULT 'neutral',
+  sector_regimes jsonb NOT NULL DEFAULT '{}'::jsonb,
+  volatility_regime volatility_regime NOT NULL DEFAULT 'normal',
+  created_by text NOT NULL DEFAULT 'admin',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS market_regimes_session_idx ON market_regimes(session_id);
+CREATE INDEX IF NOT EXISTS market_regimes_created_at_idx ON market_regimes(created_at);
+
+-- BOT-v2 Fase 1: Security Liquidity Profile
+CREATE TABLE IF NOT EXISTS security_liquidity_profiles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  symbol text NOT NULL,
+  liquidity_level level_type NOT NULL DEFAULT 'medium',
+  volatility_level level_type NOT NULL DEFAULT 'medium',
+  retail_interest level_type NOT NULL DEFAULT 'medium',
+  institutional_interest level_type NOT NULL DEFAULT 'medium',
+  typical_spread_level level_type NOT NULL DEFAULT 'medium',
+  typical_volume_level level_type NOT NULL DEFAULT 'medium',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS security_liquidity_profiles_symbol_uq ON security_liquidity_profiles(symbol);
+
+-- BOT-v2 Fase 1: News
+CREATE TABLE IF NOT EXISTS news (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  body text NOT NULL,
+  symbol text,
+  sector text,
+  sentiment news_sentiment NOT NULL DEFAULT 'neutral',
+  intensity news_intensity NOT NULL DEFAULT 'medium',
+  status news_status NOT NULL DEFAULT 'draft',
+  simulation_only boolean NOT NULL DEFAULT false,
+  published_session integer,
+  expiry_session integer,
+  published_at timestamptz,
+  created_by text NOT NULL DEFAULT 'admin',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS news_symbol_idx ON news(symbol);
+CREATE INDEX IF NOT EXISTS news_status_idx ON news(status);
+CREATE INDEX IF NOT EXISTS news_session_idx ON news(published_session);
 `;
 
 async function createEnums(pool: pg.Pool) {

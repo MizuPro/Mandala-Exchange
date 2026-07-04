@@ -19,9 +19,12 @@ import {
   brokerStatuses,
   corporateActionStatuses,
   corporateActionTypes,
+  fairValueConfidences,
+  globalRegimes,
   ipoStatuses,
   ledgerAssetTypes,
   ledgerEntryTypes,
+  levelTypes,
   listingStatuses,
   marketMechanisms,
   notationTypes,
@@ -29,7 +32,11 @@ import {
   settlementInstructionTypes,
   settlementModes,
   settlementStatuses,
-  tradingHaltStatuses
+  tradingHaltStatuses,
+  volatilityRegimes,
+  newsSentiments,
+  newsIntensities,
+  newsStatuses
 } from "../types/enums.js";
 
 export const listingStatusEnum = pgEnum("listing_status", listingStatuses);
@@ -48,6 +55,15 @@ export const brokerStatusEnum = pgEnum("broker_status", brokerStatuses);
 export const ledgerEntryTypeEnum = pgEnum("ledger_entry_type", ledgerEntryTypes);
 export const ledgerAssetTypeEnum = pgEnum("ledger_asset_type", ledgerAssetTypes);
 export const ipoStatusEnum = pgEnum("ipo_status", ipoStatuses);
+
+// BOT-v2 enums
+export const fairValueConfidenceEnum = pgEnum("fair_value_confidence", fairValueConfidences);
+export const globalRegimeEnum = pgEnum("global_regime", globalRegimes);
+export const volatilityRegimeEnum = pgEnum("volatility_regime", volatilityRegimes);
+export const levelTypeEnum = pgEnum("level_type", levelTypes);
+export const newsSentimentEnum = pgEnum("news_sentiment", newsSentiments);
+export const newsIntensityEnum = pgEnum("news_intensity", newsIntensities);
+export const newsStatusEnum = pgEnum("news_status", newsStatuses);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -557,6 +573,106 @@ export const surveillanceAlerts = pgTable("surveillance_alerts", {
   status: text("status").notNull().default("open"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
+
+/**
+ * BOT-v2 Fase 1: Fair Value per simbol.
+ * Diisi MANUAL oleh admin BEI. Tidak di-seed otomatis.
+ * Bot membaca hanya jika visible_to_bot = true.
+ */
+export const fairValues = pgTable(
+  "fair_values",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    symbol: text("symbol").notNull(),
+    fairValue: numeric("fair_value", { precision: 18, scale: 2 }).notNull(),
+    confidence: fairValueConfidenceEnum("confidence").notNull().default("medium"),
+    method: text("method").notNull().default("admin_estimate"),
+    effectiveFromSession: integer("effective_from_session"),
+    effectiveUntilSession: integer("effective_until_session"),
+    version: integer("version").notNull().default(1),
+    notes: text("notes"),
+    visibleToPlayer: boolean("visible_to_player").notNull().default(true),
+    visibleToBot: boolean("visible_to_bot").notNull().default(true),
+    createdBy: text("created_by").notNull().default("admin"),
+    ...timestamps
+  },
+  (table) => ({
+    symbolIdx: index("fair_values_symbol_idx").on(table.symbol),
+    symbolVersionUq: uniqueIndex("fair_values_symbol_version_uq").on(table.symbol, table.version)
+  })
+);
+
+/**
+ * BOT-v2 Fase 1: Market Regime per sesi.
+ * Diisi MANUAL oleh admin BEI atau sistem. Tidak di-seed otomatis.
+ * sessionId null berarti berlaku untuk sesi saat ini secara umum.
+ * Fallback: jika tabel kosong, BOT membaca global_regime = 'neutral'.
+ */
+export const marketRegimes = pgTable(
+  "market_regimes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: integer("session_id"),
+    globalRegime: globalRegimeEnum("global_regime").notNull().default("neutral"),
+    sectorRegimes: jsonb("sector_regimes").notNull().default(sql`'{}'::jsonb`),
+    volatilityRegime: volatilityRegimeEnum("volatility_regime").notNull().default("normal"),
+    createdBy: text("created_by").notNull().default("admin"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    sessionIdx: index("market_regimes_session_idx").on(table.sessionId),
+    createdAtIdx: index("market_regimes_created_at_idx").on(table.createdAt)
+  })
+);
+
+/**
+ * BOT-v2 Fase 1: Liquidity Profile per saham.
+ * Di-seed otomatis untuk MNDL, NUSA, BARA.
+ * Menentukan karakter likuiditas dan volatilitas yang digunakan BOT
+ * sebagai konteks saat membuat keputusan order.
+ */
+export const securityLiquidityProfiles = pgTable(
+  "security_liquidity_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    symbol: text("symbol").notNull(),
+    liquidityLevel: levelTypeEnum("liquidity_level").notNull().default("medium"),
+    volatilityLevel: levelTypeEnum("volatility_level").notNull().default("medium"),
+    retailInterest: levelTypeEnum("retail_interest").notNull().default("medium"),
+    institutionalInterest: levelTypeEnum("institutional_interest").notNull().default("medium"),
+    typicalSpreadLevel: levelTypeEnum("typical_spread_level").notNull().default("medium"),
+    typicalVolumeLevel: levelTypeEnum("typical_volume_level").notNull().default("medium"),
+    ...timestamps
+  },
+  (table) => ({
+    symbolUq: uniqueIndex("security_liquidity_profiles_symbol_uq").on(table.symbol)
+  })
+);
+
+export const news = pgTable(
+  "news",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    symbol: text("symbol"),
+    sector: text("sector"),
+    sentiment: newsSentimentEnum("sentiment").notNull().default("neutral"),
+    intensity: newsIntensityEnum("intensity").notNull().default("medium"),
+    status: newsStatusEnum("status").notNull().default("draft"),
+    simulationOnly: boolean("simulation_only").notNull().default(false),
+    publishedSession: integer("published_session"),
+    expirySession: integer("expiry_session"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdBy: text("created_by").notNull().default("admin"),
+    ...timestamps
+  },
+  (table) => ({
+    symbolIdx: index("news_symbol_idx").on(table.symbol),
+    statusIdx: index("news_status_idx").on(table.status),
+    sessionIdx: index("news_session_idx").on(table.publishedSession)
+  })
+);
 
 export const issuerRelations = relations(issuers, ({ many }) => ({
   listedSecurities: many(listedSecurities),

@@ -109,6 +109,15 @@ export class BeiClient {
   async getIndexHistory(code: string, period: string = "7D") {
     return this.get(`/v1/indices/${encodeURIComponent(code)}/history?period=${period}`, "Fetch index history from BEI");
   }
+
+  async getFairValues(symbol?: string) {
+    const path = symbol ? `/v1/public/fair-values?symbol=${encodeURIComponent(symbol.toUpperCase())}` : "/v1/public/fair-values";
+    return this.get(path, "Fetch fair values from BEI");
+  }
+
+  async getFairValue(symbol: string) {
+    return this.get(`/v1/public/fair-values/${encodeURIComponent(symbol.toUpperCase())}`, "Fetch fair value detail from BEI");
+  }
 }
 
 export const beiClient = new BeiClient(

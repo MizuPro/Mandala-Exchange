@@ -65,6 +65,25 @@ export default async function marketRoutes(app: FastifyInstance) {
     }
   });
 
+  // Proxy Fair Values
+  app.get("/fair-values", async (request: any, reply) => {
+    try {
+      const data = await beiClient.getFairValues(request.query?.symbol);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(500).send({ error: e.message || "Failed to fetch fair values from BEI" });
+    }
+  });
+
+  app.get("/fair-values/:symbol", async (request: any, reply) => {
+    try {
+      const data = await beiClient.getFairValue(request.params.symbol);
+      return reply.send(data);
+    } catch (e: any) {
+      return reply.status(500).send({ error: e.message || "Failed to fetch fair value detail from BEI" });
+    }
+  });
+
   app.get("/securities/:symbol", async (request: any, reply) => {
     try {
       const data = await beiClient.getSecurity(request.params.symbol);

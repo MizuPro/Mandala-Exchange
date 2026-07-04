@@ -175,35 +175,34 @@ async function main() {
     }
 
     // Session template: idempotent berdasarkan nama unik
+    // Menonaktifkan template sesi yang sedang aktif saat ini
+    await pool.query("UPDATE session_templates SET is_active = false WHERE is_active = true");
+
     const sessionResult = await pool.query(`
       INSERT INTO session_templates (name, status, settlement_mode, settlement_delay_sessions, post_closing_enabled, is_active)
-      VALUES ('Mandala Looping 1-Min Session', 'closed', 'end_of_session', 0, true, true)
-      ON CONFLICT DO NOTHING
+      VALUES ('Mandala Looping 5-Min Session', 'closed', 'end_of_session', 0, true, true)
+      ON CONFLICT (name) DO UPDATE SET is_active = true, updated_at = now()
       RETURNING id
     `);
-    // Jika sudah ada (ON CONFLICT DO NOTHING), ambil id yang existing
     const sessionId = sessionResult.rows[0]?.id ?? (
-      await pool.query(`SELECT id FROM session_templates WHERE name = 'Mandala Looping 1-Min Session'`)
+      await pool.query(`SELECT id FROM session_templates WHERE name = 'Mandala Looping 5-Min Session'`)
     ).rows[0]?.id;
     if (sessionId) {
+      // Hapus segment lama jika ada untuk template ini
+      await pool.query("DELETE FROM session_segments WHERE template_id = $1", [sessionId]);
+
       await pool.query(
         `
         INSERT INTO session_segments (template_id, sequence, status, duration_seconds, allow_order_entry, allow_cancel_amend)
         VALUES
           ($1, 1, 'pre_open', 3, true, true),
-          ($1, 2, 'opening_auction', 3, true, false),
-          ($1, 3, 'continuous', 36, true, true),
+          ($1, 2, 'opening_auction', 27, true, false),
+          ($1, 3, 'continuous', 210, true, true),
           ($1, 4, 'pre_close', 3, true, true),
-          ($1, 5, 'non_cancellation', 3, true, false),
-          ($1, 6, 'closing_auction', 3, true, false),
-          ($1, 7, 'post_closing', 5, true, false),
-          ($1, 8, 'closed', 4, false, false)
-        ON CONFLICT (template_id, sequence) DO UPDATE SET
-          status = excluded.status,
-          duration_seconds = excluded.duration_seconds,
-          allow_order_entry = excluded.allow_order_entry,
-          allow_cancel_amend = excluded.allow_cancel_amend,
-          updated_at = now()
+          ($1, 5, 'non_cancellation', 5, true, false),
+          ($1, 6, 'closing_auction', 27, true, false),
+          ($1, 7, 'post_closing', 10, true, false),
+          ($1, 8, 'closed', 15, false, false)
         `,
         [sessionId]
       );
@@ -255,7 +254,31 @@ async function main() {
       ON CONFLICT (issuer_id, period) DO NOTHING
     `);
 
+
+    // BOT-v2 Fase 1: Liquidity Profiles untuk 3 saham awal
+    // Karakteristik sesuai BOT_V2_CONCEPT.md section 9.
+    // fair_values dan market_regimes TIDAK di-seed — diisi manual oleh admin BEI.
+    await pool.query(`
+      INSERT INTO security_liquidity_profiles (
+        symbol, liquidity_level, volatility_level,
+        retail_interest, institutional_interest,
+        typical_spread_level, typical_volume_level
+      ) VALUES
+        ('MNDL', 'high',   'medium', 'medium', 'high',   'low',    'high'),
+        ('NUSA', 'medium', 'medium', 'high',   'medium', 'medium', 'medium'),
+        ('BARA', 'medium', 'high',   'medium', 'low',    'medium', 'medium')
+      ON CONFLICT (symbol) DO UPDATE SET
+        liquidity_level        = excluded.liquidity_level,
+        volatility_level       = excluded.volatility_level,
+        retail_interest        = excluded.retail_interest,
+        institutional_interest = excluded.institutional_interest,
+        typical_spread_level   = excluded.typical_spread_level,
+        typical_volume_level   = excluded.typical_volume_level,
+        updated_at             = now()
+    `);
+
     await pool.query("COMMIT");
+
     console.log("BEI seed data completed");
   } catch (error) {
     await pool.query("ROLLBACK");

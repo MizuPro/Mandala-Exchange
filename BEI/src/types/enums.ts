@@ -15,3 +15,14 @@ export const tradeSides = ["buy", "sell"] as const;
 export const ledgerEntryTypes = ["ipo_allocation", "trade_settlement", "cash_settlement", "cash_dividend", "stock_split", "reverse_split", "bonus_share", "rights_issue", "warrant", "adjustment", "reversal"] as const;
 export const ledgerAssetTypes = ["cash", "security", "right", "warrant"] as const;
 export const ipoStatuses = ["draft", "bookbuilding", "subscription", "allocation", "listed", "cancelled"] as const;
+
+// BOT-v2: Fair Value, Market Regime, Liquidity Profile
+export const fairValueConfidences = ["low", "medium", "high"] as const;
+export const globalRegimes = ["neutral", "mild_positive", "mild_negative", "strong_positive", "strong_negative", "event_driven", "panic"] as const;
+export const volatilityRegimes = ["low", "normal", "high", "extreme"] as const;
+export const levelTypes = ["low", "medium", "high"] as const;
+
+// BOT-v2 Fase 1: News
+export const newsSentiments = ["very_negative", "negative", "neutral", "positive", "very_positive"] as const;
+export const newsIntensities = ["low", "medium", "high", "extreme"] as const;
+export const newsStatuses = ["draft", "published", "expired", "archived"] as const;

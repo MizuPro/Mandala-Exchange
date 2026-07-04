@@ -15,6 +15,8 @@
     "backfill:withdrawal-bank-accounts": "tsx src/scripts/backfill-withdrawal-bank-accounts.ts",
     "repair:failed-withdrawal-refunds": "tsx src/scripts/repair-failed-withdrawal-refunds.ts",
     "test:revisi": "set DOTENV_CONFIG_PATH=.env.development&& tsx src/scripts/run_e2e_revisi_final_test.ts",
+    "test:bot-v2": "set DOTENV_CONFIG_PATH=.env.development&& tsx src/scripts/run_bot_v2_endpoint_test.ts",
+    "verify:exit-criteria": "set DOTENV_CONFIG_PATH=.env.development&& tsx src/scripts/verify_exit_criteria_2_4.ts",
     "create:dev-account": "tsx src/create_dev_account_with_shares.ts",
     "verify:dev-account": "tsx src/verify_dev_account.ts"
   },

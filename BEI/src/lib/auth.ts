@@ -36,6 +36,33 @@ const routePermissions: RoutePermission[] = [
   { method: "POST", path: "/v1/internal/bots/genesis-custody", scopes: ["custody:write"] },
   { method: "POST", path: "/internal/bots/genesis-custody", scopes: ["custody:write"] },
 
+  // BOT-v2: Bot Endpoints & Admin Endpoints
+  { method: "GET", path: "/bot/daftar-saham-aktif", scopes: ["market:read"] },
+  { method: "GET", path: "/bot/trading-rules", scopes: ["rules:read"] },
+  { method: "GET", path: "/bot/fee-schedule", scopes: ["rules:read"] },
+  { method: "GET", path: "/bot/session-state", scopes: ["rules:read"] },
+  { method: "GET", path: "/bot/ipo-lifecycle", scopes: ["ipo:read"] },
+  { method: "GET", path: "/bot/corporate-action-minimal", scopes: ["corporate-action:read"] },
+  { method: "GET", path: "/bot/news-module", scopes: ["market:read"] },
+  { method: "GET", path: "/bot/fair-value-module", scopes: ["market:read"] },
+  { method: "GET", path: "/bot/market-regime", scopes: ["market:read"] },
+  { method: "GET", path: "/bot/liquidity-profile", scopes: ["market:read"] },
+  { method: "POST", path: "/bot/admin/fair-value", scopes: ["admin:*"] },
+  { method: "POST", path: "/bot/admin/market-regime", scopes: ["admin:*"] },
+
+  // News routes
+  { method: "POST", path: "/v1/news", scopes: ["admin:*"] },
+  { method: "GET", path: "/v1/news", scopes: ["admin:*"] },
+  { method: "GET", path: "/v1/news/:id", scopes: ["admin:*"] },
+  { method: "PATCH", path: "/v1/news/:id", scopes: ["admin:*"] },
+  { method: "POST", path: "/v1/news/:id/publish", scopes: ["admin:*"] },
+  { method: "POST", path: "/v1/news/:id/archive", scopes: ["admin:*"] },
+  { method: "DELETE", path: "/v1/news/:id", scopes: ["admin:*"] },
+  { method: "GET", path: "/v1/public/news", scopes: ["market:read"] },
+  { method: "GET", path: "/v1/public/news/:id", scopes: ["market:read"] },
+  { method: "GET", path: "/v1/public/fair-values", scopes: ["market:read"] },
+  { method: "GET", path: "/v1/public/fair-values/:symbol", scopes: ["market:read"] },
+
   { method: "GET", path: "/v1/rules/profiles", scopes: ["rules:read"] },
   { method: "GET", path: "/v1/brokers", scopes: ["broker:read"] },
   { method: "GET", path: "/v1/trades/session/:sessionId", scopes: ["trade:read", "report:read"] },

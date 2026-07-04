@@ -1,0 +1,671 @@
+{
+  "info": {
+    "name": "BEI Bot Endpoints",
+    "description": "Kumpulan API untuk pengujian BEI Bot Endpoints dan Admin Endpoints (Fase 2)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Bot GET Endpoints",
+      "item": [
+        {
+          "name": "1. Daftar Saham Aktif",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/daftar-saham-aktif",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "daftar-saham-aktif"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Trading Rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/trading-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "trading-rules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. Fee Schedule",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/fee-schedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "fee-schedule"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4. Session State",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/session-state",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "session-state"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5. IPO Lifecycle",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/ipo-lifecycle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "ipo-lifecycle"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6. Corporate Action Minimal",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/corporate-action-minimal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "corporate-action-minimal"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7. News Module",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/news-module",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "news-module"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "8. Fair Value Module",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/fair-value-module",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "fair-value-module"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9. Market Regime",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/market-regime",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "market-regime"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "10. Liquidity Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bot/liquidity-profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "liquidity-profile"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin POST Endpoints",
+      "item": [
+        {
+          "name": "1. Set Fair Value",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"MNDL\",\n  \"fairValue\": 1250,\n  \"confidence\": \"medium\",\n  \"method\": \"admin_estimate\",\n  \"notes\": \"Inisiasi harga wajar MNDL\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bot/admin/fair-value",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "admin",
+                "fair-value"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Set Market Regime",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"globalRegime\": \"panic\",\n  \"sectorRegimes\": {\n    \"finance\": \"strong_negative\"\n  },\n  \"volatilityRegime\": \"extreme\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bot/admin/market-regime",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bot",
+                "admin",
+                "market-regime"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "News — Admin Endpoints",
+      "item": [
+        {
+          "name": "1. Create News Draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"MNDL Luncurkan Produk Baru\",\n  \"body\": \"Mandala Exchange meluncurkan produk robot trading pintar versi 2.0 yang diklaim sangat efisien.\",\n  \"symbol\": \"MNDL\",\n  \"sentiment\": \"positive\",\n  \"intensity\": \"high\",\n  \"simulationOnly\": false,\n  \"expirySession\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/news",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "news"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Update News Draft",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"MNDL Luncurkan Produk Baru v2.1\",\n  \"intensity\": \"extreme\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/news/{{newsId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "news",
+                "{{newsId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. Publish News",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/news/{{newsId}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "news",
+                "{{newsId}}",
+                "publish"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4. List All News",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/news?status=published&symbol=MNDL",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "news"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "published"
+                },
+                {
+                  "key": "symbol",
+                  "value": "MNDL"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5. Get News Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/news/{{newsId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "news",
+                "{{newsId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6. Archive News",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/news/{{newsId}}/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "news",
+                "{{newsId}}",
+                "archive"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7. Delete News Draft",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/news/{{newsId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "news",
+                "{{newsId}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "News — Public/Player Endpoints",
+      "item": [
+        {
+          "name": "1. Public List News",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/public/news?symbol=MNDL",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "public",
+                "news"
+              ],
+              "query": [
+                {
+                  "key": "symbol",
+                  "value": "MNDL"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Public News Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/public/news/{{newsId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "public",
+                "news",
+                "{{newsId}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Fair Value — Public/Player Endpoints",
+      "item": [
+        {
+          "name": "1. Public List Fair Values",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/public/fair-values?symbol=MNDL",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "public",
+                "fair-values"
+              ],
+              "query": [
+                {
+                  "key": "symbol",
+                  "value": "MNDL"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Public Fair Value Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-service-token",
+                "value": "{{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/public/fair-values/MNDL",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "public",
+                "fair-values",
+                "MNDL"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4100",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "local-admin-service-token-2026-change-me",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,199 @@
+{
+  "info": {
+    "name": "Mandala Exchange - Fair Value Testing Only",
+    "description": "Collection khusus untuk memverifikasi fungsionalitas Fair Value (Admin BEI, Public BEI, Public Sekuritas, dan BOT BEI)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Admin BEI (Set Fair Value)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-service-token",
+            "value": "{{admin_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"symbol\": \"MNDL\",\n  \"fairValue\": 1250,\n  \"confidence\": \"medium\",\n  \"method\": \"admin_estimate\",\n  \"effectiveFromSession\": 1,\n  \"effectiveUntilSession\": 10,\n  \"notes\": \"Uji coba set harga wajar MNDL\",\n  \"visibleToPlayer\": true,\n  \"visibleToBot\": true\n}"
+        },
+        "url": {
+          "raw": "{{bei_base_url}}/bot/admin/fair-value",
+          "host": [
+            "{{bei_base_url}}"
+          ],
+          "path": [
+            "bot",
+            "admin",
+            "fair-value"
+          ]
+        },
+        "description": "Admin BEI menyetel Fair Value untuk saham tertentu."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Public BEI (Get All Fair Values)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-service-token",
+            "value": "{{bot_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{bei_base_url}}/v1/public/fair-values?symbol=MNDL",
+          "host": [
+            "{{bei_base_url}}"
+          ],
+          "path": [
+            "v1",
+            "public",
+            "fair-values"
+          ],
+          "query": [
+            {
+              "key": "symbol",
+              "value": "MNDL"
+            }
+          ]
+        },
+        "description": "Membaca semua harga wajar yang di-publish dari BEI (memerlukan minimal scope market:read)."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Public BEI (Get Fair Value Detail)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-service-token",
+            "value": "{{bot_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{bei_base_url}}/v1/public/fair-values/MNDL",
+          "host": [
+            "{{bei_base_url}}"
+          ],
+          "path": [
+            "v1",
+            "public",
+            "fair-values",
+            "MNDL"
+          ]
+        },
+        "description": "Membaca detail harga wajar saham tertentu dari BEI (memerlukan minimal scope market:read)."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Public Sekuritas Proxy (Get All Fair Values)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{sekuritas_base_url}}/api/v1/market/fair-values?symbol=MNDL",
+          "host": [
+            "{{sekuritas_base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "market",
+            "fair-values"
+          ],
+          "query": [
+            {
+              "key": "symbol",
+              "value": "MNDL"
+            }
+          ]
+        },
+        "description": "Proxy dari Sekuritas untuk membaca harga wajar di BEI (dapat diakses publik oleh UI player)."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Public Sekuritas Proxy (Get Fair Value Detail)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{sekuritas_base_url}}/api/v1/market/fair-values/MNDL",
+          "host": [
+            "{{sekuritas_base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "market",
+            "fair-values",
+            "MNDL"
+          ]
+        },
+        "description": "Proxy dari Sekuritas untuk membaca detail harga wajar saham tertentu di BEI (dapat diakses publik oleh UI player)."
+      },
+      "response": []
+    },
+    {
+      "name": "6. BOT Internal BEI (Get Fair Value Module)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-service-token",
+            "value": "{{bot_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{bei_base_url}}/bot/fair-value-module",
+          "host": [
+            "{{bei_base_url}}"
+          ],
+          "path": [
+            "bot",
+            "fair-value-module"
+          ]
+        },
+        "description": "Endpoint internal khusus untuk dibaca oleh BOT Service."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "bei_base_url",
+      "value": "http://localhost:4100",
+      "type": "string"
+    },
+    {
+      "key": "sekuritas_base_url",
+      "value": "http://localhost:3002",
+      "type": "string"
+    },
+    {
+      "key": "admin_token",
+      "value": "dev-admin-service-token-change-me-2026",
+      "type": "string"
+    },
+    {
+      "key": "bot_token",
+      "value": "dev-bot-service-token-change-me-2026",
+      "type": "string"
+    }
+  ]
+}

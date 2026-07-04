@@ -1,0 +1,718 @@
+{
+	"info": {
+		"_postman_id": "7d91cb36-5452-4a0b-851f-26b9a8cf12cc",
+		"name": "Sekuritas & MATS Bot Endpoints",
+		"description": "Collection untuk testing API Sekuritas dan MATS khusus untuk bot di environment development.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Sekuritas Internal API (x-service-token)",
+			"item": [
+				{
+					"name": "Provision Bots (Create Account)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-service-token",
+								"value": "{{sekuritas_bot_service_token}}",
+								"type": "text"
+							},
+							{
+								"key": "idempotency-key",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "x-correlation-id",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"bots\": [\n        {\n            \"external_bot_id\": \"bot-dev-noise-1\",\n            \"email\": \"bot-dev-noise-1@mandala.local\",\n            \"tier\": \"retail\",\n            \"strategy\": \"noise\"\n        },\n        {\n            \"external_bot_id\": \"bot-dev-noise-2\",\n            \"email\": \"bot-dev-noise-2@mandala.local\",\n            \"tier\": \"retail\",\n            \"strategy\": \"noise\"\n        }\n    ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/internal/provision",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"internal",
+								"provision"
+							]
+						},
+						"description": "Pendaftaran massal akun bot tanpa email verification manual."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Operational Tokens",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const responseJson = pm.response.json();",
+									"if (responseJson.tokens && responseJson.tokens.length > 0) {",
+									"    pm.collectionVariables.set(\"bot_1_jwt_token\", responseJson.tokens[0].token);",
+									"    pm.collectionVariables.set(\"bot_1_account_id\", responseJson.tokens[0].account_id);",
+									"    if (responseJson.tokens[1]) {",
+									"        pm.collectionVariables.set(\"bot_2_jwt_token\", responseJson.tokens[1].token);",
+									"        pm.collectionVariables.set(\"bot_2_account_id\", responseJson.tokens[1].account_id);",
+									"    }",
+									"    console.log(\"Saved tokens to collection variables\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-service-token",
+								"value": "{{sekuritas_bot_service_token}}",
+								"type": "text"
+							},
+							{
+								"key": "idempotency-key",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "x-correlation-id",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"account_ids\": [\n        \"{{bot_1_account_id}}\",\n        \"{{bot_2_account_id}}\"\n    ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/internal/tokens",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"internal",
+								"tokens"
+							]
+						},
+						"description": "Menukarkan account_id dengan operational JWT Token."
+					},
+					"response": []
+				},
+				{
+					"name": "Genesis Seeding Cash & Share",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-service-token",
+								"value": "{{sekuritas_bot_service_token}}",
+								"type": "text"
+							},
+							{
+								"key": "idempotency-key",
+								"value": "genesis-run-{{$timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "x-correlation-id",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"genesis_run_id\": \"{{$guid}}\",\n    \"accounts\": [\n        {\n            \"external_bot_id\": \"bot-dev-noise-1\",\n            \"account_id\": \"{{bot_1_account_id}}\",\n            \"cash_idr\": 100000000,\n            \"positions\": [\n                {\n                    \"symbol\": \"MNDL\",\n                    \"quantity_shares\": 5000,\n                    \"average_price_idr\": 316\n                },\n                {\n                    \"symbol\": \"BARA\",\n                    \"quantity_shares\": 10000,\n                    \"average_price_idr\": 190\n                }\n            ]\n        }\n    ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/internal/genesis",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"internal",
+								"genesis"
+							]
+						},
+						"description": "Menambahkan saldo cash RDN dan posisi saham awal (seeding) untuk testing."
+					},
+					"response": []
+				},
+				{
+					"name": "Portfolio Snapshot Bulk",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-service-token",
+								"value": "{{sekuritas_bot_service_token}}",
+								"type": "text"
+							},
+							{
+								"key": "x-correlation-id",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"account_ids\": [\n        \"{{bot_1_account_id}}\"\n    ],\n    \"include_open_orders\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/internal/portfolio-snapshot",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"internal",
+								"portfolio-snapshot"
+							]
+						},
+						"description": "Membaca cash, portfolio, dan open orders dari akun-akun bot secara massal."
+					},
+					"response": []
+				},
+				{
+					"name": "Account Event Stream (WS)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-service-token",
+								"value": "{{sekuritas_bot_service_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "ws://localhost:3002/bot/internal/events/ws?after_sequence=0",
+							"protocol": "ws",
+							"host": [
+								"localhost"
+							],
+							"port": "3002",
+							"path": [
+								"bot",
+								"internal",
+								"events",
+								"ws"
+							],
+							"query": [
+								{
+									"key": "after_sequence",
+									"value": "0"
+								}
+							]
+						},
+						"description": "Membuka koneksi WebSocket untuk streaming update portfolio & orders."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Sekuritas Operational API (JWT Token)",
+			"item": [
+				{
+					"name": "Submit Order (Place Limit)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bot_1_jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-correlation-id",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"symbol\": \"MNDL\",\n    \"side\": \"BUY\",\n    \"order_type\": \"LIMIT\",\n    \"price\": 318,\n    \"quantity\": 200,\n    \"client_order_id\": \"bot:bot-dev-noise-1:{{$guid}}:1\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/orders",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"orders"
+							]
+						},
+						"description": "Mengirim order baru ke pasar."
+					},
+					"response": []
+				},
+				{
+					"name": "Lookup Order by Client ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bot_1_jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/orders/by-client-id/bot:bot-dev-noise-1:d3b07384-d113-4ae3-a5f1-13efc5088e5d:1",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"orders",
+								"by-client-id",
+								"bot:bot-dev-noise-1:d3b07384-d113-4ae3-a5f1-13efc5088e5d:1"
+							]
+						},
+						"description": "Mencari status order berdasarkan client_order_id bot."
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Order",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bot_1_jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/orders/:id",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"orders",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "<id_order_sekuritas>"
+								}
+							]
+						},
+						"description": "Membatalkan order yang masih pending/antri di bursa."
+					},
+					"response": []
+				},
+				{
+					"name": "Amend Order (Ubah Price/Qty)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bot_1_jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"price\": 320,\n    \"quantity\": 300\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/orders/:id",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"orders",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "<id_order_sekuritas>"
+								}
+							]
+						},
+						"description": "Mengubah harga / jumlah lot dari order aktif."
+					},
+					"response": []
+				},
+				{
+					"name": "Subscribe IPO",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bot_1_jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "idempotency-key",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "x-correlation-id",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"requested_shares\": 1000\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/ipo/:id/subscribe",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"ipo",
+								":id",
+								"subscribe"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "<ipo_event_uuid>"
+								}
+							]
+						},
+						"description": "Memesan saham IPO bursa yang sedang dalam masa subscription."
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel IPO Subscription",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bot_1_jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{sekuritas_base_url}}/bot/ipo/:id/subscriptions/:subscriptionId/cancel",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"bot",
+								"ipo",
+								":id",
+								"subscriptions",
+								":subscriptionId",
+								"cancel"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "<ipo_event_uuid>"
+								},
+								{
+									"key": "subscriptionId",
+									"value": "<ipo_subscription_uuid>"
+								}
+							]
+						},
+						"description": "Membatalkan pemesanan IPO saham."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. MATS Engine",
+			"item": [
+				{
+					"name": "Open MATS Session (continuous)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-service-token",
+								"value": "{{mats_admin_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"continuous\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{mats_base_url}}/v1/admin/session/status",
+							"host": [
+								"{{mats_base_url}}"
+							],
+							"path": [
+								"v1",
+								"admin",
+								"session",
+								"status"
+							]
+						},
+						"description": "Mengubah sesi perdagangan MATS ke status continuous (aktif)."
+					},
+					"response": []
+				},
+				{
+					"name": "Expire Stale Orders (Clear Book)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-service-token",
+								"value": "{{mats_admin_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{mats_base_url}}/v1/admin/orders/expire",
+							"host": [
+								"{{mats_base_url}}"
+							],
+							"path": [
+								"v1",
+								"admin",
+								"orders",
+								"expire"
+							]
+						},
+						"description": "Mengosongkan orderbook di memori MATS."
+					},
+					"response": []
+				},
+				{
+					"name": "Market Data WS Stream",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "ws://localhost:8082/v1/market-data/ws?symbols=MNDL,NUSA,BARA",
+							"protocol": "ws",
+							"host": [
+								"localhost"
+							],
+							"port": "8082",
+							"path": [
+								"v1",
+								"market-data",
+								"ws"
+							],
+							"query": [
+								{
+									"key": "symbols",
+									"value": "MNDL,NUSA,BARA"
+								}
+							]
+						},
+						"description": "Koneksi WebSocket real-time untuk orderbook stream dari MATS."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Sekuritas Public Market API",
+			"item": [
+				{
+					"name": "Get Fair Values",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{sekuritas_base_url}}/api/v1/market/fair-values?symbol=MNDL",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"market",
+								"fair-values"
+							],
+							"query": [
+								{
+									"key": "symbol",
+									"value": "MNDL"
+								}
+							]
+						},
+						"description": "Mengambil daftar harga wajar saham dari BEI."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Fair Value Detail",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{sekuritas_base_url}}/api/v1/market/fair-values/MNDL",
+							"host": [
+								"{{sekuritas_base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"market",
+								"fair-values",
+								"MNDL"
+							]
+						},
+						"description": "Mengambil harga wajar saham MNDL dari BEI."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "sekuritas_base_url",
+			"value": "http://localhost:3002",
+			"type": "string"
+		},
+		{
+			"key": "mats_base_url",
+			"value": "http://localhost:8082",
+			"type": "string"
+		},
+		{
+			"key": "sekuritas_bot_service_token",
+			"value": "dev-bot-service-token-change-me-2026",
+			"type": "string"
+		},
+		{
+			"key": "mats_admin_token",
+			"value": "dev-admin-service-token-change-me- change-me-2026",
+			"type": "string"
+		},
+		{
+			"key": "bot_1_account_id",
+			"value": "<diisi_setelah_provision>",
+			"type": "string"
+		},
+		{
+			"key": "bot_2_account_id",
+			"value": "<diisi_setelah_provision>",
+			"type": "string"
+		},
+		{
+			"key": "bot_1_jwt_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "bot_2_jwt_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
