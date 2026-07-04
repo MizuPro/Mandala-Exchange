@@ -26,7 +26,7 @@ Digunakan oleh BOT-v2 untuk sinkronisasi state data referensi bursa secara berka
 | 2 | `GET /bot/trading-rules` | Mengambil seluruh aturan perdagangan aktif (lot size, tick size, price band, auto-rejection). | `lot_size_rules`, `tick_size_rules`, `price_band_rules`, `auto_rejection_rules` |
 | 3 | `GET /bot/fee-schedule` | Mengambil jadwal fee & pajak transaksi terupdate. | `broker_buy_rate`, `broker_sell_rate`, `exchange_fee_rate`, `vat_rate` |
 | 4 | `GET /bot/session-state` | Mengambil info sesi pasar yang sedang berjalan saat ini (kembali `null` jika pasar tutup). | `status` (pre_open, continuous, etc), `segments` |
-| 5 | `GET /bot/ipo-lifecycle` | Mengambil status IPO yang sedang aktif / bookbuilding / subscription. | `issuer_code`, `offered_shares`, `offering_price`, `status` |
+| 5 | `GET /bot/ipo-lifecycle` | Mengambil snapshot IPO publik yang versioned. Draft tidak dikembalikan. Response berbentuk `{ items, as_of }`. | `id`, `version`, `issuer_code`, `symbol`, `company_name`, `status`, `offered_shares`, `offering_price_idr`, `subscription_lot_size`, window lifecycle, `ipo_hype_score`, `ipo_archetype`, sentiment, initial fair value |
 | 6 | `GET /bot/corporate-action-minimal` | Mengambil aksi korporasi yang sedang berjalan (dividend, stock split, rights issue). | `type`, `ratio_numerator`, `ratio_denominator`, `cash_amount_per_share` |
 | 7 | `GET /bot/news-module` | Mengambil pengumuman emiten (news/announcement) terpublikasi (limit 100). | `title`, `body`, `sentiment`, `intensity`, `published_at` |
 | 8 | `GET /bot/fair-value-module` | Mengambil estimasi harga wajar (fair value) terbaru per saham dari bursa (kembali `[]` jika kosong). | `symbol`, `fair_value`, `confidence` |
@@ -181,3 +181,10 @@ Digunakan oleh masing-masing BOT Instance untuk melakukan aktivitas trading di p
 |---|---|---|---|
 | `POST` | `/bot/ipo/:id/subscribe` | Melakukan pemesanan (*subscription*) IPO emiten baru sebelum listing. | Path Parameter: `id` (IPO Event ID), Body: `requested_shares` |
 | `POST` | `/bot/ipo/:id/subscriptions/:subscriptionId/cancel` | Membatalkan pemesanan IPO yang masih aktif (dalam masa bookbuilding/subscription). | Path Parameter: `id`, `subscriptionId` |
+| `GET` | `/bot/ipo/subscriptions` | Recovery snapshot seluruh subscription IPO milik BOT. | Response: `items[]` berisi reserve, allocation, debit, status, dan event version |
+| `GET` | `/bot/ipo/subscriptions/:subscriptionId` | Lookup subscription setelah timeout/unknown outcome. | Path Parameter: `subscriptionId` |
+
+Semua mutation IPO mewajibkan `Idempotency-Key`. Response `202` dengan status
+`cash_reserved` berarti reserve sudah tersimpan dan forward ke BEI sedang
+diretry; BOT wajib lookup menggunakan subscription/key yang sama dan tidak
+membuat subscription baru.
