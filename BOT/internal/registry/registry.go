@@ -14,6 +14,25 @@ type PositionEntry struct {
 	AveragePriceIDR int64
 }
 
+// IPOSubscriptionState menyimpan state subscription IPO satu bot untuk satu IPO event.
+type IPOSubscriptionState struct {
+	SubscriptionID  string
+	Status          string
+	IdempotencyKey  string
+	DecisionVersion int
+	RequestedShares int64
+	ReservedCashIDR string
+}
+
+// IsActive mengembalikan true jika subscription masih dalam status non-final.
+func (s IPOSubscriptionState) IsActive() bool {
+	switch s.Status {
+	case "cash_reserved", "submitted_to_bei", "allocated":
+		return true
+	}
+	return false
+}
+
 type BotInstance struct {
 	mu sync.RWMutex
 
@@ -37,6 +56,10 @@ type BotInstance struct {
 
 	// News Tracking
 	ProcessedNewsIDs map[string]struct{}
+
+	// IPO Subscription State
+	// Key: ipo_event_id. State ini diisi saat startup recovery dan diperbarui setelah setiap eksekusi.
+	IPOSubscriptions map[string]IPOSubscriptionState
 }
 
 func (b *BotInstance) IsInactiveForSession(sessionID string, inactiveRate, roll float64) bool {
@@ -58,6 +81,7 @@ func NewBotInstance(botID, accountID, strategy string) *BotInstance {
 		Positions:        make(map[string]PositionEntry),
 		OpenOrderIDs:     make(map[string]string),
 		ProcessedNewsIDs: make(map[string]struct{}),
+		IPOSubscriptions: make(map[string]IPOSubscriptionState),
 	}
 }
 
@@ -138,7 +162,7 @@ func (b *BotInstance) DeleteOpenOrderID(clientOrderID string) {
 	delete(b.OpenOrderIDs, clientOrderID)
 }
 
-// UpdateFromSnapshot applies the authoritative cash & position state from Sekuritas
+// UpdateFromSnapshot applies the authoritative cash, position & IPO subscription state from Sekuritas
 func (b *BotInstance) UpdateFromSnapshot(acc portfolio.Account) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -162,6 +186,65 @@ func (b *BotInstance) UpdateFromSnapshot(acc portfolio.Account) {
 	for _, ord := range acc.OpenOrders {
 		b.OpenOrderIDs[ord.ClientOrderID] = ord.OrderID
 	}
+
+	// Populate IPO subscription state dari snapshot Sekuritas.
+	// Hanya overwrite entry yang ada di snapshot; entry yang tidak ada di snapshot
+	// (mis. baru dibuat oleh executor) dibiarkan apa adanya untuk menghindari race.
+	for _, sub := range acc.IPOSubscriptions {
+		if sub.IsActive() {
+			b.IPOSubscriptions[sub.IPOEventID] = IPOSubscriptionState{
+				SubscriptionID:  sub.SubscriptionID,
+				Status:          sub.Status,
+				IdempotencyKey:  sub.IdempotencyKey,
+				RequestedShares: sub.RequestedShares,
+				ReservedCashIDR: sub.ReservedCashIDR,
+			}
+		} else {
+			// Subscription sudah terminal — hapus dari in-memory state agar tidak diblokir ulang
+			delete(b.IPOSubscriptions, sub.IPOEventID)
+		}
+	}
+}
+
+// SetIPOSubscription menyimpan atau mengupdate state subscription IPO untuk satu event.
+func (b *BotInstance) SetIPOSubscription(ipoEventID string, state IPOSubscriptionState) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.IPOSubscriptions[ipoEventID] = state
+}
+
+// GetIPOSubscription mengambil state subscription IPO untuk satu event.
+func (b *BotInstance) GetIPOSubscription(ipoEventID string) (IPOSubscriptionState, bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	s, ok := b.IPOSubscriptions[ipoEventID]
+	return s, ok
+}
+
+// HasActiveIPOSubscription mengembalikan true jika bot sudah punya subscription aktif untuk IPO ini.
+func (b *BotInstance) HasActiveIPOSubscription(ipoEventID string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	s, ok := b.IPOSubscriptions[ipoEventID]
+	return ok && s.IsActive()
+}
+
+// RemoveIPOSubscription menghapus state subscription IPO (mis. setelah IPO cancelled).
+func (b *BotInstance) RemoveIPOSubscription(ipoEventID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.IPOSubscriptions, ipoEventID)
+}
+
+// GetAllIPOSubscriptions mengembalikan snapshot dari semua IPO subscription state bot ini.
+func (b *BotInstance) GetAllIPOSubscriptions() map[string]IPOSubscriptionState {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	copy := make(map[string]IPOSubscriptionState, len(b.IPOSubscriptions))
+	for k, v := range b.IPOSubscriptions {
+		copy[k] = v
+	}
+	return copy
 }
 
 type Registry struct {

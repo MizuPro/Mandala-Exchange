@@ -66,6 +66,24 @@ type SchedulerConfig struct {
 	ScanInterval time.Duration                     `yaml:"scan_interval"`
 	Seed         int64                             `yaml:"seed"`
 	Intervals    map[string]StrategyIntervalConfig `yaml:"intervals"`
+	IPO          IPOConfig                         `yaml:"ipo"`
+}
+
+// IPOConfig menampung parameter konfigurasi untuk IPO subscription orchestrator.
+type IPOConfig struct {
+	// PollIntervalSeconds adalah interval polling GET /bot/ipo-lifecycle (default: 12).
+	PollIntervalSeconds int `yaml:"poll_interval_seconds"`
+
+	// MaxCashExposurePct mendefinisikan persentase maksimal available cash yang dapat
+	// digunakan untuk satu IPO, per risk_profile bot.
+	// Contoh: { "conservative": 0.05, "moderate": 0.10, "aggressive": 0.20 }
+	MaxCashExposurePct map[string]float64 `yaml:"max_cash_exposure_pct"`
+
+	// EnableIPOSubscription adalah feature flag. Jika false, semua IPO subscription dinonaktifkan.
+	EnableIPOSubscription bool `yaml:"enable_ipo_subscription"`
+
+	// DeterministicSeed untuk RNG sizing. 0 = random (production), non-zero = deterministik (test).
+	DeterministicSeed int64 `yaml:"deterministic_seed"`
 }
 
 type StrategyIntervalConfig struct {
@@ -538,6 +556,24 @@ func LoadConfig(path string) (*Config, error) {
 			MinSeconds: cfg.Strategy.Bandar.ContinuousTickIntervalMin,
 			MaxSeconds: cfg.Strategy.Bandar.ContinuousTickIntervalMax,
 		}
+	}
+
+	// IPO Subscription defaults
+	if cfg.Scheduler.IPO.PollIntervalSeconds <= 0 {
+		cfg.Scheduler.IPO.PollIntervalSeconds = 12
+	}
+	if cfg.Scheduler.IPO.MaxCashExposurePct == nil {
+		cfg.Scheduler.IPO.MaxCashExposurePct = map[string]float64{
+			"conservative": 0.05,
+			"moderate":     0.10,
+			"aggressive":   0.20,
+		}
+	}
+	// EnableIPOSubscription default true — jika ingin dinonaktifkan, set eksplisit ke false di config.yaml
+	if !cfg.Scheduler.IPO.EnableIPOSubscription {
+		// Hanya set default jika zero-value (false) tapi key tidak ada di yaml.
+		// Pengguna yang ingin nonaktifkan harus set enable_ipo_subscription: false secara eksplisit.
+		cfg.Scheduler.IPO.EnableIPOSubscription = true
 	}
 
 	return &cfg, nil

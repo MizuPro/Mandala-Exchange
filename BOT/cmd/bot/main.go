@@ -15,6 +15,7 @@ import (
 	"github.com/Mandala-Exchange/bot-v2/internal/client/sekuritas"
 	"github.com/Mandala-Exchange/bot-v2/internal/config"
 	"github.com/Mandala-Exchange/bot-v2/internal/executor"
+	"github.com/Mandala-Exchange/bot-v2/internal/ipo"
 	"github.com/Mandala-Exchange/bot-v2/internal/lifecycle"
 	"github.com/Mandala-Exchange/bot-v2/internal/logger"
 	"github.com/Mandala-Exchange/bot-v2/internal/metrics"
@@ -72,6 +73,10 @@ func main() {
 	sekuritasClient := sekuritas.NewClient(cfg.Sekuritas.BaseURL, cfg.Sekuritas.ServiceToken)
 	reg := registry.NewRegistry()
 	sessionMetrics := metrics.NewManager()
+
+	// Init IPO Manager
+	ipoReg := ipo.NewIPORegistry()
+	ipoManager := ipo.NewManager(ipoReg, sekuritasClient, reg, cfg.Scheduler.IPO, sessionMetrics)
 
 	// 4. Initial fast/slow poll of BEI state
 	logger.Info("Performing initial BEI data sync...")
@@ -211,6 +216,9 @@ func main() {
 	logger.Info("Portfolios loaded successfully from Sekuritas snapshot")
 	eventStreamSequence := snap.AsOfSequence
 
+	// Reconcile IPO startup
+	ipoManager.ReconcileOnStartup(mainCtx, snap)
+
 	// 9. Start background clients
 	matsClient.Start(mainCtx)
 
@@ -266,6 +274,9 @@ func main() {
 						payload.ClientOrderID != "" {
 						bot.DeleteOpenOrderID(payload.ClientOrderID)
 					}
+
+				case "ipo_subscription_updated":
+					ipoManager.OnAccountEvent(mainCtx, ev.AccountID, ev.Payload)
 				}
 
 				// Fat event: update portfolio langsung dari payload account
@@ -317,7 +328,7 @@ func main() {
 	botRunner.SetMetrics(sessionMetrics)
 	logger.Info("Strategy runner initialized")
 
-	// 12. Start Scheduler (inject botRunner + strategy config)
+	// 12. Start Scheduler (inject botRunner + strategy config + ipoManager)
 	sched := scheduler.NewScheduler(
 		beiClient,
 		sekuritasClient,
@@ -325,6 +336,7 @@ func main() {
 		botRunner,
 		cfg.Scheduler,
 		5*time.Second,
+		ipoManager,
 	)
 	sched.Start(mainCtx)
 

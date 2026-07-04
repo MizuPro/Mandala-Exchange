@@ -7,6 +7,7 @@ import (
 	"github.com/Mandala-Exchange/bot-v2/internal/client/bei"
 	"github.com/Mandala-Exchange/bot-v2/internal/client/sekuritas"
 	"github.com/Mandala-Exchange/bot-v2/internal/config"
+	"github.com/Mandala-Exchange/bot-v2/internal/ipo"
 	"github.com/Mandala-Exchange/bot-v2/internal/logger"
 	"github.com/Mandala-Exchange/bot-v2/internal/registry"
 	"github.com/Mandala-Exchange/bot-v2/internal/runner"
@@ -21,6 +22,7 @@ type Scheduler struct {
 	botRunner       *runner.Runner
 	cfg             config.SchedulerConfig
 	pollInterval    time.Duration
+	ipoManager      *ipo.Manager // nil jika fitur IPO dinonaktifkan
 
 	lastSegment      string
 	cancelContinuous context.CancelFunc // untuk stop continuous ticker goroutine
@@ -29,6 +31,7 @@ type Scheduler struct {
 
 // NewScheduler membuat Scheduler baru.
 // botRunner boleh nil hanya untuk testing — jika nil, segment transitions di-log tapi tidak ada order.
+// ipoManager boleh nil untuk menonaktifkan fitur IPO subscription.
 func NewScheduler(
 	beiClient *bei.Client,
 	sekuritasClient *sekuritas.Client,
@@ -36,6 +39,7 @@ func NewScheduler(
 	botRunner *runner.Runner,
 	cfg config.SchedulerConfig,
 	pollInterval time.Duration,
+	ipoManager *ipo.Manager,
 ) *Scheduler {
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
@@ -47,6 +51,7 @@ func NewScheduler(
 		botRunner:       botRunner,
 		cfg:             cfg,
 		pollInterval:    pollInterval,
+		ipoManager:      ipoManager,
 		planner:         NewPlanner(cfg.Seed, cfg.Intervals),
 	}
 }
@@ -60,6 +65,14 @@ func (s *Scheduler) pollLoop(ctx context.Context) {
 	logger.Info("Scheduler poll loop started")
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
+
+	// IPO ticker: independen dari full reference poll, interval dari config (default 12 detik)
+	ipoInterval := time.Duration(s.cfg.IPO.PollIntervalSeconds) * time.Second
+	if ipoInterval <= 0 {
+		ipoInterval = 12 * time.Second
+	}
+	ipoTicker := time.NewTicker(ipoInterval)
+	defer ipoTicker.Stop()
 
 	// Initial fetch semua state BEI saat startup
 	if err := s.beiClient.PollAllState(ctx); err != nil {
@@ -77,6 +90,8 @@ func (s *Scheduler) pollLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.tick(ctx)
+		case <-ipoTicker.C:
+			s.tickIPO(ctx)
 		}
 	}
 }
@@ -132,6 +147,8 @@ func (s *Scheduler) onEnterSegment(ctx context.Context, segment string) {
 		}
 		// Refresh portfolio semua bot dari Sekuritas (satu kali per sesi)
 		s.refreshPortfolios(ctx)
+		// Fast refresh IPO di awal sesi agar bot langsung tahu ada IPO baru
+		s.tickIPO(ctx)
 
 	case "opening_auction":
 		logger.Info("Scheduler: opening_auction — running bot decisions")
@@ -297,4 +314,18 @@ func (s *Scheduler) updateBotDistressBankruptcy(b *registry.BotInstance) {
 			)
 		}
 	}
+}
+
+// tickIPO dipanggil oleh ipoTicker setiap 10-15 detik untuk polling IPO lifecycle
+// secara independen dari full reference poll.
+func (s *Scheduler) tickIPO(ctx context.Context) {
+	if s.ipoManager == nil {
+		return
+	}
+	ipos, _, err := s.beiClient.PollIPOLifecycle(ctx)
+	if err != nil {
+		logger.Warn("IPO lifecycle poll failed", "error", err.Error())
+		return
+	}
+	s.ipoManager.OnPollResult(ctx, ipos)
 }

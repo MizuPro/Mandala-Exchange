@@ -84,29 +84,92 @@ type SessionState struct {
 	Segments               json.RawMessage `json:"segments"`
 }
 
+// IPOLifecycle merepresentasikan satu event IPO publik dari BEI.
+// Response dari GET /bot/ipo-lifecycle berbentuk { items: [...], as_of: "..." }.
 type IPOLifecycle struct {
-	IssuerCode    string `json:"issuer_code"`
-	OfferedShares int64  `json:"offered_shares"`
-	OfferingPrice int64  `json:"offering_price"`
-	Status        string `json:"status"`
+	ID                  string    `json:"id"`
+	Version             int       `json:"version"`
+	IssuerCode          string    `json:"issuer_code"`
+	Symbol              string    `json:"symbol"`
+	CompanyName         string    `json:"company_name"`
+	Status              string    `json:"status"` // bookbuilding|subscription|allocation|listed|cancelled
+	OfferedShares       int64     // via UnmarshalJSON
+	OfferingPriceIDR    int64     // via UnmarshalJSON
+	SubscriptionLotSize int64     // via UnmarshalJSON
+	SubscriptionStart   time.Time `json:"subscription_start"`
+	SubscriptionEnd     time.Time `json:"subscription_end"`
+	ListingAt           time.Time `json:"listing_at"`
+	IPOHypeScore        int       `json:"ipo_hype_score"`
+	IPOArchetype        string    `json:"ipo_archetype"` // hot_ipo|normal_ipo|overpriced_ipo|quiet_ipo|failed_hype_ipo
+	OversubRatio        float64   // via UnmarshalJSON
+	FloatRatio          string    `json:"float_ratio"`       // low|medium|high
+	SectorSentiment     string    `json:"sector_sentiment"`  // positive|neutral|negative
+	ListingSentiment    string    `json:"listing_sentiment"` // high|medium|low
+	FairValueInitial    int64     // via UnmarshalJSON
+	FairValueConfidence string    `json:"fair_value_confidence"` // high|medium|low
+	PublishedAt         time.Time `json:"published_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 func (i *IPOLifecycle) UnmarshalJSON(data []byte) error {
 	var aux struct {
-		IssuerCode    string      `json:"issuer_code"`
-		OfferedShares interface{} `json:"offered_shares"`
-		OfferingPrice interface{} `json:"offering_price"`
-		Status        string      `json:"status"`
+		ID                  string      `json:"id"`
+		Version             int         `json:"version"`
+		IssuerCode          string      `json:"issuer_code"`
+		Symbol              string      `json:"symbol"`
+		CompanyName         string      `json:"company_name"`
+		Status              string      `json:"status"`
+		OfferedShares       interface{} `json:"offered_shares"`
+		OfferingPriceIDR    interface{} `json:"offering_price_idr"`
+		SubscriptionLotSize interface{} `json:"subscription_lot_size"`
+		SubscriptionStart   time.Time   `json:"subscription_start"`
+		SubscriptionEnd     time.Time   `json:"subscription_end"`
+		ListingAt           time.Time   `json:"listing_at"`
+		IPOHypeScore        int         `json:"ipo_hype_score"`
+		IPOArchetype        string      `json:"ipo_archetype"`
+		OversubRatio        interface{} `json:"oversubscription_ratio"`
+		FloatRatio          string      `json:"float_ratio"`
+		SectorSentiment     string      `json:"sector_sentiment"`
+		ListingSentiment    string      `json:"listing_sentiment"`
+		FairValueInitial    interface{} `json:"fair_value_initial"`
+		FairValueConfidence string      `json:"fair_value_confidence"`
+		PublishedAt         time.Time   `json:"published_at"`
+		UpdatedAt           time.Time   `json:"updated_at"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
+	i.ID = aux.ID
+	i.Version = aux.Version
 	i.IssuerCode = aux.IssuerCode
-	i.OfferedShares = ParseFlexInt64(aux.OfferedShares)
-	i.OfferingPrice = ParseFlexInt64(aux.OfferingPrice)
+	i.Symbol = aux.Symbol
+	i.CompanyName = aux.CompanyName
 	i.Status = aux.Status
+	i.OfferedShares = ParseFlexInt64(aux.OfferedShares)
+	i.OfferingPriceIDR = ParseFlexInt64(aux.OfferingPriceIDR)
+	i.SubscriptionLotSize = ParseFlexInt64(aux.SubscriptionLotSize)
+	i.SubscriptionStart = aux.SubscriptionStart
+	i.SubscriptionEnd = aux.SubscriptionEnd
+	i.ListingAt = aux.ListingAt
+	i.IPOHypeScore = aux.IPOHypeScore
+	i.IPOArchetype = aux.IPOArchetype
+	i.OversubRatio = ParseFlexFloat64(aux.OversubRatio)
+	i.FloatRatio = aux.FloatRatio
+	i.SectorSentiment = aux.SectorSentiment
+	i.ListingSentiment = aux.ListingSentiment
+	i.FairValueInitial = ParseFlexInt64(aux.FairValueInitial)
+	i.FairValueConfidence = aux.FairValueConfidence
+	i.PublishedAt = aux.PublishedAt
+	i.UpdatedAt = aux.UpdatedAt
 	return nil
 }
+
+// IPOLifecycleResponse adalah wrapper response dari GET /bot/ipo-lifecycle.
+type IPOLifecycleResponse struct {
+	Items []IPOLifecycle `json:"items"`
+	AsOf  time.Time      `json:"as_of"`
+}
+
 
 type CorporateAction struct {
 	Type               string  `json:"type"`
@@ -256,6 +319,23 @@ func (c *Client) PollSessionState(ctx context.Context) (*SessionState, error) {
 	return &state, nil
 }
 
+// PollSecurities fetches only the active securities (fast poller)
+func (c *Client) PollSecurities(ctx context.Context) ([]Security, error) {
+	var securities []Security
+	err := c.apiClient.DoRequest(ctx, "GET", "/bot/daftar-saham-aktif", nil, nil, &securities)
+	if err != nil {
+		logger.Error("Failed to fetch active securities from BEI", "error", err.Error())
+		return nil, err
+	}
+
+	c.mu.Lock()
+	c.snapshot.Securities = securities
+	c.snapshot.SecuritiesAt = time.Now()
+	c.mu.Unlock()
+
+	return securities, nil
+}
+
 // PollAllState fetches all reference data endpoints (slow poller)
 func (c *Client) PollAllState(ctx context.Context) error {
 	now := time.Now()
@@ -295,11 +375,11 @@ func (c *Client) PollAllState(ctx context.Context) error {
 		return fmt.Errorf("critical endpoint /bot/fee-schedule failed: %w", err)
 	}
 
-	// 4. IPO Lifecycle
-	var ipos []IPOLifecycle
-	if err := c.apiClient.DoRequest(ctx, "GET", "/bot/ipo-lifecycle", nil, nil, &ipos); err == nil {
+	// 4. IPO Lifecycle — response berbentuk { items: [...], as_of: "..." }
+	var ipoResp IPOLifecycleResponse
+	if err := c.apiClient.DoRequest(ctx, "GET", "/bot/ipo-lifecycle", nil, nil, &ipoResp); err == nil {
 		c.mu.Lock()
-		c.snapshot.IPOs = ipos
+		c.snapshot.IPOs = ipoResp.Items
 		c.snapshot.IPOsAt = now
 		c.mu.Unlock()
 	} else {
@@ -362,4 +442,17 @@ func (c *Client) PollAllState(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// PollIPOLifecycle mengambil data IPO secara independen dari full reference poll.
+// Dipanggil setiap 10-15 detik oleh scheduler ticker terpisah.
+// Method ini TIDAK mengupdate snapshot internal — IPOManager yang bertanggung jawab
+// memproses diff dan menentukan apakah snapshot perlu diupdate.
+func (c *Client) PollIPOLifecycle(ctx context.Context) ([]IPOLifecycle, time.Time, error) {
+	var resp IPOLifecycleResponse
+	if err := c.apiClient.DoRequest(ctx, "GET", "/bot/ipo-lifecycle", nil, nil, &resp); err != nil {
+		logger.Warn("PollIPOLifecycle failed", "error", err.Error())
+		return nil, time.Time{}, err
+	}
+	return resp.Items, resp.AsOf, nil
 }

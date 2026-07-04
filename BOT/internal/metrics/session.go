@@ -18,6 +18,17 @@ type Counters struct {
 	QueueDepth     int64
 	LatencyTotalMs int64
 	LatencyCount   int64
+
+	// IPO Subscription Metrics
+	IPODiscovered int64 // event baru ditemukan dari poll
+	IPOEligible   int64 // bot yang memenuhi syarat eligibility
+	IPOAttempted  int64 // request subscription dikirim ke Sekuritas
+	IPOAccepted   int64 // response sukses (submitted_to_bei atau cash_reserved)
+	IPOAllocated  int64 // event allocated diterima dari WebSocket
+	IPORefunded   int64 // partial/zero allocation refund selesai
+	IPOListed     int64 // event listing diterima, saham jadi available
+	IPOFailed     int64 // terminal error, cancelled, atau reversed
+	IPOReconciled int64 // berhasil direconcile setelah unknown outcome
 }
 
 type Snapshot struct {
@@ -161,5 +172,37 @@ func applyEvent(counters *Counters, eventType string) {
 		counters.Cancelled++
 	case "order_expired":
 		counters.Expired++
+	}
+}
+
+// RecordIPOEvent mencatat satu event lifecycle IPO ke dalam counters global.
+// label yang valid: "discovered", "eligible", "attempted", "accepted",
+// "allocated", "refunded", "listed", "failed", "reconciled".
+func (m *Manager) RecordIPOEvent(label string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	applyIPOEvent(&m.total, label)
+}
+
+func applyIPOEvent(counters *Counters, label string) {
+	switch label {
+	case "discovered":
+		counters.IPODiscovered++
+	case "eligible":
+		counters.IPOEligible++
+	case "attempted":
+		counters.IPOAttempted++
+	case "accepted":
+		counters.IPOAccepted++
+	case "allocated":
+		counters.IPOAllocated++
+	case "refunded":
+		counters.IPORefunded++
+	case "listed":
+		counters.IPOListed++
+	case "failed":
+		counters.IPOFailed++
+	case "reconciled":
+		counters.IPOReconciled++
 	}
 }

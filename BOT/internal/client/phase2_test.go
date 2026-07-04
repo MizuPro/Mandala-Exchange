@@ -412,7 +412,11 @@ func TestSchedulerTransition(t *testing.T) {
 	sc := sekuritas.NewClient(ts.URL, "secret")
 	reg := registry.NewRegistry()
 
-	sched := scheduler.NewScheduler(bc, sc, reg, nil, config.SchedulerConfig{}, 10*time.Millisecond)
+	sched := scheduler.NewScheduler(
+		bc, sc, reg, nil,
+		config.SchedulerConfig{}, 1*time.Second,
+		nil,
+	)
 	sched.Start(ctx)
 
 	// Wait for a few ticks in pre_open

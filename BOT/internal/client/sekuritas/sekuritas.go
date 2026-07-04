@@ -161,26 +161,81 @@ func (c *Client) GetOrderByClientID(ctx context.Context, accountID, clientOrderI
 	return result, err
 }
 
-// SubscribeIPO subscribes bot to IPO
-func (c *Client) SubscribeIPO(ctx context.Context, accountID, ipoID string, shares int64) error {
+// IPOSubscriptionResponse adalah response dari POST /bot/ipo/:id/subscribe
+// dan GET /bot/ipo/subscriptions/:subscriptionId.
+type IPOSubscriptionResponse struct {
+	SubscriptionID    string    `json:"subscription_id"`
+	IPOEventID        string    `json:"ipo_event_id"`
+	Symbol            string    `json:"symbol"`
+	Status            string    `json:"status"` // cash_reserved|submitted_to_bei|allocated|settled|cancelled|reversed|refunded
+	RequestedShares   int64     `json:"requested_shares"`
+	AllocatedShares   int64     `json:"allocated_shares"`
+	ReservedCashIDR   string    `json:"reserved_cash_idr"`
+	ActualDebitIDR    string    `json:"actual_debit_idr"`
+	OfficialFeeIDR    string    `json:"official_fee_idr"`
+	BeiSubscriptionID string    `json:"bei_subscription_id"`
+	IdempotencyKey    string    `json:"idempotency_key"`
+	EventVersion      int       `json:"event_version"`
+	RetryScheduled    bool      `json:"retry_scheduled,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// IsActive mengembalikan true jika subscription masih dalam status non-final.
+func (r *IPOSubscriptionResponse) IsActive() bool {
+	switch r.Status {
+	case "cash_reserved", "submitted_to_bei", "allocated":
+		return true
+	}
+	return false
+}
+
+var (
+	// ErrIPOSubscribeTerminal adalah error 4xx non-retryable (mis. bot tidak eligible,
+	// subscription window sudah tutup). Tidak perlu retry.
+	ErrIPOSubscribeTerminal = errors.New("IPO subscribe terminal error")
+	// ErrIPOSubscribeUnknown terjadi saat network error, timeout, atau 5xx.
+	// Bot WAJIB melakukan lookup sebelum mengirim request baru.
+	ErrIPOSubscribeUnknown = errors.New("IPO subscribe outcome unknown — wajib reconcile")
+)
+
+// SubscribeIPO mengirim subscription IPO ke Sekuritas dengan idempotency key stabil.
+// Response 201/202 berarti sukses; 202 dengan status cash_reserved berarti
+// forward ke BEI sedang diretry — bot tidak perlu melakukan apa-apa.
+func (c *Client) SubscribeIPO(ctx context.Context, accountID, ipoID string, shares int64, idempotencyKey string) (*IPOSubscriptionResponse, error) {
+	var result IPOSubscriptionResponse
 	token, ok := c.GetToken(accountID)
 	if !ok {
-		return ErrTokenNotFound
+		return nil, ErrTokenNotFound
 	}
 
 	headers := map[string]string{
-		"Authorization": "Bearer " + token,
+		"Authorization":   "Bearer " + token,
+		"Idempotency-Key": idempotencyKey,
 	}
-
 	payload := map[string]interface{}{
 		"requested_shares": shares,
 	}
 
 	path := fmt.Sprintf("/bot/ipo/%s/subscribe", url.PathEscape(ipoID))
-	return c.apiClient.DoRequest(ctx, "POST", path, payload, headers, nil)
+	err := c.apiClient.DoRequest(ctx, "POST", path, payload, headers, &result)
+	if err != nil {
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) {
+			if apiErr.Status >= 400 && apiErr.Status < 500 {
+				// 4xx: terminal — mis. not_eligible, window_closed, already_subscribed
+				return nil, fmt.Errorf("%w: status=%d %s", ErrIPOSubscribeTerminal, apiErr.Status, apiErr.Message)
+			}
+			// 5xx: outcome unknown, wajib reconcile
+			return nil, fmt.Errorf("%w: status=%d", ErrIPOSubscribeUnknown, apiErr.Status)
+		}
+		// Network timeout / connection dropped: outcome unknown
+		return nil, fmt.Errorf("%w: %v", ErrIPOSubscribeUnknown, err)
+	}
+	return &result, nil
 }
 
-// CancelIPOSubscription cancels bot IPO subscription
+// CancelIPOSubscription membatalkan subscription IPO yang masih aktif.
 func (c *Client) CancelIPOSubscription(ctx context.Context, accountID, ipoID, subscriptionID string) error {
 	token, ok := c.GetToken(accountID)
 	if !ok {
@@ -194,6 +249,54 @@ func (c *Client) CancelIPOSubscription(ctx context.Context, accountID, ipoID, su
 	path := fmt.Sprintf("/bot/ipo/%s/subscriptions/%s/cancel", url.PathEscape(ipoID), url.PathEscape(subscriptionID))
 	return c.apiClient.DoRequest(ctx, "POST", path, nil, headers, nil)
 }
+
+// listIPOSubscriptionsResponse adalah wrapper untuk GET /bot/ipo/subscriptions.
+type listIPOSubscriptionsResponse struct {
+	Items []IPOSubscriptionResponse `json:"items"`
+}
+
+// ListIPOSubscriptions mengambil semua subscription IPO aktif milik bot ini.
+// Digunakan untuk: startup recovery dan reconcile setelah timeout outcome unknown.
+// Endpoint: GET /bot/ipo/subscriptions
+func (c *Client) ListIPOSubscriptions(ctx context.Context, accountID string) ([]IPOSubscriptionResponse, error) {
+	token, ok := c.GetToken(accountID)
+	if !ok {
+		return nil, ErrTokenNotFound
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+	}
+
+	var resp listIPOSubscriptionsResponse
+	if err := c.apiClient.DoRequest(ctx, "GET", "/bot/ipo/subscriptions", nil, headers, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+// GetIPOSubscription mengambil detail satu subscription berdasarkan subscriptionID.
+// Digunakan setelah subscriptionID diketahui untuk verifikasi status terbaru.
+// Endpoint: GET /bot/ipo/subscriptions/:subscriptionId
+func (c *Client) GetIPOSubscription(ctx context.Context, accountID, subscriptionID string) (*IPOSubscriptionResponse, error) {
+	token, ok := c.GetToken(accountID)
+	if !ok {
+		return nil, ErrTokenNotFound
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+	}
+
+	var result IPOSubscriptionResponse
+	path := fmt.Sprintf("/bot/ipo/subscriptions/%s", url.PathEscape(subscriptionID))
+	if err := c.apiClient.DoRequest(ctx, "GET", path, nil, headers, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+
 
 // ─── ADMIN/INTERNAL OPERATIONS ───
 

@@ -66,11 +66,40 @@ type OpenOrder struct {
 	CreatedAt            time.Time `json:"created_at"`
 }
 
+// IPOSubscription merepresentasikan satu posisi subscription IPO milik bot.
+// Data ini diambil dari GET /bot/ipo/subscriptions via Sekuritas saat startup recovery.
+type IPOSubscription struct {
+	SubscriptionID    string    `json:"subscription_id"`
+	IPOEventID        string    `json:"ipo_event_id"`
+	Symbol            string    `json:"symbol"`
+	Status            string    `json:"status"` // cash_reserved|submitted_to_bei|allocated|settled|cancelled|reversed|refunded
+	RequestedShares   int64     `json:"requested_shares"`
+	AllocatedShares   int64     `json:"allocated_shares"`
+	ReservedCashIDR   string    `json:"reserved_cash_idr"`   // string numeric dari Postgres
+	ActualDebitIDR    string    `json:"actual_debit_idr"`
+	OfficialFeeIDR    string    `json:"official_fee_idr"`
+	BeiSubscriptionID string    `json:"bei_subscription_id"`
+	EventVersion      int       `json:"event_version"`
+	IdempotencyKey    string    `json:"idempotency_key"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// IsActive mengembalikan true jika subscription masih dalam status non-final (belum selesai atau dibatalkan).
+func (s *IPOSubscription) IsActive() bool {
+	switch s.Status {
+	case "cash_reserved", "submitted_to_bei", "allocated":
+		return true
+	}
+	return false
+}
+
 type Account struct {
-	AccountID  string      `json:"account_id"`
-	Cash       Cash        `json:"cash"`
-	Positions  []Position  `json:"positions"`
-	OpenOrders []OpenOrder `json:"open_orders"`
+	AccountID        string            `json:"account_id"`
+	Cash             Cash              `json:"cash"`
+	Positions        []Position        `json:"positions"`
+	OpenOrders       []OpenOrder       `json:"open_orders"`
+	IPOSubscriptions []IPOSubscription `json:"ipo_subscriptions"`
 }
 
 type Snapshot struct {
