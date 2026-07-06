@@ -21,6 +21,27 @@ type Security struct {
 	PreviousClose   int64    `json:"previous_close"`
 }
 
+func (s *Security) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		Symbol          string      `json:"symbol"`
+		Board           string      `json:"board"`
+		Status          string      `json:"status"`
+		ActiveNotations []string    `json:"active_notations"`
+		ReferencePrice  interface{} `json:"reference_price"`
+		PreviousClose   interface{} `json:"previous_close"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	s.Symbol = aux.Symbol
+	s.Board = aux.Board
+	s.Status = aux.Status
+	s.ActiveNotations = aux.ActiveNotations
+	s.ReferencePrice = ParseFlexInt64(aux.ReferencePrice)
+	s.PreviousClose = ParseFlexInt64(aux.PreviousClose)
+	return nil
+}
+
 type TradingRuleProfile struct {
 	ID                 string          `json:"id"`
 	Name               string          `json:"name"`

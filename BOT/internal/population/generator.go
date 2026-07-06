@@ -17,14 +17,14 @@ type cashRange struct {
 }
 
 var strategyCashRanges = map[string]cashRange{
-	"noise_trader":    {1_000_000, 25_000_000, "retail"},
-	"momentum_trader": {5_000_000, 75_000_000, "retail"},
-	"contrarian":      {10_000_000, 150_000_000, "retail"},
-	"event_driven":    {10_000_000, 250_000_000, "retail"},
-	"market_maker":    {250_000_000, 2_000_000_000, "institutional"},
-	"value_investor":  {100_000_000, 1_000_000_000, "institutional"},
-	"index_tracker":   {250_000_000, 3_000_000_000, "institutional"},
-	"bandar":          {1_000_000_000, 10_000_000_000, "institutional"},
+	"noise_trader":    {10_000_000, 250_000_000, "retail"},
+	"momentum_trader": {50_000_000, 750_000_000, "retail"},
+	"contrarian":      {100_000_000, 1_500_000_000, "retail"},
+	"event_driven":    {100_000_000, 2_500_000_000, "retail"},
+	"market_maker":    {2_500_000_000, 20_000_000_000, "institutional"},
+	"value_investor":  {1_000_000_000, 10_000_000_000, "institutional"},
+	"index_tracker":   {2_500_000_000, 30_000_000_000, "institutional"},
+	"bandar":          {10_000_000_000, 100_000_000_000, "institutional"},
 }
 
 func Generate(cfg config.PopulationConfig, activeSecurities []bei.Security) ([]config.BotConfig, error) {
@@ -91,9 +91,9 @@ func Generate(cfg config.PopulationConfig, activeSecurities []bei.Security) ([]c
 }
 
 func generatedPositions(rng *rand.Rand, strategy string, securities []bei.Security) []config.GenesisPosition {
-	minLots, maxLots := int64(5), int64(10)
+	minLots, maxLots := int64(50), int64(100)
 	if strategy == "market_maker" || strategy == "index_tracker" || strategy == "bandar" {
-		minLots, maxLots = 20, 50
+		minLots, maxLots = 200, 500
 	}
 	positions := make([]config.GenesisPosition, 0, len(securities))
 	for _, sec := range securities {

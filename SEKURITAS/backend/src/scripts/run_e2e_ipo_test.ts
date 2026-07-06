@@ -7,7 +7,7 @@ import { createBrokerAccount, setupRDNForUser } from "../services/account-servic
 
 const BEI_URL = "http://localhost:4100/v1";
 const SEKURITAS_URL = "http://localhost:3002";
-const BEI_ADMIN_TOKEN = "local-admin-service-token-2026-change-me";
+const BEI_ADMIN_TOKEN = process.env.ADMIN_TOKEN || "dev-admin-service-token-change-me-2026";
 
 const NUM_TRADERS = 10;
 const INITIAL_CASH = 1_000_000_000; // Rp 1.000.000.000 (1 Milyar)
@@ -66,6 +66,7 @@ async function runIPOTest() {
     await beiDbClient.query(`DELETE FROM special_notations WHERE security_id IN (SELECT id FROM listed_securities WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R'))`);
     await beiDbClient.query(`DELETE FROM ipo_allocations WHERE ipo_subscription_id IN (SELECT id FROM ipo_subscriptions WHERE ipo_event_id IN (SELECT id FROM ipo_events WHERE security_id IN (SELECT id FROM listed_securities WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R'))))`);
     await beiDbClient.query(`DELETE FROM ipo_subscriptions WHERE ipo_event_id IN (SELECT id FROM ipo_events WHERE security_id IN (SELECT id FROM listed_securities WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')))`);
+    await beiDbClient.query(`DELETE FROM ipo_lifecycle_outbox WHERE ipo_event_id IN (SELECT id FROM ipo_events WHERE security_id IN (SELECT id FROM listed_securities WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')))`);
     await beiDbClient.query(`DELETE FROM ipo_events WHERE security_id IN (SELECT id FROM listed_securities WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R'))`);
     await beiDbClient.query(`DELETE FROM listed_securities WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')`);
     await beiDbClient.query(`DELETE FROM financial_reports WHERE issuer_id IN (SELECT id FROM issuers WHERE code = 'MOSE')`);
@@ -73,9 +74,11 @@ async function runIPOTest() {
     await beiDbClient.query(`DELETE FROM issuers WHERE code = 'MOSE'`);
 
     console.log("- Membersihkan data portofolio MOSE di Sekuritas database...");
-    await sekDbClient.query(`DELETE FROM securities_positions WHERE symbol = 'MOSE'`);
-    await sekDbClient.query(`DELETE FROM ledger_movements WHERE symbol = 'MOSE'`);
-    await sekDbClient.query(`DELETE FROM corporate_action_events WHERE symbol = 'MOSE'`);
+    await sekDbClient.query(`DELETE FROM securities_positions WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')`);
+    await sekDbClient.query(`DELETE FROM ledger_movements WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')`);
+    await sekDbClient.query(`DELETE FROM corporate_action_events WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')`);
+    await sekDbClient.query("DELETE FROM ipo_lifecycle_inbox WHERE ipo_event_id IN (SELECT id FROM ipo_investor_subscriptions WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R'))");
+    await sekDbClient.query("DELETE FROM ipo_investor_subscriptions WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')");
 
     console.log("Pembersihan database selesai.");
   } catch (err: any) {
@@ -163,7 +166,7 @@ async function runIPOTest() {
       ipoPrice: 200,
       referencePrice: 200,
       previousClose: 200,
-      status: "listed",
+      status: "prelisted",
       marketMechanism: "regular",
     }),
   });
@@ -195,17 +198,37 @@ async function runIPOTest() {
       securityId: securityId,
       offeredShares: OFFERED_SHARES,
       offeringPrice: 200,
-      status: "subscription",
+      status: "draft",
       underwriterBrokerId: underwriterBrokerId,
+      bookbuildingStart: new Date(Date.now() - 7200 * 1000).toISOString(),
+      bookbuildingEnd: new Date(Date.now() - 3600 * 1000).toISOString(),
+      subscriptionStart: new Date(Date.now() - 10 * 1000).toISOString(),
+      subscriptionEnd: new Date(Date.now() + 10 * 1000).toISOString(),
+      listingAt: new Date(Date.now() + 20 * 1000).toISOString(),
+      initialFairValue: 200,
+      subscriptionLotSize: 100
     }),
   });
 
   if (!createIpoRes.ok) {
-    console.error("Gagal membuat event IPO di BEI:", createIpoRes.data);
+    console.error("Gagal membuat event IPO di BEI:", createIpoRes.data || createIpoRes.raw);
     process.exit(1);
   }
   const ipoEventId = createIpoRes.data.id;
-  console.log(`Event IPO MOSE berhasil dibuat. IPO Event ID: ${ipoEventId}`);
+  console.log(`Event IPO MOSE berhasil dibuat (draft). IPO Event ID: ${ipoEventId}`);
+
+  console.log("- Mempublikasikan event IPO ke status 'subscription'...");
+  const publishIpoRes = await fetchJson(`${BEI_URL}/ipo-events/${ipoEventId}/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-service-token": BEI_ADMIN_TOKEN },
+    body: JSON.stringify({ status: "subscription" }),
+  });
+
+  if (!publishIpoRes.ok) {
+    console.error("Gagal mempublikasikan event IPO di BEI:", publishIpoRes.data || publishIpoRes.raw);
+    process.exit(1);
+  }
+  console.log("Event IPO MOSE berhasil dipublikasikan.");
 
   // 6. Mengirimkan Pemesanan (Subscription) dari 10 Trader
   console.log("\n[6] Mengirimkan data pemesanan (subscription) dari 10 trader...");
@@ -215,17 +238,15 @@ async function runIPOTest() {
 
   for (let i = 0; i < traders.length; i++) {
     const trader = traders[i]!;
-    const subRes = await fetchJson(`${BEI_URL}/ipo-events/${ipoEventId}/subscriptions`, {
+    const subRes = await fetchJson(`${SEKURITAS_URL}/api/v1/ipo-events/${ipoEventId}/subscriptions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-service-token": BEI_ADMIN_TOKEN,
+        "Authorization": `Bearer ${trader.token}`,
+        "Idempotency-Key": `sub:ipo:mose:${trader.brokerAccountId}:${Date.now()}`
       },
       body: JSON.stringify({
-        brokerCode: "MANDALA",
-        investorId: trader.brokerAccountId,
-        requestedShares: REQUESTED_SHARES_PER_TRADER,
-        idempotencyKey: `sub:ipo:mose:${trader.brokerAccountId}:${Date.now()}`,
+        requested_shares: REQUESTED_SHARES_PER_TRADER
       }),
     });
 
@@ -236,8 +257,9 @@ async function runIPOTest() {
     console.log(`- Subscription trader ${trader.email}: ACCEPTED`);
   }
 
-  // Jeda kecil agar data tersimpan di DB BEI
-  await sleep(1000);
+  // Jeda agar window subscription ditutup (melewati subscriptionEnd)
+  console.log("Menunggu 10 detik agar window subscription berakhir di BEI...");
+  await sleep(10000);
 
   // 7. Menjalankan Alokasi / Penjatahan Saham IPO
   console.log(`\n[7] Menjalankan penjatahan proporsional di BEI (Rasio: ${ALLOCATION_RATIO * 100}%)...`);

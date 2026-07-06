@@ -354,21 +354,35 @@ type TokenBatchResponse struct {
 }
 
 func (c *Client) FetchTokens(ctx context.Context, accountIDs []string, idempotencyKey string) error {
-	req := TokenBatchRequest{AccountIDs: accountIDs}
-	var resp TokenBatchResponse
-	headers := map[string]string{
-		"Idempotency-Key": idempotencyKey,
-	}
-	err := c.apiClient.DoRequest(ctx, "POST", "/bot/internal/tokens", req, headers, &resp)
-	if err != nil {
-		return err
+	if len(accountIDs) == 0 {
+		return nil
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, tk := range resp.Tokens {
-		c.tokenCache[tk.AccountID] = tk.Token
-		c.tokenExpiry[tk.AccountID] = tk.ExpiresAt
+	batchSize := 100
+	for start := 0; start < len(accountIDs); start += batchSize {
+		end := start + batchSize
+		if end > len(accountIDs) {
+			end = len(accountIDs)
+		}
+		batch := accountIDs[start:end]
+		batchIdempKey := fmt.Sprintf("%s-%d", idempotencyKey, start/batchSize)
+
+		req := TokenBatchRequest{AccountIDs: batch}
+		var resp TokenBatchResponse
+		headers := map[string]string{
+			"Idempotency-Key": batchIdempKey,
+		}
+		err := c.apiClient.DoRequest(ctx, "POST", "/bot/internal/tokens", req, headers, &resp)
+		if err != nil {
+			return err
+		}
+
+		c.mu.Lock()
+		for _, tk := range resp.Tokens {
+			c.tokenCache[tk.AccountID] = tk.Token
+			c.tokenExpiry[tk.AccountID] = tk.ExpiresAt
+		}
+		c.mu.Unlock()
 	}
 	return nil
 }
@@ -386,13 +400,38 @@ type SnapshotRequest struct {
 }
 
 func (c *Client) BulkSnapshot(ctx context.Context, accountIDs []string) (portfolio.Snapshot, error) {
-	var result portfolio.Snapshot
-	if len(accountIDs) > 100 {
-		return result, fmt.Errorf("snapshot batch exceeds 100 accounts")
+	var finalSnapshot portfolio.Snapshot
+	if len(accountIDs) == 0 {
+		return finalSnapshot, nil
 	}
-	headers := map[string]string{}
-	err := c.apiClient.DoRequest(ctx, "POST", "/bot/internal/portfolio-snapshot", SnapshotRequest{AccountIDs: accountIDs, IncludeOpenOrders: true}, headers, &result)
-	return result, err
+
+	batchSize := 100
+	for start := 0; start < len(accountIDs); start += batchSize {
+		end := start + batchSize
+		if end > len(accountIDs) {
+			end = len(accountIDs)
+		}
+		batch := accountIDs[start:end]
+
+		var batchResult portfolio.Snapshot
+		headers := map[string]string{}
+		err := c.apiClient.DoRequest(ctx, "POST", "/bot/internal/portfolio-snapshot", SnapshotRequest{AccountIDs: batch, IncludeOpenOrders: true}, headers, &batchResult)
+		if err != nil {
+			return finalSnapshot, err
+		}
+
+		if start == 0 {
+			finalSnapshot.AsOfSequence = batchResult.AsOfSequence
+			finalSnapshot.GeneratedAt = batchResult.GeneratedAt
+		} else {
+			if batchResult.AsOfSequence > finalSnapshot.AsOfSequence {
+				finalSnapshot.AsOfSequence = batchResult.AsOfSequence
+			}
+		}
+		finalSnapshot.Accounts = append(finalSnapshot.Accounts, batchResult.Accounts...)
+	}
+
+	return finalSnapshot, nil
 }
 
 type StreamHandler func(portfolio.Event) error

@@ -56,23 +56,23 @@ admin:
 
 population:
   enabled: true
-  size: 100
+  size: 500
   seed: 20260704
   composition:
-    noise_trader: 32
-    momentum_trader: 18
-    contrarian: 14
-    event_driven: 12
-    market_maker: 8
-    value_investor: 8
-    index_tracker: 4
-    bandar: 4
+    noise_trader: 160
+    momentum_trader: 90
+    contrarian: 70
+    event_driven: 60
+    market_maker: 40
+    value_investor: 40
+    index_tracker: 20
+    bandar: 20
 
 strategy:
   noise_trader:
     inactive_rate: 0.15          # 15% chance bot skip satu sesi (tidak order)
-    max_orders_per_session: 2    # max order per bot per sesi
-    max_lots_per_order: 5        # max lot per single order
+    max_orders_per_session: 20   # max order per bot per sesi
+    max_lots_per_order: 50       # max lot per single order
     price_noise_pct: 0.02        # noise harga +/- 2% dari last_price
     opening_auction_rate: 0.15   # 15% bot aktif di opening auction
     closing_auction_rate: 0.08   # 8% bot aktif di closing auction
@@ -80,8 +80,8 @@ strategy:
     continuous_tick_interval_max: 90  # max interval evaluasi di continuous (detik)
   momentum_trader:
     inactive_rate: 0.10
-    max_orders_per_session: 3
-    max_lots_per_order: 10
+    max_orders_per_session: 30
+    max_lots_per_order: 100
     spread_threshold_pct: 0.05
     imbalance_threshold: 0.10
     return_threshold: 0.005
@@ -92,8 +92,8 @@ strategy:
     continuous_tick_interval_max: 30
   contrarian:
     inactive_rate: 0.15
-    max_orders_per_session: 2
-    max_lots_per_order: 8
+    max_orders_per_session: 20
+    max_lots_per_order: 80
     discount_threshold: 0.10
     premium_threshold: 0.10
     reference_deviation_threshold: 0.05
@@ -103,16 +103,16 @@ strategy:
     continuous_tick_interval_max: 90
   event_driven:
     inactive_rate: 0.05
-    max_orders_per_session: 3
-    max_lots_per_order: 15
+    max_orders_per_session: 30
+    max_lots_per_order: 150
     opening_auction_rate: 0.30
     closing_auction_rate: 0.15
     continuous_tick_interval_min: 5
     continuous_tick_interval_max: 15
   market_maker:
     inactive_rate: 0.05
-    max_orders_per_session: 6
-    max_lots_per_order: 10
+    max_orders_per_session: 60
+    max_lots_per_order: 100
     base_spread_ticks: 3
     max_inventory_shares: 5000
     opening_auction_rate: 0.50
@@ -121,8 +121,8 @@ strategy:
     continuous_tick_interval_max: 25
   value_investor:
     inactive_rate: 0.40
-    max_orders_per_session: 1
-    max_lots_per_order: 5
+    max_orders_per_session: 10
+    max_lots_per_order: 50
     discount_threshold: 0.15
     premium_threshold: 0.15
     opening_auction_rate: 0.20
@@ -131,16 +131,16 @@ strategy:
     continuous_tick_interval_max: 90
   index_tracker:
     inactive_rate: 0.10
-    max_orders_per_session: 1
-    max_lots_per_order: 8
+    max_orders_per_session: 10
+    max_lots_per_order: 80
     opening_auction_rate: 0.0
     closing_auction_rate: 0.80
     continuous_tick_interval_min: 20
     continuous_tick_interval_max: 60
   bandar:
     inactive_rate: 0.20
-    max_orders_per_session: 2
-    max_lots_per_order: 50
+    max_orders_per_session: 20
+    max_lots_per_order: 500
     fair_value_brake_multiplier: 1.5
     brake_discount: 0.50
     opening_auction_rate: 0.40
@@ -153,501 +153,501 @@ bots:
     email: "noise-0001@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 10000000 # Rp10.000.000
+    initial_cash: 100000000 # Rp100.000.000
   - external_bot_id: "noise-0002"
     email: "noise-0002@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 15000000
+    initial_cash: 150000000
   - external_bot_id: "noise-0003"
     email: "noise-0003@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 20000000
+    initial_cash: 200000000
   - external_bot_id: "noise-0004"
     email: "noise-0004@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 25000000
+    initial_cash: 250000000
   - external_bot_id: "noise-0005"
     email: "noise-0005@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 12000000
+    initial_cash: 120000000
   - external_bot_id: "noise-0006"
     email: "noise-0006@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 8000000
+    initial_cash: 80000000
   - external_bot_id: "noise-0007"
     email: "noise-0007@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 9000000
+    initial_cash: 90000000
   - external_bot_id: "noise-0008"
     email: "noise-0008@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 30000000
+    initial_cash: 300000000
   - external_bot_id: "noise-0009"
     email: "noise-0009@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 18000000
+    initial_cash: 180000000
   - external_bot_id: "noise-0010"
     email: "noise-0010@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 22000000
+    initial_cash: 220000000
   - external_bot_id: "momentum-0001"
     email: "momentum-0001@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 20000000
+    initial_cash: 200000000
   - external_bot_id: "momentum-0002"
     email: "momentum-0002@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 25000000
+    initial_cash: 250000000
   - external_bot_id: "contrarian-0001"
     email: "contrarian-0001@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 30000000
+    initial_cash: 300000000
   - external_bot_id: "contrarian-0002"
     email: "contrarian-0002@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 35000000
+    initial_cash: 350000000
   - external_bot_id: "event-0001"
     email: "event-0001@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 25000000
+    initial_cash: 250000000
   - external_bot_id: "event-0002"
     email: "event-0002@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 30000000
+    initial_cash: 300000000
   - external_bot_id: "momentum-0003"
     email: "momentum-0003@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 18000000
+    initial_cash: 180000000
   - external_bot_id: "momentum-0004"
     email: "momentum-0004@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 22000000
+    initial_cash: 220000000
   - external_bot_id: "momentum-0005"
     email: "momentum-0005@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 27000000
+    initial_cash: 270000000
   - external_bot_id: "contrarian-0003"
     email: "contrarian-0003@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 40000000
+    initial_cash: 400000000
   - external_bot_id: "mm-0001"
     email: "mm-0001@bot.internal"
     strategy: "market_maker"
     tier: "institutional"
-    initial_cash: 500000000 # Rp500.000.000
+    initial_cash: 5000000000 # Rp5.000.000.000
   - external_bot_id: "mm-0002"
     email: "mm-0002@bot.internal"
     strategy: "market_maker"
     tier: "institutional"
-    initial_cash: 1000000000 # Rp1.000.000.000
+    initial_cash: 10000000000 # Rp10.000.000.000
   - external_bot_id: "noise-0011"
     email: "noise-0011@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 12000000
+    initial_cash: 120000000
   - external_bot_id: "noise-0012"
     email: "noise-0012@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 14000000
+    initial_cash: 140000000
   - external_bot_id: "noise-0013"
     email: "noise-0013@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 16000000
+    initial_cash: 160000000
   - external_bot_id: "noise-0014"
     email: "noise-0014@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 18000000
+    initial_cash: 180000000
   - external_bot_id: "noise-0015"
     email: "noise-0015@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 20000000
+    initial_cash: 200000000
   - external_bot_id: "momentum-0006"
     email: "momentum-0006@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 30000000
+    initial_cash: 300000000
   - external_bot_id: "momentum-0007"
     email: "momentum-0007@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 35000000
+    initial_cash: 350000000
   - external_bot_id: "momentum-0008"
     email: "momentum-0008@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 40000000
+    initial_cash: 400000000
   - external_bot_id: "momentum-0009"
     email: "momentum-0009@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 45000000
+    initial_cash: 450000000
   - external_bot_id: "momentum-0010"
     email: "momentum-0010@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 50000000
+    initial_cash: 500000000
   - external_bot_id: "contrarian-0004"
     email: "contrarian-0004@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 45000000
+    initial_cash: 450000000
   - external_bot_id: "contrarian-0005"
     email: "contrarian-0005@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 50000000
+    initial_cash: 500000000
   - external_bot_id: "contrarian-0006"
     email: "contrarian-0006@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 55000000
+    initial_cash: 550000000
   - external_bot_id: "contrarian-0007"
     email: "contrarian-0007@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 60000000
+    initial_cash: 600000000
   - external_bot_id: "contrarian-0008"
     email: "contrarian-0008@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 65000000
+    initial_cash: 650000000
   - external_bot_id: "event-0003"
     email: "event-0003@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 35000000
+    initial_cash: 350000000
   - external_bot_id: "event-0004"
     email: "event-0004@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 40000000
+    initial_cash: 400000000
   - external_bot_id: "event-0005"
     email: "event-0005@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 45000000
+    initial_cash: 450000000
   - external_bot_id: "event-0006"
     email: "event-0006@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 50000000
+    initial_cash: 500000000
   - external_bot_id: "mm-0003"
     email: "mm-0003@bot.internal"
     strategy: "market_maker"
     tier: "institutional"
-    initial_cash: 600000000
+    initial_cash: 6000000000
   - external_bot_id: "mm-0004"
     email: "mm-0004@bot.internal"
     strategy: "market_maker"
     tier: "institutional"
-    initial_cash: 700000000
+    initial_cash: 7000000000
   - external_bot_id: "value-0001"
     email: "value-0001@bot.internal"
     strategy: "value_investor"
     tier: "retail"
-    initial_cash: 100000000
+    initial_cash: 1000000000
   - external_bot_id: "value-0002"
     email: "value-0002@bot.internal"
     strategy: "value_investor"
     tier: "retail"
-    initial_cash: 150000000
+    initial_cash: 1500000000
   - external_bot_id: "value-0003"
     email: "value-0003@bot.internal"
     strategy: "value_investor"
     tier: "retail"
-    initial_cash: 200000000
+    initial_cash: 2000000000
   - external_bot_id: "value-0004"
     email: "value-0004@bot.internal"
     strategy: "value_investor"
     tier: "retail"
-    initial_cash: 250000000
+    initial_cash: 2500000000
   - external_bot_id: "index-0001"
     email: "index-0001@bot.internal"
     strategy: "index_tracker"
     tier: "institutional"
-    initial_cash: 300000000
+    initial_cash: 3000000000
   - external_bot_id: "index-0002"
     email: "index-0002@bot.internal"
     strategy: "index_tracker"
     tier: "institutional"
-    initial_cash: 400000000
+    initial_cash: 4000000000
   - external_bot_id: "bandar-0001"
     email: "bandar-0001@bot.internal"
     strategy: "bandar"
     tier: "institutional"
-    initial_cash: 2000000000 # Rp2.000.000.000
+    initial_cash: 20000000000 # Rp20.000.000.000
   - external_bot_id: "noise-0016"
     email: "noise-0016@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 10000000
+    initial_cash: 100000000
   - external_bot_id: "noise-0017"
     email: "noise-0017@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 11000000
+    initial_cash: 110000000
   - external_bot_id: "noise-0018"
     email: "noise-0018@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 12000000
+    initial_cash: 120000000
   - external_bot_id: "noise-0019"
     email: "noise-0019@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 13000000
+    initial_cash: 130000000
   - external_bot_id: "noise-0020"
     email: "noise-0020@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 14000000
+    initial_cash: 140000000
   - external_bot_id: "noise-0021"
     email: "noise-0021@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 15000000
+    initial_cash: 150000000
   - external_bot_id: "noise-0022"
     email: "noise-0022@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 16000000
+    initial_cash: 160000000
   - external_bot_id: "noise-0023"
     email: "noise-0023@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 17000000
+    initial_cash: 170000000
   - external_bot_id: "noise-0024"
     email: "noise-0024@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 18000000
+    initial_cash: 180000000
   - external_bot_id: "noise-0025"
     email: "noise-0025@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 19000000
+    initial_cash: 190000000
   - external_bot_id: "noise-0026"
     email: "noise-0026@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 20000000
+    initial_cash: 200000000
   - external_bot_id: "noise-0027"
     email: "noise-0027@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 21000000
+    initial_cash: 210000000
   - external_bot_id: "noise-0028"
     email: "noise-0028@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 22000000
+    initial_cash: 220000000
   - external_bot_id: "noise-0029"
     email: "noise-0029@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 23000000
+    initial_cash: 230000000
   - external_bot_id: "noise-0030"
     email: "noise-0030@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 24000000
+    initial_cash: 240000000
   - external_bot_id: "noise-0031"
     email: "noise-0031@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 25000000
+    initial_cash: 250000000
   - external_bot_id: "noise-0032"
     email: "noise-0032@bot.internal"
     strategy: "noise_trader"
     tier: "retail"
-    initial_cash: 26000000
+    initial_cash: 260000000
   - external_bot_id: "momentum-0011"
     email: "momentum-0011@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 30000000
+    initial_cash: 300000000
   - external_bot_id: "momentum-0012"
     email: "momentum-0012@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 32000000
+    initial_cash: 320000000
   - external_bot_id: "momentum-0013"
     email: "momentum-0013@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 34000000
+    initial_cash: 340000000
   - external_bot_id: "momentum-0014"
     email: "momentum-0014@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 36000000
+    initial_cash: 360000000
   - external_bot_id: "momentum-0015"
     email: "momentum-0015@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 38000000
+    initial_cash: 380000000
   - external_bot_id: "momentum-0016"
     email: "momentum-0016@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 40000000
+    initial_cash: 400000000
   - external_bot_id: "momentum-0017"
     email: "momentum-0017@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 42000000
+    initial_cash: 420000000
   - external_bot_id: "momentum-0018"
     email: "momentum-0018@bot.internal"
     strategy: "momentum_trader"
     tier: "retail"
-    initial_cash: 44000000
+    initial_cash: 440000000
   - external_bot_id: "contrarian-0009"
     email: "contrarian-0009@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 45000000
+    initial_cash: 450000000
   - external_bot_id: "contrarian-0010"
     email: "contrarian-0010@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 47000000
+    initial_cash: 470000000
   - external_bot_id: "contrarian-0011"
     email: "contrarian-0011@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 49000000
+    initial_cash: 490000000
   - external_bot_id: "contrarian-0012"
     email: "contrarian-0012@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 51000000
+    initial_cash: 510000000
   - external_bot_id: "contrarian-0013"
     email: "contrarian-0013@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 53000000
+    initial_cash: 530000000
   - external_bot_id: "contrarian-0014"
     email: "contrarian-0014@bot.internal"
     strategy: "contrarian"
     tier: "retail"
-    initial_cash: 55000000
+    initial_cash: 550000000
   - external_bot_id: "event-0007"
     email: "event-0007@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 30000000
+    initial_cash: 300000000
   - external_bot_id: "event-0008"
     email: "event-0008@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 32000000
+    initial_cash: 320000000
   - external_bot_id: "event-0009"
     email: "event-0009@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 34000000
+    initial_cash: 340000000
   - external_bot_id: "event-0010"
     email: "event-0010@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 36000000
+    initial_cash: 360000000
   - external_bot_id: "event-0011"
     email: "event-0011@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 38000000
+    initial_cash: 380000000
   - external_bot_id: "event-0012"
     email: "event-0012@bot.internal"
     strategy: "event_driven"
     tier: "retail"
-    initial_cash: 40000000
+    initial_cash: 400000000
   - external_bot_id: "mm-0005"
     email: "mm-0005@bot.internal"
     strategy: "market_maker"
     tier: "institutional"
-    initial_cash: 500000000
+    initial_cash: 5000000000
   - external_bot_id: "mm-0006"
     email: "mm-0006@bot.internal"
     strategy: "market_maker"
     tier: "institutional"
-    initial_cash: 550000000
+    initial_cash: 5500000000
   - external_bot_id: "mm-0007"
     email: "mm-0007@bot.internal"
     strategy: "market_maker"
     tier: "institutional"
-    initial_cash: 600000000
+    initial_cash: 6000000000
   - external_bot_id: "mm-0008"
     email: "mm-0008@bot.internal"
     strategy: "market_maker"
     tier: "institutional"
-    initial_cash: 650000000
+    initial_cash: 6500000000
   - external_bot_id: "value-0005"
     email: "value-0005@bot.internal"
     strategy: "value_investor"
     tier: "retail"
-    initial_cash: 110000000
+    initial_cash: 1100000000
   - external_bot_id: "value-0006"
     email: "value-0006@bot.internal"
     strategy: "value_investor"
     tier: "retail"
-    initial_cash: 120000000
+    initial_cash: 1200000000
   - external_bot_id: "value-0007"
     email: "value-0007@bot.internal"
     strategy: "value_investor"
     tier: "retail"
-    initial_cash: 130000000
+    initial_cash: 1300000000
   - external_bot_id: "value-0008"
     email: "value-0008@bot.internal"
     strategy: "value_investor"
     tier: "retail"
-    initial_cash: 140000000
+    initial_cash: 1400000000
   - external_bot_id: "index-0003"
     email: "index-0003@bot.internal"
     strategy: "index_tracker"
     tier: "institutional"
-    initial_cash: 350000000
+    initial_cash: 3500000000
   - external_bot_id: "index-0004"
     email: "index-0004@bot.internal"
     strategy: "index_tracker"
     tier: "institutional"
-    initial_cash: 450000000
+    initial_cash: 4500000000
   - external_bot_id: "bandar-0002"
     email: "bandar-0002@bot.internal"
     strategy: "bandar"
     tier: "institutional"
-    initial_cash: 2500000000
+    initial_cash: 25000000000
   - external_bot_id: "bandar-0003"
     email: "bandar-0003@bot.internal"
     strategy: "bandar"
     tier: "institutional"
-    initial_cash: 3000000000
+    initial_cash: 30000000000
   - external_bot_id: "bandar-0004"
     email: "bandar-0004@bot.internal"
     strategy: "bandar"
     tier: "institutional"
-    initial_cash: 3500000000
+    initial_cash: 35000000000
 
 

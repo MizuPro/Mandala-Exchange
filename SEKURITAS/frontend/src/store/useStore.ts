@@ -14,6 +14,7 @@ export interface Portfolio {
 }
 
 import { components } from '../types/api';
+import { IpoEvent, IpoSubscription } from '../types/ipo';
 
 export type Order = components["schemas"]["Order"];
 
@@ -115,7 +116,9 @@ interface AppState {
   accountProfile: AccountProfile | null;
   company: CompanyState;
   corporateActions: any[];
-  ipoEvents: any[];
+  ipoEvents: IpoEvent[];
+  ipoSubscriptions: IpoSubscription[];
+  ipoSubscriptionsLoading: boolean;
   settlementStatus: any[];
   custodySummary: any | null;
   reconciliation: any | null;
@@ -149,6 +152,9 @@ interface AppState {
   fetchCompany: (symbol: string) => Promise<void>;
   fetchCorporateActions: () => Promise<void>;
   fetchIpoEvents: () => Promise<void>;
+  fetchIpoSubscriptions: () => Promise<void>;
+  subscribeIpo: (ipoEventId: string, requestedShares: number, idempotencyKey: string) => Promise<any>;
+  cancelIpoSubscription: (ipoEventId: string, subscriptionId: string) => Promise<any>;
   fetchSettlementStatus: (sessionId: string) => Promise<void>;
   fetchCustodySummary: () => Promise<void>;
   fetchReconciliation: () => Promise<void>;
@@ -198,6 +204,8 @@ export const useStore = create<AppState>((set, get) => ({
   company: { symbol: '', detail: null, fundamentals: null, announcements: [] },
   corporateActions: [],
   ipoEvents: [],
+  ipoSubscriptions: [],
+  ipoSubscriptionsLoading: false,
   settlementStatus: [],
   custodySummary: null,
   reconciliation: null,
@@ -416,9 +424,69 @@ export const useStore = create<AppState>((set, get) => ({
   fetchIpoEvents: async () => {
     try {
       const data = await fetchApi('/market/ipo-events');
-      set({ ipoEvents: Array.isArray(data) ? data : [], error: null });
+      const items = data && typeof data === 'object' && Array.isArray(data.items) 
+        ? data.items 
+        : (Array.isArray(data) ? data : []);
+      set({ ipoEvents: items, error: null });
     } catch (err: any) {
       set({ error: err.message });
+    }
+  },
+
+  fetchIpoSubscriptions: async () => {
+    if (get().ipoSubscriptionsLoading) return;
+    try {
+      set({ ipoSubscriptionsLoading: true });
+      const data = await fetchApi('/ipo-events/subscriptions');
+      const items = data && typeof data === 'object' && Array.isArray(data.items)
+        ? data.items
+        : (Array.isArray(data) ? data : []);
+      set({ ipoSubscriptions: items, ipoSubscriptionsLoading: false, error: null });
+    } catch (err: any) {
+      if (isUnauthorized(err)) get().logout();
+      set({ error: err.message, ipoSubscriptionsLoading: false });
+    }
+  },
+
+  subscribeIpo: async (ipoEventId, requestedShares, idempotencyKey) => {
+    try {
+      set({ isLoading: true, error: null });
+      const result = await fetchApi(`/ipo-events/${ipoEventId}/subscriptions`, {
+        method: 'POST',
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({ requested_shares: requestedShares })
+      });
+      await Promise.all([
+        get().fetchPortfolio(),
+        get().fetchIpoSubscriptions()
+      ]);
+      set({ isLoading: false });
+      return result;
+    } catch (err: any) {
+      if (isUnauthorized(err)) get().logout();
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
+  cancelIpoSubscription: async (ipoEventId, subscriptionId) => {
+    try {
+      set({ isLoading: true, error: null });
+      const result = await fetchApi(`/ipo-events/${ipoEventId}/subscriptions/${subscriptionId}/cancel`, {
+        method: 'POST'
+      });
+      await Promise.all([
+        get().fetchPortfolio(),
+        get().fetchIpoSubscriptions()
+      ]);
+      set({ isLoading: false });
+      return result;
+    } catch (err: any) {
+      if (isUnauthorized(err)) get().logout();
+      set({ error: err.message, isLoading: false });
+      throw err;
     }
   },
 
@@ -665,6 +733,16 @@ export const useStore = create<AppState>((set, get) => ({
           return o;
         });
         return { orders: newOrders };
+      }
+      if (event.type === 'ipo_subscription_updated') {
+        const payload = event.data || event.payload;
+        if (payload) {
+          const exists = state.ipoSubscriptions.some(s => s.subscription_id === payload.subscription_id);
+          const updatedSubs = exists 
+            ? state.ipoSubscriptions.map(s => s.subscription_id === payload.subscription_id ? { ...s, ...payload } : s)
+            : [...state.ipoSubscriptions, payload];
+          return { ipoSubscriptions: updatedSubs };
+        }
       }
       return state;
     });

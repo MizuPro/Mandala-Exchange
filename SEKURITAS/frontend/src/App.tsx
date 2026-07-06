@@ -12,6 +12,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import VerifyEmail from './pages/VerifyEmail';
 import LandingPage from './pages/LandingPage';
 import MarketDetail from './pages/MarketDetail';
+import IpoDashboard from './pages/IpoDashboard';
 import { ToastProvider } from './components/ui/Toast';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -50,6 +51,7 @@ function App() {
             <Route path="/market" element={<MarketPanel />} />
             <Route path="/market/:symbol" element={<MarketDetail />} />
             <Route path="/activity" element={<ActivityOrder />} />
+            <Route path="/ipo" element={<IpoDashboard />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { createChart, AreaSeries } from 'lightweight-charts';
 import { useStore } from '../store/useStore';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { 
   Wallet, 
   Clock, 
@@ -21,6 +21,7 @@ interface DashboardContext {
 }
 
 export default function DashboardHome() {
+  const navigate = useNavigate();
   const { onOpenTrade, onOpenDeposit, onOpenWithdraw, buyingPower } = useOutletContext<DashboardContext>();
 
   // --- Store States ---
@@ -863,15 +864,14 @@ export default function DashboardHome() {
                       {ipoEvents[0].company_name || ipoEvents[0].symbol}
                     </p>
                     <p className="text-[10px] text-[#8B949E] font-mono">
-                      Bookbuilding: Rp {ipoEvents[0].price_range_min || 210} - Rp {ipoEvents[0].price_range_max || 250}
+                      Penawaran: {ipoEvents[0].offering_price_idr ? `Rp ${Number(ipoEvents[0].offering_price_idr).toLocaleString('id-ID')}` : 'Rp 210 - Rp 250'}
                     </p>
                   </div>
                   <div className="flex justify-between items-center text-[10px] mt-2 pt-2" style={{ borderTop: '1px solid #21262D' }}>
-                    <span className="text-[#8B949E]">Listing: {ipoEvents[0].listing_date ? new Date(ipoEvents[0].listing_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Segera'}</span>
+                    <span className="text-[#8B949E]">Listing: {ipoEvents[0].listing_at ? new Date(ipoEvents[0].listing_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Segera'}</span>
                     <button 
                       onClick={() => {
-                        const code = ipoEvents[0].symbol || 'MEI';
-                        onOpenTrade(code, 'BUY');
+                        navigate('/ipo');
                       }}
                       className="text-[#E62225] hover:underline font-bold"
                       style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}

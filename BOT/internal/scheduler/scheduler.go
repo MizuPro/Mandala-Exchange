@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/Mandala-Exchange/bot-v2/internal/client/bei"
@@ -29,6 +30,8 @@ type Scheduler struct {
 	lastSegment      string
 	cancelContinuous context.CancelFunc // untuk stop continuous ticker goroutine
 	planner          *Planner
+	lastFullPollTime time.Time
+	mu               sync.Mutex
 }
 
 // NewScheduler membuat Scheduler baru.
@@ -81,6 +84,8 @@ func (s *Scheduler) pollLoop(ctx context.Context) {
 	// Initial fetch semua state BEI saat startup
 	if err := s.beiClient.PollAllState(ctx); err != nil {
 		logger.Error("Initial BEI full state fetch failed", "error", err.Error())
+	} else {
+		s.lastFullPollTime = time.Now()
 	}
 
 	for {
@@ -106,6 +111,26 @@ func (s *Scheduler) tick(ctx context.Context) {
 	if err != nil {
 		logger.Error("Failed to poll session state", "error", err.Error())
 		return
+	}
+
+	// Periodically refresh all BEI state (rules, fees, news, dll) to prevent staleness
+	s.mu.Lock()
+	needRefresh := s.lastFullPollTime.IsZero() || time.Since(s.lastFullPollTime) > 120*time.Second
+	s.mu.Unlock()
+
+	if needRefresh {
+		logger.Info("BEI rules or fees are close to stale (2 minutes elapsed). Refreshing BEI state in background...")
+		// Running in a background goroutine so we do not block the scheduler's tick loop
+		go func() {
+			if err := s.beiClient.PollAllState(ctx); err != nil {
+				logger.Error("Periodic PollAllState background task failed", "error", err.Error())
+			} else {
+				s.mu.Lock()
+				s.lastFullPollTime = time.Now()
+				s.mu.Unlock()
+				logger.Info("Periodic PollAllState background task completed successfully")
+			}
+		}()
 	}
 
 	currentSegment := state.Status
@@ -148,6 +173,10 @@ func (s *Scheduler) onEnterSegment(ctx context.Context, segment string) {
 		// Slow poll: refresh semua data referensi BEI (rules, fees, listing, IPO, news, dll)
 		if err := s.beiClient.PollAllState(ctx); err != nil {
 			logger.Error("BEI full poll failed in pre_open", "error", err.Error())
+		} else {
+			s.mu.Lock()
+			s.lastFullPollTime = time.Now()
+			s.mu.Unlock()
 		}
 		// Refresh portfolio semua bot dari Sekuritas (satu kali per sesi)
 		s.refreshPortfolios(ctx)

@@ -14,7 +14,7 @@ import { createBrokerAccount, setupRDNForUser } from "../services/account-servic
 
 const BEI_URL = "http://localhost:4100/v1";
 const SEKURITAS_URL = "http://localhost:3002";
-const BEI_ADMIN_TOKEN = "local-admin-service-token-2026-change-me";
+const BEI_ADMIN_TOKEN = process.env.ADMIN_TOKEN || "dev-admin-service-token-change-me-2026";
 const MATS_SYNC_URL = "http://localhost:8082/v1/admin/sync/bei";
 
 const NUM_TRADERS = 10;
@@ -92,6 +92,7 @@ async function runIntegratedTest() {
       const secId = moseSecurityIdRes.rows[0].id;
       await beiDbClient.query("DELETE FROM ipo_allocations WHERE ipo_subscription_id IN (SELECT id FROM ipo_subscriptions WHERE ipo_event_id IN (SELECT id FROM ipo_events WHERE security_id = $1))", [secId]);
       await beiDbClient.query("DELETE FROM ipo_subscriptions WHERE ipo_event_id IN (SELECT id FROM ipo_events WHERE security_id = $1)", [secId]);
+      await beiDbClient.query("DELETE FROM ipo_lifecycle_outbox WHERE ipo_event_id IN (SELECT id FROM ipo_events WHERE security_id = $1)", [secId]);
       await beiDbClient.query("DELETE FROM ipo_events WHERE security_id = $1", [secId]);
       await beiDbClient.query("DELETE FROM special_notations WHERE security_id = $1", [secId]);
       await beiDbClient.query("DELETE FROM issuer_announcements WHERE security_id = $1", [secId]);
@@ -118,6 +119,8 @@ async function runIntegratedTest() {
     await sekDbClient.query(`DELETE FROM securities_positions WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')`);
     await sekDbClient.query(`DELETE FROM ledger_movements WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')`);
     await sekDbClient.query(`DELETE FROM corporate_action_events WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')`);
+    await sekDbClient.query("DELETE FROM ipo_lifecycle_inbox WHERE ipo_event_id IN (SELECT id FROM ipo_investor_subscriptions WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R'))");
+    await sekDbClient.query("DELETE FROM ipo_investor_subscriptions WHERE symbol IN ('MOSE', 'MOSE-W', 'MOSE-R')");
 
     console.log("✅ Pembersihan database selesai.");
   } catch (err: any) {
@@ -196,7 +199,7 @@ async function runIntegratedTest() {
       ipoPrice: 200,
       referencePrice: 200,
       previousClose: 200,
-      status: "listed",
+      status: "prelisted",
       marketMechanism: "regular",
     }),
   });
@@ -225,26 +228,46 @@ async function runIntegratedTest() {
       securityId: securityId,
       offeredShares: OFFERED_SHARES,
       offeringPrice: 200,
-      status: "subscription",
+      status: "draft",
       underwriterBrokerId: underwriterBrokerId,
+      bookbuildingStart: new Date(Date.now() - 7200 * 1000).toISOString(),
+      bookbuildingEnd: new Date(Date.now() - 3600 * 1000).toISOString(),
+      subscriptionStart: new Date(Date.now() - 10 * 1000).toISOString(),
+      subscriptionEnd: new Date(Date.now() + 10 * 1000).toISOString(),
+      listingAt: new Date(Date.now() + 12 * 1000).toISOString(),
+      initialFairValue: 200,
+      subscriptionLotSize: 100
     }),
   });
 
   if (!createIpoRes.ok) {
-    console.error("❌ Gagal membuat event IPO di BEI:", createIpoRes.data);
+    console.error("❌ Gagal membuat event IPO di BEI:", createIpoRes.data || createIpoRes.raw);
     process.exit(1);
   }
   const ipoEventId = createIpoRes.data.id;
 
+  console.log("- Mempublikasikan event IPO ke status 'subscription'...");
+  const publishIpoRes = await fetchJson(`${BEI_URL}/ipo-events/${ipoEventId}/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-service-token": BEI_ADMIN_TOKEN },
+    body: JSON.stringify({ status: "subscription" }),
+  });
+
+  if (!publishIpoRes.ok) {
+    console.error("❌ Gagal mempublikasikan event IPO di BEI:", publishIpoRes.data || publishIpoRes.raw);
+    process.exit(1);
+  }
+
   for (const trader of traders) {
-    const subRes = await fetchJson(`${BEI_URL}/ipo-events/${ipoEventId}/subscriptions`, {
+    const subRes = await fetchJson(`${SEKURITAS_URL}/api/v1/ipo-events/${ipoEventId}/subscriptions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-service-token": BEI_ADMIN_TOKEN },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${trader.token}`,
+        "Idempotency-Key": `sub:ipo:mose:${trader.brokerAccountId}:${Date.now()}`
+      },
       body: JSON.stringify({
-        brokerCode: "MANDALA",
-        investorId: trader.brokerAccountId,
-        requestedShares: REQUESTED_SHARES_PER_TRADER,
-        idempotencyKey: `sub:ipo:mose:${trader.brokerAccountId}:${Date.now()}`,
+        requested_shares: REQUESTED_SHARES_PER_TRADER
       }),
     });
     if (!subRes.ok) {
@@ -254,8 +277,9 @@ async function runIntegratedTest() {
   }
   console.log(`✅ Berhasil mengirimkan pemesanan dari ${NUM_TRADERS} trader (total 200.000 lembar - oversubscribed 4x).`);
 
-  // Jeda kecil agar data tersimpan
-  await sleep(1000);
+  // Jeda agar window subscription ditutup dan listing schedule dimulai (melewati listingAt)
+  console.log("Menunggu 15 detik agar window subscription ditutup dan jadwal listing MOSE aktif di BEI...");
+  await sleep(15000);
 
   // 6. Allotment IPO (Poin 1)
   console.log(`\n[6] Menjalankan penjatahan proporsional di BEI (Rasio: ${ALLOCATION_RATIO * 100}%)...`);
@@ -269,7 +293,22 @@ async function runIntegratedTest() {
     console.error("❌ Gagal memproses alokasi IPO di BEI:", allocateRes.data);
     process.exit(1);
   }
-  console.log("Menunggu 5 detik agar webhook alokasi dan pendebetan kas diproses oleh Sekuritas...");
+  console.log("Alokasi IPO berhasil dibuat.");
+
+  // Listing IPO
+  console.log("Mempublikasikan listing IPO di BEI...");
+  const listRes = await fetchJson(`${BEI_URL}/ipo-events/${ipoEventId}/list`, {
+    method: "POST",
+    headers: { "x-service-token": BEI_ADMIN_TOKEN }
+  });
+
+  if (!listRes.ok) {
+    console.error("❌ Gagal memproses listing IPO di BEI:", listRes.data || listRes.raw);
+    process.exit(1);
+  }
+  console.log("Listing IPO sukses.");
+
+  console.log("Menunggu 5 detik agar webhook alokasi, pendebetan kas, dan transisi listing diproses oleh Sekuritas...");
   await sleep(5000);
 
   // Verifikasi Poin 1 (Distribusi Saham & Pemotongan Kas)

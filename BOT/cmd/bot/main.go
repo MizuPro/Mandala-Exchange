@@ -164,7 +164,7 @@ func main() {
 					}
 					initialPositions = append(initialPositions, config.GenesisPosition{
 						Symbol:       sec.Symbol,
-						Quantity:     1000,
+						Quantity:     10000,
 						AveragePrice: refPrice,
 					})
 				}
@@ -204,23 +204,33 @@ func main() {
 
 	// 7. Trigger Genesis Seeding
 	logger.Info("Triggering genesis on Sekuritas...")
-	genesisRunID := uuid.New().String()
-	genesisPayload := map[string]interface{}{
-		"genesis_run_id": genesisRunID,
-		"accounts":       genesisAccounts,
-	}
+	genesisBatchSize := 100
+	for start := 0; start < len(genesisAccounts); start += genesisBatchSize {
+		end := start + genesisBatchSize
+		if end > len(genesisAccounts) {
+			end = len(genesisAccounts)
+		}
+		batch := genesisAccounts[start:end]
 
-	genesisHashBytes, _ := json.Marshal(genesisPayload)
-	genesisHash := sha256.Sum256(genesisHashBytes)
-	genesisIdemKey := "genesis-" + hex.EncodeToString(genesisHash[:16])
+		genesisRunID := uuid.New().String()
+		genesisPayload := map[string]interface{}{
+			"genesis_run_id": genesisRunID,
+			"accounts":       batch,
+		}
 
-	if err := sekuritasClient.TriggerGenesis(mainCtx, genesisPayload, genesisIdemKey); err != nil {
-		logger.Error("Failed to trigger genesis", "error", err.Error())
-		// If genesis is already completed, it might return conflict/error, which is fine for local restarts.
-		// So we log it but don't hard exit unless necessary.
-		logger.Warn("Genesis seeding warning (might be already seeded)", "error", err.Error())
-	} else {
-		logger.Info("Genesis seeding completed successfully", "run_id", genesisRunID)
+		genesisHashBytes, _ := json.Marshal(genesisPayload)
+		genesisHash := sha256.Sum256(genesisHashBytes)
+		genesisIdemKey := "genesis-" + hex.EncodeToString(genesisHash[:16])
+
+		logger.Info("Triggering genesis batch...", "batch_idx", start/genesisBatchSize, "size", len(batch), "run_id", genesisRunID)
+		if err := sekuritasClient.TriggerGenesis(mainCtx, genesisPayload, genesisIdemKey); err != nil {
+			logger.Error("Failed to trigger genesis batch", "batch_idx", start/genesisBatchSize, "error", err.Error())
+			// If genesis is already completed, it might return conflict/error, which is fine for local restarts.
+			// So we log it but don't hard exit unless necessary.
+			logger.Warn("Genesis seeding warning (might be already seeded)", "error", err.Error())
+		} else {
+			logger.Info("Genesis seeding batch completed successfully", "batch_idx", start/genesisBatchSize, "run_id", genesisRunID)
+		}
 	}
 
 	// 8. Bulk portfolio snapshot load

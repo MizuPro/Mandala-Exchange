@@ -9,8 +9,8 @@ if /I "%MODE%"=="tunnel" set "MODE=production"
 if /I "%MODE%"=="prod" set "MODE=production"
 
 if /I "%MODE%"=="development" (
-  set "FRONTEND_COMMAND=dev -- --host 127.0.0.1 --port 5173"
-  set "FRONTEND_URL=http://localhost:5173"
+  set "FRONTEND_COMMAND=dev -- --host 0.0.0.0 --port 5173"
+  set "FRONTEND_URL=http://192.168.18.8:5173"
   set "FRONTEND_NEEDS_BUILD=false"
   set "START_TUNNEL=false"
   set "COMPOSE_PROJECT_SUFFIX=dev"
@@ -127,12 +127,12 @@ if /I "%START_TUNNEL%"=="true" (
 echo.
 echo All services have been launched in separate windows!
 if /I "%MODE%"=="development" (
-  echo - Sekuritas Frontend dev server: %FRONTEND_URL%
-  echo - Sekuritas Backend: http://localhost:3002
-  echo - MATS Service: http://localhost:8082
-  echo - BOT Control Panel: http://localhost:8080
-  echo - BEI Service: http://localhost:4100
-  echo - BEI Admin Console: http://localhost:4100/admin
+  echo - Sekuritas Frontend dev server: %FRONTEND_URL% (atau http://localhost:5173)
+  echo - Sekuritas Backend: http://192.168.18.8:3002 (atau http://localhost:3002)
+  echo - MATS Service: http://192.168.18.8:8082 (atau http://localhost:8082)
+  echo - BOT Control Panel: http://192.168.18.8:8080 (atau http://localhost:8080)
+  echo - BEI Service: http://192.168.18.8:4100 (atau http://localhost:4100)
+  echo - BEI Admin Console: http://192.168.18.8:4100/admin (atau http://localhost:4100/admin)
 ) else (
   echo - Sekuritas Frontend preview: %FRONTEND_URL%
   echo - Sekuritas Backend: http://localhost:3003
