@@ -8,11 +8,13 @@ import {
   securities_positions,
   settlement_events,
   settlement_inbox,
-  trade_fills
+  trade_fills,
+  rdn_references
 } from "../db/schema.js";
 import { calculateFee, getFeeScheduleSnapshot } from "./fee-service.js";
 import { createNotificationTx } from "./notification-service.js";
 import { appendBotAccountEventTx, botAccountSnapshotTx } from "./bot-event-service.js";
+import { env } from "../config/env.js";
 
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
@@ -66,7 +68,7 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
   const idempotencyKey = settlementKey(matsOrderId, tradeDetails, "");
   const hash = payloadHash(tradeDetails);
 
-  return db.transaction(async (tx) => {
+  const result: any = await db.transaction(async (tx) => {
     const [existingInbox] = await tx
       .select()
       .from(settlement_inbox)
@@ -263,8 +265,72 @@ export async function processSettlement(matsOrderId: string, tradeDetails: any =
       },
     });
 
-    return { status: "processed", idempotencyKey };
+    const [rdnRef] = await tx
+      .select()
+      .from(rdn_references)
+      .where(eq(rdn_references.broker_account_id, order.broker_account_id))
+      .limit(1);
+    const rdn = rdnRef?.rdn || null;
+
+    return {
+      status: "processed" as const,
+      idempotencyKey,
+      rdn,
+      side,
+      value,
+      totalFee: fee.totalFee,
+      symbol: order.symbol,
+      price: actualPrice,
+      quantity,
+    };
   });
+
+  if (result.status === "processed" && env.financeMode === "rdn" && result.rdn) {
+    const side = result.side;
+    const value = result.value;
+    const totalFee = result.totalFee;
+    const rdn = result.rdn;
+    const settlementAmount = side === "buy" ? -(value + totalFee) : (value - totalFee);
+
+    const triggerSettlementWithRetry = async (attempt = 1): Promise<void> => {
+      try {
+        const response = await fetch(`${env.bankMandalaUrl}/api/b2b/transfers/settle`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": env.bankMandalaApiKey || ""
+          },
+          body: JSON.stringify({
+            rdn,
+            amount: settlementAmount.toFixed(2),
+            description: `Trade Settlement: ${side.toUpperCase()} ${result.quantity} ${result.symbol} @ ${result.price.toFixed(2)}`,
+            idempotencyKey: `settle:${result.idempotencyKey}`
+          })
+        });
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || `HTTP ${response.status}`);
+        }
+        console.log(`[Settlement B2B] Successfully settled trade for RDN ${rdn}, amount: ${settlementAmount}`);
+      } catch (err: any) {
+        console.error(`[Settlement B2B] Attempt ${attempt} failed for RDN ${rdn}: ${err.message}`);
+        if (attempt < 3) {
+          const backoff = Math.pow(2, attempt) * 1000;
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+          return triggerSettlementWithRetry(attempt + 1);
+        } else {
+          console.error(`[Settlement B2B] CRITICAL: Failed to settle trade RDN ${rdn} after max retries: ${err.message}`);
+        }
+      }
+    };
+
+    triggerSettlementWithRetry().catch((err) => {
+      console.error(`[Settlement B2B] Async process unhandled error:`, err);
+    });
+  }
+
+  return { status: result.status, idempotencyKey: result.idempotencyKey };
 }
 
 export async function processPendingSettlementsForOrder(matsOrderId: string) {
